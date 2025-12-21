@@ -2,7 +2,7 @@ name: Deploy Backend to DigitalOcean
 
 on:
   push:
-    branches: [back]
+    branches: [main]
 
 jobs:
   deploy:
@@ -17,6 +17,6 @@ jobs:
           key: ${{ secrets.DO_SSH_KEY }}
           script: |
             cd ${{ secrets.DO_APP_PATH }}
-            git pull origin back
+            git pull origin main
             docker compose down
             docker compose up -d --build
