@@ -1,29 +1,6 @@
 version: "3.9"
 
 services:
-  # ---------- FRONT (Next.js) ----------
-  agryfront:
-    container_name: agryfront
-    build:
-      context: ./front
-      dockerfile: Dockerfile
-      args:
-        APP_DIR: /app
-    image: agrifront:v1.0
-    env_file: ./front/.env
-    environment:
-      - HOST=0.0.0.0
-      - PORT=3000
-      - NEXT_PUBLIC_API_URL=http://agrybackend:8000
-      - NEXT_TELEMETRY_DISABLED=1
-    ports:
-      - "3000:3000"
-    depends_on:
-      agrybackend:
-        condition: service_started
-    restart: unless-stopped
-    networks: [agro]
-
   # ---------- DB (PostgreSQL) ----------
   agrydata:
     container_name: agrydata
