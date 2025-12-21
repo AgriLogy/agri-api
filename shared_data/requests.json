@@ -1,0 +1,363 @@
+[
+    {
+        "key1": "value1",
+        "key2": "value2",
+        "timestamp": "2025-04-01T11:27:07.156560"
+    },
+    {
+        "key1": "value1",
+        "key2": "value2",
+        "timestamp": "2025-04-01T11:27:08.283700"
+    },
+    {
+        "key1": "value1",
+        "key2": "value2",
+        "timestamp": "2025-04-01T11:27:08.937024"
+    },
+    {
+        "key1": "value1",
+        "key2": "value2",
+        "timestamp": "2025-04-01T11:27:09.370065"
+    },
+    {
+        "key1": "value1",
+        "key2": "value2",
+        "timestamp": "2025-04-01T11:27:09.754740"
+    },
+    {
+        "key1": "value1",
+        "key2": "value2",
+        "timestamp": "2025-04-01T11:27:10.154304"
+    },
+    {
+        "key1": "value1",
+        "key2": "value2",
+        "timestamp": "2025-04-01T11:27:10.537893"
+    },
+    {
+        "key1": "value1",
+        "key2": "value2",
+        "timestamp": "2025-04-01T11:27:10.946074"
+    },
+    {
+        "key1": "value1",
+        "key2": "value2",
+        "timestamp": "2025-04-01T11:27:11.363106"
+    },
+    {
+        "key1": "value1",
+        "key2": "value2",
+        "timestamp": "2025-04-01T11:27:11.763142"
+    },
+    {
+        "key1": "value1",
+        "key2": "value2",
+        "timestamp": "2025-04-01T11:27:12.169223"
+    },
+    {
+        "key1": "value1",
+        "key2": "value2",
+        "timestamp": "2025-04-01T11:27:12.547728"
+    },
+    {
+        "key1": "value1",
+        "key2": "value2",
+        "timestamp": "2025-04-01T11:27:12.936338"
+    },
+    {
+        "key1": "value1",
+        "key2": "value2",
+        "timestamp": "2025-04-01T11:27:13.378748"
+    },
+    {
+        "key1": "value1",
+        "key2": "value2",
+        "timestamp": "2025-04-01T11:27:14.504680"
+    },
+    {
+        "name": "zone de marichage",
+        "space": 1750,
+        "kc": 15,
+        "critical_moisture_threshold": 18,
+        "user": 2,
+        "timestamp": "2025-04-15T08:46:58.452326"
+    },
+    {
+        "name": "zone de marichage",
+        "space": 1750,
+        "kc": 15,
+        "critical_moisture_threshold": 18,
+        "user": 2,
+        "timestamp": "2025-04-15T08:47:10.538719"
+    },
+    {
+        "name": "zone de marichage-2",
+        "space": 1120,
+        "kc": 125,
+        "critical_moisture_threshold": 1.2,
+        "user": 2,
+        "timestamp": "2025-04-15T08:50:06.387631"
+    },
+    {
+        "client": "Router02",
+        "wind_speed": 0.0,
+        "pressure_weather": 9331,
+        "temperature_weather": 17.3,
+        "humidity_weather": 52.8,
+        "solar_radiation": 0.0,
+        "wind_direction": 166.0,
+        "timestamp": "2025-04-16T21:28:20.198512"
+    },
+    {
+        "client": "Router02",
+        "wind_speed": 0.0,
+        "pressure_weather": 9331,
+        "temperature_weather": 17.4,
+        "humidity_weather": 52.9,
+        "solar_radiation": 0.0,
+        "wind_direction": 166.0,
+        "timestamp": "2025-04-16T21:29:00.065910"
+    },
+    {
+        "client": "Router02",
+        "wind_speed": 0.0,
+        "pressure_weather": 9331,
+        "temperature_weather": 17.3,
+        "humidity_weather": 52.8,
+        "solar_radiation": 0.0,
+        "wind_direction": 166.0,
+        "timestamp": "2025-04-16T21:29:40.085013"
+    },
+    {
+        "client": "Router02",
+        "wind_speed": 0.0,
+        "pressure_weather": 9331,
+        "temperature_weather": 17.3,
+        "humidity_weather": 53.1,
+        "solar_radiation": 0.0,
+        "wind_direction": 166.0,
+        "timestamp": "2025-04-16T21:30:19.990972"
+    },
+    {
+        "client": "Router02",
+        "wind_speed": 0.0,
+        "pressure_weather": 9331,
+        "temperature_weather": 17.3,
+        "humidity_weather": 53.0,
+        "solar_radiation": 0.0,
+        "wind_direction": 166.0,
+        "timestamp": "2025-04-16T21:30:58.918039"
+    },
+    {
+        "client": "Router02",
+        "wind_speed": 0.0,
+        "pressure_weather": 9331,
+        "temperature_weather": 17.3,
+        "humidity_weather": 53.1,
+        "solar_radiation": 0.0,
+        "wind_direction": 166.0,
+        "timestamp": "2025-04-16T21:31:38.821518"
+    },
+    {
+        "client": "Router02",
+        "wind_speed": 0.0,
+        "pressure_weather": 9332,
+        "temperature_weather": 17.2,
+        "humidity_weather": 53.3,
+        "solar_radiation": 0.0,
+        "wind_direction": 166.0,
+        "timestamp": "2025-04-16T21:32:18.733911"
+    },
+    {
+        "client": "Router02",
+        "wind_speed": 0.0,
+        "pressure_weather": 9331,
+        "temperature_weather": 17.4,
+        "humidity_weather": 53.2,
+        "solar_radiation": 0.0,
+        "wind_direction": 166.0,
+        "timestamp": "2025-04-16T21:32:58.657817"
+    },
+    {
+        "client": "Router02",
+        "wind_speed": 0.0,
+        "pressure_weather": 9331,
+        "temperature_weather": 17.2,
+        "humidity_weather": 53.4,
+        "solar_radiation": 0.0,
+        "wind_direction": 166.0,
+        "timestamp": "2025-04-16T21:33:37.589937"
+    },
+    {
+        "client": "Router02",
+        "wind_speed": 0.0,
+        "pressure_weather": 9332,
+        "temperature_weather": 17.3,
+        "humidity_weather": 53.6,
+        "solar_radiation": 0.0,
+        "wind_direction": 166.0,
+        "timestamp": "2025-04-16T21:34:17.535062"
+    },
+    {
+        "client": "Router02",
+        "wind_speed": 0.0,
+        "pressure_weather": 9331,
+        "temperature_weather": 17.2,
+        "humidity_weather": 53.5,
+        "solar_radiation": 0.0,
+        "wind_direction": 166.0,
+        "timestamp": "2025-04-16T21:34:57.454091"
+    },
+    {
+        "client": "Router02",
+        "wind_speed": 0.0,
+        "pressure_weather": 9332,
+        "temperature_weather": 17.1,
+        "humidity_weather": 53.6,
+        "solar_radiation": 0.0,
+        "wind_direction": 166.0,
+        "timestamp": "2025-04-16T21:35:36.367284"
+    },
+    {
+        "client": "Router02",
+        "wind_speed": 0.0,
+        "pressure_weather": 9331,
+        "temperature_weather": 17.2,
+        "humidity_weather": 53.7,
+        "solar_radiation": 0.0,
+        "wind_direction": 166.0,
+        "timestamp": "2025-04-16T21:36:16.338616"
+    },
+    {
+        "client": "Router02",
+        "wind_speed": 0.0,
+        "pressure_weather": 9331,
+        "temperature_weather": 17.2,
+        "humidity_weather": 53.6,
+        "solar_radiation": 0.0,
+        "wind_direction": 166.0,
+        "timestamp": "2025-04-16T21:36:56.284868"
+    },
+    {
+        "client": "Router02",
+        "wind_speed": 0.0,
+        "pressure_weather": 9331,
+        "temperature_weather": 17.2,
+        "humidity_weather": 53.7,
+        "solar_radiation": 0.0,
+        "wind_direction": 166.0,
+        "timestamp": "2025-04-16T21:37:35.310348"
+    },
+    {
+        "code": 106,
+        "flag": 0,
+        "language": "JAVA",
+        "opaque": 0,
+        "serializeTypeCurrentRPC": "JSON",
+        "version": 0,
+        "timestamp": "2025-05-13T12:20:53.268057"
+    },
+    {
+        "age": 2,
+        "number of toys": 5,
+        "timestamp": "2025-08-04T09:18:03.992663"
+    },
+    {
+        "age": 2,
+        "number of toys": 5,
+        "timestamp": "2025-08-04T09:23:31.530688"
+    },
+    {
+        "age": 2,
+        "number of toys": 5,
+        "timestamp": "2025-08-04T09:23:33.968294"
+    },
+    {
+        "id": 1,
+        "jsonrpc": "2.0",
+        "method": "login",
+        "params": {},
+        "timestamp": "2025-08-12T13:45:41.266977"
+    },
+    {
+        "id": 1,
+        "method": "mining.subscribe",
+        "params": [
+            "cpuminer/2.5.1"
+        ],
+        "timestamp": "2025-08-27T16:37:35.685316"
+    },
+    {
+        "id": 1,
+        "method": "mining.subscribe",
+        "params": [
+            "MinerName/1.0.0",
+            "EthereumStratum/1.0.0"
+        ],
+        "timestamp": "2025-08-27T16:37:35.704337"
+    },
+    {
+        "id": 1,
+        "method": "eth_submitLogin",
+        "worker": "igwrcvap",
+        "params": [
+            "0xb5e3f59a1a5bf5efc2652228d248586dfd228ebc",
+            "x"
+        ],
+        "jsonrpc": "2.0",
+        "timestamp": "2025-08-27T16:37:35.722815"
+    },
+    {
+        "id": 1,
+        "jsonrpc": "2.0",
+        "method": "login",
+        "params": {
+            "login": "46on8b5nscMKxFNL1Hy6aqG1b2Jca42yMNcFCiYxQaEXZmGtk6iXBe8b4icNt6gm9k9Y9qJpsoH2WfSBxAYGKEVP8HiG1fb",
+            "pass": "x",
+            "agent": "XMRig/6.15.3 (Windows NT 10.0; Win64; x64) libuv/1.42.0 msvc/2019",
+            "algo": [
+                "cn/1",
+                "cn/2",
+                "cn/r",
+                "cn/fast",
+                "cn/half",
+                "cn/xao",
+                "cn/rto",
+                "cn/rwz",
+                "cn/zls",
+                "cn/double",
+                "cn/ccx",
+                "cn-lite/1",
+                "cn-heavy/0",
+                "cn-heavy/tube",
+                "cn-heavy/xhv",
+                "cn-pico",
+                "cn-pico/tlo",
+                "cn/upx2",
+                "rx/0",
+                "rx/wow",
+                "rx/arq",
+                "rx/graft",
+                "rx/sfx",
+                "rx/keva",
+                "argon2/chukwa",
+                "argon2/chukwav2",
+                "argon2/ninja",
+                "astrobwt"
+            ]
+        },
+        "timestamp": "2025-08-27T16:37:35.740646"
+    },
+    {
+        "id": 1,
+        "method": "getwork",
+        "params": [],
+        "timestamp": "2025-08-27T16:37:35.775936"
+    },
+    {
+        "id": 1,
+        "method": "eth_getWork",
+        "params": [],
+        "timestamp": "2025-08-27T16:37:35.793837"
+    }
+]

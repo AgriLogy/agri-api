@@ -1,0 +1,132 @@
+version: "3.9"
+
+services:
+  # ---------- FRONT (Next.js) ----------
+  agryfront:
+    container_name: agryfront
+    build:
+      context: ./front
+      dockerfile: Dockerfile
+      args:
+        APP_DIR: /app
+    image: agrifront:v1.0
+    env_file: ./front/.env
+    environment:
+      - HOST=0.0.0.0
+      - PORT=3000
+      - NEXT_PUBLIC_API_URL=http://agrybackend:8000
+      - NEXT_TELEMETRY_DISABLED=1
+    ports:
+      - "3000:3000"
+    depends_on:
+      agrybackend:
+        condition: service_started
+    restart: unless-stopped
+    networks: [agro]
+
+  # ---------- DB (PostgreSQL) ----------
+  agrydata:
+    container_name: agrydata
+    image: postgres:17
+    env_file: ./back/.env
+    ports:
+      - "5432:5432"
+    volumes:
+      - data_database:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+    networks: [agro]
+
+  # ---------- ADMINER ----------
+  agryadminer:
+    container_name: agryadminer
+    image: adminer
+    environment:
+      - ADMINER_DEFAULT_SERVER=agrydata
+    ports:
+      - "8080:8080"
+    depends_on:
+      - agrydata
+    restart: unless-stopped
+    networks: [agro]
+
+  # ---------- REDIS ----------
+  redis:
+    container_name: redis
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      retries: 5
+      start_period: 30s
+      timeout: 5s
+    restart: unless-stopped
+    networks: [agro]
+
+  # ---------- BACK (Django) ----------
+  agrybackend:
+    container_name: agrybackend
+    build:
+      context: ./back
+      dockerfile: Dockerfile
+    image: agriback:v1.0
+    env_file: ./back/.env
+    ports:
+      - "8000:8000"
+    depends_on:
+      agrydata:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    # ✅ bind mount a folder that lives inside your WSL project
+    volumes:
+      - ./back:/code:delegated
+      - ./shared_data:/shared:rw
+    restart: unless-stopped
+    networks: [agro]
+
+  # ---------- CELERY BEAT ----------
+  celery-beat:
+    container_name: celery-beat
+    build:
+      context: ./back
+      dockerfile: Dockerfile
+    command: >
+      celery -A agriBack beat --loglevel=info
+      --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    env_file: ./back/.env
+    depends_on:
+      redis:
+        condition: service_healthy
+      agrybackend:
+        condition: service_started
+    restart: unless-stopped
+    networks: [agro]
+
+  # ---------- CELERY WORKER ----------
+  celery-worker:
+    container_name: celery-worker
+    build:
+      context: ./back
+      dockerfile: Dockerfile
+    command: celery -A agriBack worker --loglevel=info --concurrency=1
+    env_file: ./back/.env
+    depends_on:
+      redis:
+        condition: service_healthy
+      agrybackend:
+        condition: service_started
+    restart: unless-stopped
+    networks: [agro]
+
+networks:
+  agro:
+
+volumes:
+  data_database:
