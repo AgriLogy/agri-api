@@ -143,114 +143,112 @@ def NpkSensorGenerator():
 user, zone = create_user1_zone1()
 
 
-# def create_active_graph_for_user_zone(user, zone):
-#     try:
-#         active_graph, created = ActiveGraph.objects.get_or_create(
-#             user=user,
-#             zone=zone,
-#             defaults={
-#                 # Soil
-#                 "soil_irrigation_status": True,
-#                 "soil_ph_status": True,
-#                 "soil_conductivity_status": True,
-#                 "soil_moisture_status": True,
-#                 "soil_temperature_status": True,
+def create_active_graph_for_user_zone(user, zone):
+    try:
+        active_graph, created = ActiveGraph.objects.get_or_create(
+            user=user,
+            zone=zone,
+            defaults={
+                # Soil
+                "soil_irrigation_status": True,
+                "soil_ph_status": True,
+                "soil_conductivity_status": True,
+                "soil_moisture_status": True,
+                "soil_temperature_status": True,
+                # Weather
+                "et0_status": True,
+                "wind_speed_status": True,
+                "wind_direction_status": True,
+                "solar_radiation_status": True,
+                "temperature_humidity_weather_status": True,
+                "precipitation_humidity_rate_status": True,
+                "pluviometry_status": True,
+                "data_table_status": True,
+                # Added missing weather fields
+                "wind_radar_status": True,
+                "cumulative_precipitation_status": True,
+                "precipitation_rate_status": True,
+                "weather_temperature_humidity_status": True,
+                # Water
+                "water_flow_status": True,
+                "water_pressure_status": True,
+                "water_ph_status": True,
+                "water_ec_status": True,
+                # Plant Sensors
+                "leaf_sensor_status": True,
+                "fruit_size_status": True,
+                "large_fruit_diameter_status": True,
+                # Fertilizer/Nutrients
+                "npk_status": True,
+                # Other
+                "electricity_consumption_status": True,
+            },
+        )
+        if created:
+            print(
+                f"✅ Created ActiveGraph for user '{user.username}' and zone '{zone.name}'."
+            )
+        else:
+            print(
+                f"ℹ️ ActiveGraph already exists for user '{user.username}' and zone '{zone.name}'."
+            )
+        return active_graph
 
-#                 # Weather
-#                 "et0_status": True,
-#                 "wind_speed_status": True,
-#                 "wind_direction_status": True,
-#                 "solar_radiation_status": True,
-#                 "temperature_humidity_weather_status": True,
-#                 "precipitation_humidity_rate_status": True,
-#                 "pluviometry_status": True,
-#                 "data_table_status": True,
-
-#                 # Added missing weather fields
-#                 "wind_radar_status": True,
-#                 "cumulative_precipitation_status": True,
-#                 "precipitation_rate_status": True,
-#                 "weather_temperature_humidity_status": True,
-
-#                 # Water
-#                 "water_flow_status": True,
-#                 "water_pressure_status": True,
-#                 "water_ph_status": True,
-#                 "water_ec_status": True,
-
-#                 # Plant Sensors
-#                 "leaf_sensor_status": True,
-#                 "fruit_size_status": True,
-#                 "large_fruit_diameter_status": True,
-
-#                 # Fertilizer/Nutrients
-#                 "npk_status": True,
-
-#                 # Other
-#                 "electricity_consumption_status": True,
-#             }
-#         )
-#         if created:
-#             print(f"✅ Created ActiveGraph for user '{user.username}' and zone '{zone.name}'.")
-#         else:
-#             print(f"ℹ️ ActiveGraph already exists for user '{user.username}' and zone '{zone.name}'.")
-#         return active_graph
-
-#     except Exception as e:
-#         print(f"❌ Error while creating/getting ActiveGraph: {e}")
-#         raise
+    except Exception as e:
+        print(f"❌ Error while creating/getting ActiveGraph: {e}")
+        raise
 
 
-# active_graph = create_active_graph_for_user_zone(user, zone)
+active_graph = create_active_graph_for_user_zone(user, zone)
 
-# SensorDataDeletor(WindSpeed, "Wind Speed", user=user, zone=zone)
-# SensorDataDeletor(WindDirection, "Wind Direction", user=user, zone=zone)
+SensorDataDeletor(WindSpeed, "Wind Speed", user=user, zone=zone)
+SensorDataDeletor(WindDirection, "Wind Direction", user=user, zone=zone)
 
 
-# SensorDataGenerator( WindSpeed, "WindSpeed")
-# SensorDataGenerator( WindDirection, "WindDirection")
+SensorDataGenerator(WindSpeed, "WindSpeed")
+SensorDataGenerator(WindDirection, "WindDirection")
 
-# NpkSensorGenerator()
+NpkSensorGenerator()
 
-# SensorDataGenerator( Notification, "Notification")
-# SensorDataGenerator( Alert, "Alert")
-# SensorDataGenerator( Zone, "Zone")
-# SensorDataGenerator( KcPeriod, "KcPeriod")
-# SensorDataGenerator( Kc, "Kc")
-# SensorDataGenerator( KcPeriodAssignment, "KcPeriodAssignment")
-# SensorDataGenerator( Et0Calculated, "Et0Calculated")
-# SensorDataGenerator( Et0Weather, "Et0Weather")
-# SensorDataGenerator( PrecipitationRate, "PrecipitationRate")
-# SensorDataGenerator( HumidityWeather, "HumidityWeather")
-# SensorDataGenerator( SolarRadiation, "SolarRadiation")
-# SensorDataGenerator( PressureWeather, "PressureWeather")
-# SensorDataGenerator( TemperatureWeather, "TemperatureWeather")
-# SensorDataGenerator( ECSoilMedium, "ECSoilMedium")
-# SensorDataGenerator( SoilTemperatureMedium, "SoilTemperatureMedium")
-# SensorDataGenerator( ECSoilHigh, "ECSoilHigh")
-# SensorDataGenerator( ECSoilLow, "ECSoilLow")
-# SensorDataGenerator( SoilMoistureMedium, "SoilMoistureMedium")
-# SensorDataGenerator( SoilMoistureHigh, "SoilMoistureHigh")
-# SensorDataGenerator( SoilMoistureLow, "SoilMoistureLow")
-# SensorDataGenerator( PhSoil, "PhSoil")
-# SensorDataGenerator( SoilTemperatureLow, "SoilTemperatureLow")
-# SensorDataGenerator( SoilTemperatureHigh, "SoilTemperatureHigh")
-# SensorDataGenerator( WaterFlowSensor, "WaterFlowSensor")
-# SensorDataGenerator( WaterPressureSensor, "WaterPressureSensor")
-# SensorDataGenerator( WaterECSensor, "WaterECSensor")
-# SensorDataGenerator( PhWaterSensor, "PhWaterSensor")
-# SensorDataGenerator( ElectricityConsumptionSensor, "ElectricityConsumptionSensor")
-# SensorDataGenerator( LeafMoistureSensor, "LeafMoistureSensor")
-# SensorDataGenerator( LeafTemperatureSensor, "LeafTemperatureSensor")
-# SensorDataGenerator( MultiDepthSoilMoistureSensor, "MultiDepthSoilMoistureSensor")
-# SensorDataGenerator( LargeFruitDiameterSensor, "LargeFruitDiameterSensor")
-# SensorDataGenerator( WaterLevelSensor, "WaterLevelSensor")
-# SensorDataGenerator( SoilSalinitySensor, "SoilSalinitySensor")
-# SensorDataGenerator( SoilConductivitySensor, "SoilConductivitySensor")
-# SensorDataGenerator( NpkSensor, "NpkSensor")
-# SensorDataGenerator( FruitSizeSensor, "FruitSizeSensor")
-# SensorDataGenerator( EcSalinitySensor, "EcSalinitySensor")
-# SensorDataGenerator( SensorColor, "SensorColor")
-# SensorDataGenerator( SensorLocation, "SensorLocation")
-# SensorDataGenerator( GraphName, "GraphName")
-# SensorDataGenerator( ActiveGraph, "ActiveGraph")
+SensorDataGenerator(Notification, "Notification")
+SensorDataGenerator(Alert, "Alert")
+SensorDataGenerator(Zone, "Zone")
+SensorDataGenerator(KcPeriod, "KcPeriod")
+SensorDataGenerator(Kc, "Kc")
+SensorDataGenerator(KcPeriodAssignment, "KcPeriodAssignment")
+SensorDataGenerator(Et0Calculated, "Et0Calculated")
+SensorDataGenerator(Et0Weather, "Et0Weather")
+SensorDataGenerator(PrecipitationRate, "PrecipitationRate")
+SensorDataGenerator(HumidityWeather, "HumidityWeather")
+SensorDataGenerator(SolarRadiation, "SolarRadiation")
+SensorDataGenerator(PressureWeather, "PressureWeather")
+SensorDataGenerator(TemperatureWeather, "TemperatureWeather")
+SensorDataGenerator(ECSoilMedium, "ECSoilMedium")
+SensorDataGenerator(SoilTemperatureMedium, "SoilTemperatureMedium")
+SensorDataGenerator(ECSoilHigh, "ECSoilHigh")
+SensorDataGenerator(ECSoilLow, "ECSoilLow")
+SensorDataGenerator(SoilMoistureMedium, "SoilMoistureMedium")
+SensorDataGenerator(SoilMoistureHigh, "SoilMoistureHigh")
+SensorDataGenerator(SoilMoistureLow, "SoilMoistureLow")
+SensorDataGenerator(PhSoil, "PhSoil")
+SensorDataGenerator(SoilTemperatureLow, "SoilTemperatureLow")
+SensorDataGenerator(SoilTemperatureHigh, "SoilTemperatureHigh")
+SensorDataGenerator(WaterFlowSensor, "WaterFlowSensor")
+SensorDataGenerator(WaterPressureSensor, "WaterPressureSensor")
+SensorDataGenerator(WaterECSensor, "WaterECSensor")
+SensorDataGenerator(PhWaterSensor, "PhWaterSensor")
+SensorDataGenerator(ElectricityConsumptionSensor, "ElectricityConsumptionSensor")
+SensorDataGenerator(LeafMoistureSensor, "LeafMoistureSensor")
+SensorDataGenerator(LeafTemperatureSensor, "LeafTemperatureSensor")
+SensorDataGenerator(MultiDepthSoilMoistureSensor, "MultiDepthSoilMoistureSensor")
+SensorDataGenerator(LargeFruitDiameterSensor, "LargeFruitDiameterSensor")
+SensorDataGenerator(WaterLevelSensor, "WaterLevelSensor")
+SensorDataGenerator(SoilSalinitySensor, "SoilSalinitySensor")
+SensorDataGenerator(SoilConductivitySensor, "SoilConductivitySensor")
+SensorDataGenerator(NpkSensor, "NpkSensor")
+SensorDataGenerator(FruitSizeSensor, "FruitSizeSensor")
+SensorDataGenerator(EcSalinitySensor, "EcSalinitySensor")
+SensorDataGenerator(SensorColor, "SensorColor")
+SensorDataGenerator(SensorLocation, "SensorLocation")
+SensorDataGenerator(GraphName, "GraphName")
+SensorDataGenerator(ActiveGraph, "ActiveGraph")
