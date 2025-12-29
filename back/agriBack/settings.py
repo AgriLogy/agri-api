@@ -93,6 +93,7 @@ CORS_ALLOWED_ORIGINS = _csv_env(
         "http://127.0.0.1:3000,"
         "http://157.245.43.196:3000,"
         "https://157.245.43.196:3000"
+        "https://www.agrogo-datafarm.com"
     ),
 )
 CORS_ALLOW_CREDENTIALS = True
@@ -107,6 +108,7 @@ CSRF_TRUSTED_ORIGINS = _csv_env(
         "http://157.245.43.196:3000,"
         "https://157.245.43.196,"
         "https://157.245.43.196:3000"
+        "https://www.agrogo-datafarm.com"
     ),
 )
 
