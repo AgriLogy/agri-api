@@ -25,7 +25,7 @@ DEBUG = os.getenv("DEBUG", "True").lower() in ("1", "true", "yes")
 
 ALLOWED_HOSTS = _csv_env(
     "ALLOWED_HOSTS",
-    "localhost,127.0.0.1,0.0.0.0,agrybackend,157.245.43.196",
+    "localhost,127.0.0.1,0.0.0.0,agrybackend,157.245.43.196,agrogo-datafarm.com,www.agrogo-datafarm.com",
 )
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
@@ -92,7 +92,7 @@ CORS_ALLOWED_ORIGINS = _csv_env(
         "http://localhost:3000,"
         "http://127.0.0.1:3000,"
         "http://157.245.43.196:3000,"
-        "https://157.245.43.196:3000"
+        "https://157.245.43.196:3000,"
         "https://www.agrogo-datafarm.com"
     ),
 )
@@ -107,7 +107,7 @@ CSRF_TRUSTED_ORIGINS = _csv_env(
         "http://157.245.43.196,"
         "http://157.245.43.196:3000,"
         "https://157.245.43.196,"
-        "https://157.245.43.196:3000"
+        "https://157.245.43.196:3000,"
         "https://www.agrogo-datafarm.com"
     ),
 )

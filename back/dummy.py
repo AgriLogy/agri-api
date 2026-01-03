@@ -39,7 +39,7 @@ def create_user1_zone1():
         )
 
         if created:
-            user.set_password("MKSzak123")
+            user.set_password("@Agrogo321")
             user.save()
     except Exception as e:
         print(f"❌ An error occurred while creating or getting the user: {e}")
