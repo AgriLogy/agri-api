@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 
 // Use the shared volume path
-const sharedDir = '/shared';
+const sharedDir = '/shared_data';
 const jsonFilePath = path.join(sharedDir, 'requests.json');
 const logFilePath = path.join(__dirname, '.logs');
 
@@ -50,10 +50,10 @@ const server = http.createServer((req, res) => {
         fs.appendFileSync(logFilePath, logEntry);
 
         res.writeHead(200, { 'Content-Type': 'text/plain' });
-        res.end('Valid JSON saved.');
+        res.end('Data Received Successfully !!');
     });
 });
 
 const PORT = 9090;
-const HOST = "0.0.0.0"; // Accept connections from other containers and outside
+const HOST = "0.0.0.0";
 server.listen(PORT, HOST);

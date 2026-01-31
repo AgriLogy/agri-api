@@ -46,6 +46,19 @@ services:
     restart: unless-stopped
     networks: [agro]
 
+  # ---------- NODE SERVER (shared requests.json writer/reader) ----------
+  agryserver:
+    container_name: agryserver
+    build:
+      context: ./Devops/server
+      dockerfile: Dockerfile
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./shared_data:/shared_data:rw
+    restart: unless-stopped
+    networks: [agro]  
+
   # ---------- BACK (Django) ----------
   agrybackend:
     container_name: agrybackend
