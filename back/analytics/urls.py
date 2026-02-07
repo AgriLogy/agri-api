@@ -23,6 +23,7 @@ urlpatterns = [
         "active-zones/<str:username>/", ActiveZonesView.as_view(), name="active-zones"
     ),
     path("alert/", AlertsAPIView.as_view(), name="user-alert"),
+    path("sensors/weather/ingest/", WeatherIngestAPIView.as_view()),
 ]
 
 urlpatterns += [

@@ -126,3 +126,117 @@ class AlertsAPIView(APIView):
             serializer.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+from django.utils import timezone
+from rest_framework import status
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from .models import (
+    HumidityWeather,
+    PressureWeather,
+    SolarRadiation,
+    TemperatureWeather,
+    WindDirection,
+    WindSpeed,
+    Zone,
+)
+
+METRIC_KEYS = [
+    "wind_speed",
+    "pressure_weather",
+    "temperature_weather",
+    "humidity_weather",
+    "solar_radiation",
+    "wind_direction",
+]
+
+
+class WeatherIngestAPIView(APIView):
+    """
+    Expects a JSON OBJECT (not list), same as what Node forwards.
+    If ALL metric fields are None/missing => insert nothing.
+    """
+
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request):
+        payload = request.data
+
+        if not isinstance(payload, dict):
+            return Response(
+                {"error": "Expected a JSON object"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        metrics = {k: payload.get(k, None) for k in METRIC_KEYS}
+
+        if all(v is None for v in metrics.values()):
+            return Response(
+                {"inserted": 0, "detail": "all_metrics_none"},
+                status=status.HTTP_200_OK,
+            )
+
+        client = payload.get("client")
+        if not client or not isinstance(client, str):
+            return Response(
+                {"error": "client is required when any metric is provided"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        client = client.strip()
+        try:
+            zone = Zone.objects.select_related("user").get(name=client)
+        except Zone.DoesNotExist:
+            return Response(
+                {"error": f"Zone not found for client '{client}'"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        user = zone.user
+        now = timezone.now()
+
+        inserted = 0
+
+        if metrics["wind_speed"] is not None:
+            WindSpeed.objects.create(
+                user=user, zone=zone, value=metrics["wind_speed"], timestamp=now
+            )
+            inserted += 1
+
+        if metrics["pressure_weather"] is not None:
+            PressureWeather.objects.create(
+                user=user, zone=zone, value=metrics["pressure_weather"], timestamp=now
+            )
+            inserted += 1
+
+        if metrics["temperature_weather"] is not None:
+            TemperatureWeather.objects.create(
+                user=user,
+                zone=zone,
+                value=metrics["temperature_weather"],
+                timestamp=now,
+            )
+            inserted += 1
+
+        if metrics["humidity_weather"] is not None:
+            HumidityWeather.objects.create(
+                user=user, zone=zone, value=metrics["humidity_weather"], timestamp=now
+            )
+            inserted += 1
+
+        if metrics["solar_radiation"] is not None:
+            SolarRadiation.objects.create(
+                user=user, zone=zone, value=metrics["solar_radiation"], timestamp=now
+            )
+            inserted += 1
+
+        if metrics["wind_direction"] is not None:
+            WindDirection.objects.create(
+                user=user, zone=zone, value=metrics["wind_direction"], timestamp=now
+            )
+            inserted += 1
+
+        return Response({"inserted": inserted}, status=status.HTTP_201_CREATED)
