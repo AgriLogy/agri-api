@@ -187,12 +187,19 @@ class WeatherIngestAPIView(APIView):
             )
 
         client = client.strip()
-        try:
-            zone = Zone.objects.select_related("user").get(name=client)
-        except Zone.DoesNotExist:
+
+        user = CustomUser.objects.filter(username=client).first()
+        if not user:
             return Response(
-                {"error": f"Zone not found for client '{client}'"},
-                status=status.HTTP_404_NOT_FOUND,
+                {"error": f"User not found for client '{client}'"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        zone = Zone.objects.filter(user=user).first()
+        if not zone:
+            return Response(
+                {"error": f"No zone found for user '{user.username}'"},
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
         user = zone.user
