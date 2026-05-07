@@ -1,5 +1,5 @@
 .PHONY: all up down build stop start rmi rmv prune stat re \
-        bootstrap install hooks lint format check test
+        bootstrap install hooks dev lint format check test
 
 all: up
 
@@ -12,6 +12,9 @@ install:  ## Sync the local virtualenv via uv (incl. dev deps)
 
 hooks:  ## Wire .githooks/ to git so commit-msg + pre-push fire
 	./scripts/install-hooks.sh
+
+dev:  ## One-shot: ensure .env, sync, migrate, runserver (SQLite-backed)
+	./scripts/dev.sh
 
 lint:  ## ruff check
 	cd back && uv run ruff check .
