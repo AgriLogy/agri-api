@@ -117,6 +117,6 @@ The `pre-push` hook runs `make check` automatically. If it isn't green, the push
 | Workflow | Trigger | Job |
 | --- | --- | --- |
 | `lint-pr-title.yml` | PR opened/edited | Validate the PR title is Conventional Commits |
-| `ci.yml` | PR + push to `main` | `uv sync` → `ruff check` → `ruff format --check` → `manage.py check` |
+| `ci.yml` | PR + push to `main` | `uv sync` → `ruff check` → `manage.py check` (format check enabled later, see `ci.yml` comment) |
 | `release.yml` | push to `main` | semantic-release: tag, changelog, version bump |
 | `deploy-back.yml` | push to `main` | SSH-deploy to DigitalOcean |

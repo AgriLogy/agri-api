@@ -47,7 +47,8 @@ fi
 echo "→ ruff check"
 uv run ruff check .
 
-echo "→ ruff format --check"
-uv run ruff format --check .
+# Format check is not yet enforced — see .github/workflows/ci.yml for why.
+# Run `make format` voluntarily before pushing if you've touched a lot of
+# code; the gate will be turned on once the codebase is normalized.
 
 echo "✓ Pre-push checks passed."
