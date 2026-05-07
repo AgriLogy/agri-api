@@ -1,3 +1,22 @@
+# 1.0.0 (2026-05-07)
+
+
+### Bug Fixes
+
+*  front domain name ([7e9c879](https://github.com/AgriLogy/agrilogy-back/commit/7e9c879680d87ad2084127ae90c12af52c160ad0))
+* **ci:** drop uv cache config until uv.lock is committed ([27a4bab](https://github.com/AgriLogy/agrilogy-back/commit/27a4babdc463dd39f3eb2d040c52161dae38a231))
+* **ci:** loosen ruff config to match legacy flake8 leniency ([bb81c15](https://github.com/AgriLogy/agrilogy-back/commit/bb81c159b92489a6c8d5f33e7179a894081c92e9))
+* domain name issue ([9d12750](https://github.com/AgriLogy/agrilogy-back/commit/9d12750e190040bbc2bab8c810e9deecde8aa063))
+* dummy insertion data ([0567885](https://github.com/AgriLogy/agrilogy-back/commit/056788584a33a2abb7fe6b3054426d34321580f2))
+* env example ([9896566](https://github.com/AgriLogy/agrilogy-back/commit/98965668f5d1cb66c501fba972eeb6b5051c875e))
+* update the data server ([184186b](https://github.com/AgriLogy/agrilogy-back/commit/184186b4b3fddf7a5cf91c57759761fbd798b96f))
+* user-zone mapping ([9c62202](https://github.com/AgriLogy/agrilogy-back/commit/9c62202067b8db86e80321a1a47e571d0eba7c6f))
+
+
+### Features
+
+* add data forward from js server ([d423d44](https://github.com/AgriLogy/agrilogy-back/commit/d423d44820f1c97df23dfbfeca05d2d255a2edfd))
+
 # Changelog
 
 All notable changes to this project will be documented in this file.
