@@ -44,8 +44,20 @@ That runs:
 
 ### 3. Run the stack
 
+#### Quick local dev (SQLite, no Docker)
+
 ```bash
-cp back/env-example back/.env   # then fill in real values
+make dev
+```
+
+That runs `scripts/dev.sh`: creates `back/.env` with safe defaults if it's missing, exports the vars, `uv sync`, `manage.py migrate`, then starts the dev server on `:8000`. SQLite file lives at `back/db.sqlite3`.
+
+Useful overrides: `PORT=8001 make dev`, `SKIP_SYNC=1 make dev`, `SKIP_MIGRATE=1 make dev`.
+
+#### Full stack (Postgres + Redis + Adminer)
+
+```bash
+cp back/env-example back/.env   # then fill in real values, set USE_POSTGRES=True
 make up                         # docker compose: postgres + redis + adminer + django
 ```
 
