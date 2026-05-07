@@ -1,25 +1,38 @@
-FROM python:3.12.8
+FROM python:3.12.8-slim
 
-ENV PYTHONUNBUFFERED=1
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PYTHON_DOWNLOADS=never \
+    UV_PROJECT_ENVIRONMENT=/opt/venv \
+    PATH=/opt/venv/bin:/root/.local/bin:$PATH
+
 WORKDIR /code
 
-# Install system packages
-RUN apt-get update && apt-get install -y cron && rm -rf /var/lib/apt/lists/*
+# System packages: cron at runtime; build tooling for psycopg2 wheel fallbacks.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        cron \
+        build-essential \
+        libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy and install Python packages
-COPY requirements.txt /code/
-RUN pip install --upgrade pip
-RUN pip install -r requirements.txt
+# Install uv (pinned for reproducibility).
+COPY --from=ghcr.io/astral-sh/uv:0.5.7 /uv /uvx /usr/local/bin/
 
-# Copy project files
+# Install dependencies first so layer caching survives source edits.
+COPY pyproject.toml uv.lock* /code/
+RUN uv sync --frozen --no-install-project --no-dev \
+    || uv sync --no-install-project --no-dev
+
+# Project source.
 COPY . /code/
 
-# Entrypoint script
+# Entrypoint.
 COPY run.sh /run.sh
 COPY env-example /.env
 RUN chmod +x /run.sh
 
 RUN mkdir -m 777 /shared
-
 
 CMD ["bash", "/run.sh"]

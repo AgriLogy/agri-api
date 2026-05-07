@@ -1,29 +1,59 @@
-all : up
+.PHONY: all up down build stop start rmi rmv prune stat re \
+        bootstrap install hooks lint format check test
 
-up : 
+all: up
+
+# ---- Local Python tooling (uv) -------------------------------------------------
+
+bootstrap: install hooks  ## First-time setup: deps + git hooks
+
+install:  ## Sync the local virtualenv via uv (incl. dev deps)
+	cd back && uv sync
+
+hooks:  ## Wire .githooks/ to git so commit-msg + pre-push fire
+	./scripts/install-hooks.sh
+
+lint:  ## ruff check
+	cd back && uv run ruff check .
+
+format:  ## ruff format (writes)
+	cd back && uv run ruff format .
+
+format-check:  ## ruff format --check (CI-friendly, no writes)
+	cd back && uv run ruff format --check .
+
+check: lint format-check  ## Composite gate used by pre-push and CI
+
+test:  ## pytest (skips if no tests yet)
+	cd back && uv run pytest -q || true
+
+# ---- Docker compose ------------------------------------------------------------
+
+up:
 	@docker compose -f docker-compose.yml up -d
 
-down : 
+down:
 	@docker compose -f docker-compose.yml down
 
-build : 
+build:
 	@docker compose -f docker-compose.yml build
 
-stop : 
+stop:
 	@docker compose -f docker-compose.yml stop
 
-start : 
+start:
 	@docker compose -f docker-compose.yml start
 
-rmi : 
-	@docker rmi $(docker images)
+rmi:
+	@docker rmi $$(docker images -q)
 
 rmv:
-	@docker volume rm $(docker volume ls)
+	@docker volume rm $$(docker volume ls -q)
 
 prune:
 	docker system prune
 
-stat : 
+stat:
 	@docker ps
-re : down up
+
+re: down up

@@ -100,3 +100,9 @@ local_settings.py
 node_modules
 .next
 .venv
+
+# uv (lock file IS committed; see https://docs.astral.sh/uv/concepts/projects/sync/)
+.python-version
+
+# ruff cache
+.ruff_cache/

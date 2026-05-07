@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Refuse pushing directly to main and refuse pushing if lint/format isn't clean.
+#
+# Bypass for emergencies (use sparingly):
+#   PRE_PUSH_SKIP=1 git push ...
+
+set -euo pipefail
+
+if [[ "${PRE_PUSH_SKIP:-0}" == "1" ]]; then
+  echo "⚠  PRE_PUSH_SKIP=1 — skipping pre-push checks."
+  exit 0
+fi
+
+protected_branches="main master back front"
+
+# Stdin contains: <local_ref> <local_sha> <remote_ref> <remote_sha>
+# Block if any pushed remote ref is one of the protected branches.
+while read -r local_ref _local_sha remote_ref _remote_sha; do
+  [[ -z "$remote_ref" ]] && continue
+  remote_branch="${remote_ref#refs/heads/}"
+  for protected in $protected_branches; do
+    if [[ "$remote_branch" == "$protected" ]]; then
+      # Permit pushes that originate from the same protected branch locally
+      # (e.g. semantic-release running in CI). Local dev pushes from a feature
+      # branch into a protected ref are blocked.
+      local_branch="${local_ref#refs/heads/}"
+      if [[ "$local_branch" != "$protected" ]]; then
+        echo "✘ Direct pushes to '$protected' are not allowed."
+        echo "  Open a pull request from '$local_branch' instead."
+        echo "  (Override with PRE_PUSH_SKIP=1 if you really know what you're doing.)"
+        exit 1
+      fi
+    fi
+  done
+done
+
+# Run lint + format checks. Fail fast if not clean.
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root/back"
+
+if ! command -v uv >/dev/null 2>&1; then
+  echo "✘ uv is not installed. Run scripts/install-hooks.sh after installing uv:"
+  echo "    https://docs.astral.sh/uv/getting-started/installation/"
+  exit 1
+fi
+
+echo "→ ruff check"
+uv run ruff check .
+
+# Format check is not yet enforced — see .github/workflows/ci.yml for why.
+# Run `make format` voluntarily before pushing if you've touched a lot of
+# code; the gate will be turned on once the codebase is normalized.
+
+echo "✓ Pre-push checks passed."
