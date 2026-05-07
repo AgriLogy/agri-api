@@ -2,7 +2,6 @@
 name = "agrilogy-backend"
 version = "0.0.0"
 description = "Agrilogy Django backend"
-readme = "../readme.md"
 requires-python = ">=3.12"
 dependencies = [
     "amqp==5.3.1",
