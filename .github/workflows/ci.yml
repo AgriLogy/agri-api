@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: ruff
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: back
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.5.7"
+          enable-cache: true
+          cache-dependency-glob: back/uv.lock
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Sync dependencies
+        run: uv sync --frozen || uv sync
+
+      - name: ruff check
+        run: uv run ruff check .
+
+      - name: ruff format --check
+        run: uv run ruff format --check .
+
+      - name: Django system check
+        run: uv run python manage.py check
+        env:
+          DJANGO_SETTINGS_MODULE: agriBack.settings
+          SECRET_KEY: ci-placeholder-secret-key
+          DEBUG: "False"
+          ALLOWED_HOSTS: "*"
+          USE_POSTGRES: "False"

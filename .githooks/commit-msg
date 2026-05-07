@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Reject commit messages that don't follow Conventional Commits.
+# https://www.conventionalcommits.org/
+#
+# Allowed types match .github/workflows/lint-pr-title.yml so PR titles and
+# local commits stay in sync. semantic-release classifies releases off these.
+
+set -euo pipefail
+
+msg_file="$1"
+first_line="$(head -n1 "$msg_file" | tr -d '\r')"
+
+# Skip merge / revert / fixup / squash commits — git generates these.
+case "$first_line" in
+  Merge*|Revert*|fixup!*|squash!*|"") exit 0 ;;
+esac
+
+# type(scope)!: subject
+#   - type ∈ feat|fix|perf|refactor|docs|style|test|build|ci|chore|revert
+#   - scope is optional; ! marks breaking changes
+#   - subject must start with a letter, length 1..100
+pattern='^(feat|fix|perf|refactor|docs|style|test|build|ci|chore|revert)(\([^)]+\))?!?: [A-Za-z].{0,99}$'
+
+if [[ ! "$first_line" =~ $pattern ]]; then
+  echo "✘ Commit message does not follow Conventional Commits."
+  echo
+  echo "  Got:    $first_line"
+  echo
+  echo "  Format: <type>(<scope>)?: <subject>"
+  echo "  Types:  feat, fix, perf, refactor, docs, style, test, build, ci, chore, revert"
+  echo "  Subject: starts with a letter, max 100 chars, no trailing period."
+  echo
+  echo "  Example: feat(alerts): add wind-speed threshold endpoint"
+  exit 1
+fi
