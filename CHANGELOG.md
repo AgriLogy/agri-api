@@ -1,3 +1,15 @@
+# [1.1.0](https://github.com/AgriLogy/agrilogy-back/compare/v1.0.0...v1.1.0) (2026-05-07)
+
+
+### Bug Fixes
+
+* **deps:** drop readme path that escapes the project tree ([9fab887](https://github.com/AgriLogy/agrilogy-back/commit/9fab887a0346acd12e54b38326d91aca3b97fa56))
+
+
+### Features
+
+* **scripts:** add scripts/dev.sh launcher and `make dev` target ([fe46d0b](https://github.com/AgriLogy/agrilogy-back/commit/fe46d0ba0e05482a0f265566e7c539cb866620aa))
+
 # 1.0.0 (2026-05-07)
 
 
