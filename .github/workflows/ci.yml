@@ -18,20 +18,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Caching is intentionally off until the first uv sync commits a
-      # back/uv.lock — setup-uv hard-fails when the cache-dependency-glob
-      # matches nothing. Re-enable enable-cache + cache-dependency-glob
-      # once back/uv.lock is checked in.
       - name: Install uv
         uses: astral-sh/setup-uv@v3
         with:
           version: "0.5.7"
+          enable-cache: true
+          cache-dependency-glob: back/uv.lock
 
       - name: Set up Python
         run: uv python install 3.12
 
       - name: Sync dependencies
-        run: uv sync --frozen || uv sync
+        run: uv sync --frozen
 
       - name: ruff check
         run: uv run ruff check .
