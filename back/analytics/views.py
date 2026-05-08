@@ -247,3 +247,118 @@ class WeatherIngestAPIView(APIView):
             inserted += 1
 
         return Response({"inserted": inserted}, status=status.HTTP_201_CREATED)
+
+
+# -----------------------------------------------------------------------------
+# Notifications surface
+# -----------------------------------------------------------------------------
+import logging  # noqa: E402
+
+from django.conf import settings  # noqa: E402
+from django.core.mail import send_mail  # noqa: E402
+
+from .models import Notification  # noqa: E402
+
+logger = logging.getLogger(__name__)
+
+
+class NotificationsAndAlertsAPIView(APIView):
+    """
+    Read-only feed of the current user's recent notifications.
+
+    The frontend caches rows locally and merges in zone-config / template
+    rows on the client. This endpoint returns the server-persisted rows so
+    cards survive a cache wipe and stay consistent across devices.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        rows = (
+            Notification.objects.filter(user=request.user)
+            .order_by("-notification_date")[:200]
+        )
+
+        def serialize(n: Notification) -> dict:
+            return {
+                "id": n.id,
+                "is_read": False,
+                "read_at": None,
+                "zone_name": None,
+                "_source": "server",
+                "notification": {
+                    "yesterday_temperature": str(n.yesterday_temperature),
+                    "today_temperature": str(n.today_temperature),
+                    "yesterday_humidity": str(n.yesterday_humidity),
+                    "today_humidity": str(n.today_humidity),
+                    "ET0": str(n.ET0),
+                    "soil_humidity": str(n.soil_humidity),
+                    "soil_temperature": str(n.soil_temperature),
+                    "soil_ph": str(n.soil_ph),
+                    "perfect_irrigation_period": n.perfect_irrigation_period,
+                    "last_irrigation_date": n.last_irrigation_date.isoformat()
+                    if n.last_irrigation_date
+                    else None,
+                    "last_start_irrigation_hour": n.last_start_irrigation_hour.isoformat()
+                    if n.last_start_irrigation_hour
+                    else None,
+                    "last_finish_irrigation_hour": n.last_finish_irrigation_hour.isoformat()
+                    if n.last_finish_irrigation_hour
+                    else None,
+                    "used_water_irrigation": str(n.used_water_irrigation),
+                    "notification_date": n.notification_date.isoformat(),
+                },
+            }
+
+        return Response({"notifications": [serialize(r) for r in rows]})
+
+
+class ZoneNotificationOutboundAPIView(APIView):
+    """
+    Sends a one-shot confirmation email when a user saves a zone notification
+    config with channels.email = true. SMS / WhatsApp are accepted in the
+    payload for forward compatibility but are no-ops in v1.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        data = request.data or {}
+        channels = (data.get("channels") or {}) if isinstance(data, dict) else {}
+        if not channels.get("email"):
+            # Nothing to do for non-email channels yet — accept and move on.
+            return Response({"status": "noop"}, status=status.HTTP_202_ACCEPTED)
+
+        recipient = (
+            (data.get("contactEmail") or "").strip()
+            or (getattr(request.user, "email", "") or "").strip()
+        )
+        if not recipient:
+            return Response(
+                {"detail": "no email address on user"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        subject = (data.get("subject") or "Agrilogy — notification").strip()
+        message = (data.get("message") or "").strip() or (
+            "La configuration de notification de zone a été enregistrée."
+        )
+
+        try:
+            send_mail(
+                subject=subject,
+                message=message,
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[recipient],
+                fail_silently=False,
+            )
+        except Exception as exc:
+            logger.exception("zone-notification-outbound: send failed")
+            return Response({"detail": str(exc)}, status=500)
+
+        logger.info(
+            "zone-notification-outbound: sent to %s zone=%s",
+            recipient,
+            data.get("zoneId"),
+        )
+        return Response({"status": "sent"}, status=status.HTTP_202_ACCEPTED)

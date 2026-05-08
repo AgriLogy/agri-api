@@ -4,33 +4,66 @@ import logging
 
 from celery import shared_task
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.core.mail import get_connection, send_mail
 from django.utils.timezone import now
+
+from CustomUser.notification_helper import perform_calculations, should_notify
 
 logger = logging.getLogger(__name__)
 
 
 @shared_task
 def send_periodic_notifications():
-    try:
-        # Use connection as a context manager to handle connect/disconnect properly
-        with get_connection() as connection:
-            logger.info(f"Email connection opened successfully at {now()}")
+    """
+    For every active user with an email, dispatch a personalised
+    field-status notification when their cadence (notify_every hours)
+    has elapsed since last_notified. Per-user failures don't abort the
+    batch.
+    """
+    User = get_user_model()
+    sent = 0
+    skipped = 0
+    failed = 0
+
+    with get_connection() as connection:
+        logger.info("Email connection opened at %s", now())
+
+        for user in User.objects.filter(is_active=True).iterator(chunk_size=200):
+            recipient = (getattr(user, "email", "") or "").strip()
+            if not recipient:
+                skipped += 1
+                continue
+            if not should_notify(user):
+                skipped += 1
+                continue
+
             try:
+                message = perform_calculations(user)
                 send_mail(
-                    subject="Periodic Notification",
-                    message=f"This is your periodic update. Time: {now()}",
+                    subject="Mise à jour de votre terrain agricole",
+                    message=message,
                     from_email=settings.DEFAULT_FROM_EMAIL,
-                    recipient_list=["test@example.com"],
+                    recipient_list=[recipient],
                     connection=connection,
                     fail_silently=False,
                 )
-                logger.info(f"Email sent successfully to test@example.com at {now()}")
-            except Exception as e:
-                logger.error(f"Failed to send email at {now()}: {str(e)}")
+                user.last_notified = now()
+                user.save(update_fields=["last_notified"])
+                sent += 1
+            except Exception:
+                failed += 1
+                logger.exception(
+                    "Failed to send periodic notification to %s", recipient
+                )
 
-    except Exception as e:
-        logger.critical(f"Unexpected error in email task at {now()}: {str(e)}")
+    logger.info(
+        "Periodic notifications: sent=%d, skipped=%d, failed=%d",
+        sent,
+        skipped,
+        failed,
+    )
+    return {"sent": sent, "skipped": skipped, "failed": failed}
 
 
 ######################################################################################################

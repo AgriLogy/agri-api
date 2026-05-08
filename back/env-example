@@ -11,9 +11,22 @@ POSTGRES_HOST=
 POSTGRES_PORT=
 CELERY_SCHEDULE_MODE=
 
-# EMAIL_HOST=
-# EMAIL_HOST_USER=
-# EMAIL_HOST_PASSWORD=
-# EMAIL_PORT=
-# EMAIL_USE_TLS=
-# EMAIL_USE_SSL=
+# ----- Email (notifications) ---------------------------------------------------
+# DEFAULT_FROM_EMAIL is what shows up in the From header.
+DEFAULT_FROM_EMAIL=Agrilogy <noreply@agrilogy.local>
+
+# When DEBUG=True the code defaults to the console backend (emails print to
+# stdout). Set EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend to
+# force SMTP delivery during local testing — that's what the Mailpit setup
+# needs. The same var also takes effect in production.
+# EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
+
+# Mailpit (docker compose service): SMTP on host :1025, web UI on :8025.
+# When running Django INSIDE docker compose, set EMAIL_HOST=mailpit.
+# When running Django on the host (make dev), use EMAIL_HOST=localhost.
+EMAIL_HOST=localhost
+EMAIL_PORT=1025
+EMAIL_HOST_USER=
+EMAIL_HOST_PASSWORD=
+EMAIL_USE_TLS=False
+EMAIL_USE_SSL=False

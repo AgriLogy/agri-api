@@ -240,19 +240,25 @@ else:
 # -----------------------------------------------------------------------------
 # Email
 # -----------------------------------------------------------------------------
-if DEBUG:
-    EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
-else:
-    EMAIL_BACKEND = os.getenv(
-        "EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend"
-    )
-    EMAIL_HOST = os.getenv("EMAIL_HOST", "")
-    EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
-    EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
-    EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587") or 587)
-    EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True").lower() in ("1", "true", "yes")
-    EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "False").lower() in ("1", "true", "yes")
-DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "noreply@example.com")
+# DEBUG defaults to the console backend (emails print to stdout). Set
+# EMAIL_BACKEND in the environment to force SMTP delivery — required when
+# testing against Mailpit locally.
+_default_backend = (
+    "django.core.mail.backends.console.EmailBackend"
+    if DEBUG
+    else "django.core.mail.backends.smtp.EmailBackend"
+)
+EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", _default_backend)
+
+EMAIL_HOST = os.getenv("EMAIL_HOST", "")
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
+EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587") or 587)
+EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True").lower() in ("1", "true", "yes")
+EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "False").lower() in ("1", "true", "yes")
+DEFAULT_FROM_EMAIL = os.getenv(
+    "DEFAULT_FROM_EMAIL", "Agrilogy <noreply@agrilogy.local>"
+)
 
 # -----------------------------------------------------------------------------
 # Logging

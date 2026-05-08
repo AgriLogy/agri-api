@@ -240,7 +240,12 @@ class Et0Calculated(models.Model):
 
 
 # receive data each : 10 minutes
-@receiver(post_save, sender=Notification)
+# NOTE: a `@receiver(post_save, sender=Notification)` decorator was previously
+# attached to this class — that's invalid (signals must call a *function*, not
+# a Model constructor). It was dormant because nothing ever invoked
+# `Notification.objects.create()`; the email-notifications work does invoke it,
+# which surfaced the bug. If a real signal handler is needed here in the
+# future, define a function below this class and decorate that.
 class Et0Weather(models.Model):
     zone = models.ForeignKey(Zone, on_delete=models.CASCADE, related_name="et0_weather")
     user = models.ForeignKey(

@@ -54,14 +54,36 @@ That runs `scripts/dev.sh`: creates `back/.env` with safe defaults if it's missi
 
 Useful overrides: `PORT=8001 make dev`, `SKIP_SYNC=1 make dev`, `SKIP_MIGRATE=1 make dev`.
 
-#### Full stack (Postgres + Redis + Adminer)
+#### Full stack (Postgres + Redis + Adminer + Mailpit)
 
 ```bash
 cp back/env-example back/.env   # then fill in real values, set USE_POSTGRES=True
-make up                         # docker compose: postgres + redis + adminer + django
+make up                         # docker compose: postgres + redis + adminer + mailpit + django
 ```
 
-Adminer is on `:8080`, Django on `:8000`.
+Adminer on `:8080`, Django on `:8000`, **Mailpit web UI on `:8025`** (SMTP `:1025`).
+
+#### Verifying outgoing email locally
+
+`back/.env` defaults to `EMAIL_BACKEND=` unset → console backend in DEBUG. To prove SMTP wiring against Mailpit:
+
+```bash
+docker compose up -d mailpit
+# in back/.env:
+EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
+EMAIL_HOST=localhost   # or `mailpit` if Django is also in compose
+EMAIL_PORT=1025
+EMAIL_USE_TLS=False
+EMAIL_USE_SSL=False
+make dev
+```
+
+Trigger any of:
+- `GET /auth/send-notification/` (auth required) — sends to `request.user.email`
+- `POST /api/zone-notification-outbound/` with `channels.email: true` — confirmation email when a zone config is saved
+- Celery beat fires `agriBack.tasks.send_periodic_notifications` on its schedule (`CELERY_SCHEDULE_MODE=test` runs it every 4 minutes)
+
+…and watch the message land in `http://localhost:8025`.
 
 ---
 

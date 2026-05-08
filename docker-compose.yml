@@ -31,6 +31,16 @@ services:
     restart: unless-stopped
     networks: [agro]
 
+  # ---------- MAILPIT (local SMTP capture; web UI on :8025, SMTP on :1025) ----------
+  mailpit:
+    container_name: mailpit
+    image: axllent/mailpit:latest
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    restart: unless-stopped
+    networks: [agro]
+
   # ---------- REDIS ----------
   redis:
     container_name: redis
