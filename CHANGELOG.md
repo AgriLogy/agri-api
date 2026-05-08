@@ -1,3 +1,11 @@
+# [1.2.0](https://github.com/AgriLogy/agrilogy-back/compare/v1.1.0...v1.2.0) (2026-05-08)
+
+
+### Features
+
+* deliver notification emails end-to-end (smtp + endpoints + tests) ([66106e8](https://github.com/AgriLogy/agrilogy-back/commit/66106e8a29d4ce9f637539f4601aef87f74a890e))
+* deliver notification emails end-to-end (smtp + endpoints + tests) ([#11](https://github.com/AgriLogy/agrilogy-back/issues/11)) ([a5590e6](https://github.com/AgriLogy/agrilogy-back/commit/a5590e6205765e3fc47f6192b1fa880faa8bb0f7))
+
 # [1.1.0](https://github.com/AgriLogy/agrilogy-back/compare/v1.0.0...v1.1.0) (2026-05-07)
 
 
