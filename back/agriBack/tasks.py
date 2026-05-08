@@ -67,225 +67,46 @@ def send_periodic_notifications():
 
 
 ######################################################################################################
-######################   Lakher : the ET0 Calculation   ##############################################
+######################   ET0 / VPD persistence (math lives in agriBack.agronomy)   ###################
 ######################################################################################################
 
-from datetime import datetime, timedelta, timezone
-from math import exp, log
-
-from analytics.models import Et0Calculated  # existing
-from analytics.models import (
-    HumidityWeather,
-    PressureWeather,
-    SolarRadiation,
-    TemperatureWeather,
-    VPDWeather,
-    WindSpeed,
-    Zone,
-)
+from analytics.models import Et0Calculated, VPDWeather, Zone
 from celery import shared_task
 from django.db import transaction
-from django.db.models import Avg
 
-# VPD model added below
-
-ALBEDO_SHORT_CROP = 0.23
-SIGMA = 4.903e-9  # MJ K^-4 m^-2 h^-1, Stefan-Boltzmann for hourly FAO units
-
-
-def es_kpa(T_c):
-    # Saturation vapor pressure at T (°C)
-    return 0.6108 * exp((17.27 * T_c) / (T_c + 237.3))
-
-
-def slope_es_kpa_per_C(T_c):
-    es = es_kpa(T_c)
-    return 4098.0 * es / ((T_c + 237.3) ** 2)
-
-
-def psychrometric_const_kpa_per_C(P_kpa):
-    # gamma ≈ 0.000665 * P(kPa) when lambda≈2.45 MJ kg^-1
-    return 0.000665 * P_kpa
-
-
-def wperm2_to_MJm2_per_hour(wperm2):
-    # hourly mean W/m^2 to hourly total MJ/m^2/h
-    return wperm2 * 0.0036
-
-
-def clear_sky_radiation_MJm2h(Ra_MJm2h, z_m):
-    # FAO-56: Rso = (0.75 + 2e-5 * z) * Ra  (z in meters)
-    return (0.75 + 2e-5 * z_m) * Ra_MJm2h
-
-
-def extraterrestrial_radiation_hourly_MJm2h(
-    lat_rad, doy, hour_mid_utc, lon_rad, tz_offset_hours
-):
-    """
-    FAO-56 Annex 2: Hourly Ra [MJ m^-2 h^-1].
-    Using solar time correction; assumes times passed in UTC with tz offset for local solar time.
-    For brevity and robustness, we use a compact implementation.
-    """
-    from math import acos, cos, pi, sin, tan
-
-    Gsc = 0.0820  # MJ m^-2 min^-1
-    # In FAO, hourly Ra uses solar time angle at midpoint of the hour
-    B = 2 * pi * (doy - 81) / 364
-    Sc = (
-        0.1645 * sin(2 * B) - 0.1255 * cos(B) - 0.025 * sin(B)
-    )  # seasonal correction (hours)
-
-    # Local solar time: Lst = UTC + tz; omega = 15° per hour
-    # Correction for longitude/time zone (in hours):
-    omega_correction = 0.06667 * ((tz_offset_hours * 15) - (lon_rad * 180 / pi)) + Sc
-    t_solar = hour_mid_utc + omega_correction  # hours
-    omega1 = pi / 12 * (t_solar - 1)  # start of hour
-    omega2 = pi / 12 * (t_solar + 1)  # end of hour
-
-    # Solar declination
-    delta = 0.409 * sin(2 * pi * doy / 365 - 1.39)
-
-    # Inverse relative distance Earth-Sun
-    dr = 1 + 0.033 * cos(2 * pi * doy / 365)
-
-    # Sunset hour angle
-    ws = acos(-tan(lat_rad) * tan(delta))
-
-    def _Ra(omega_a, omega_b):
-        omega_a = max(-ws, min(ws, omega_a))
-        omega_b = max(-ws, min(ws, omega_b))
-        term = (omega_b - omega_a) * sin(lat_rad) * sin(delta) + (
-            cos(lat_rad) * cos(delta) * (sin(omega_b) - sin(omega_a))
-        )
-        # MJ m^-2 h^-1
-        return (12 * 60 / pi) * Gsc * dr * term / 60.0
-
-    return _Ra(omega1, omega2)
-
-
-def net_radiation_MJm2h(Rs_MJm2h, ea_kPa, T_c, Ra_MJm2h=None, elevation_m=0):
-    """
-    FAO-56 net radiation. If Ra (extraterrestrial) is provided, use Rso = (0.75+2e-5 z)Ra for cloudiness.
-    Otherwise, fall back to a conservative emissivity estimate.
-    """
-    # Shortwave net
-    Rns = (1 - ALBEDO_SHORT_CROP) * Rs_MJm2h
-
-    # Longwave net (hourly): Rnl = σ * (Tk^4) * (0.34 - 0.14 * sqrt(ea)) * (1.35*Rs/Rso - 0.35)
-    Tk = T_c + 273.16
-    emiss_term = 0.34 - 0.14 * (ea_kPa**0.5)
-    if Ra_MJm2h is not None and Ra_MJm2h > 0:
-        Rso = clear_sky_radiation_MJm2h(Ra_MJm2h, elevation_m)
-        Rs_Rso = max(0.0, min(1.0, Rs_MJm2h / Rso)) if Rso > 0 else 0.0
-    else:
-        # If Ra unknown, assume moderately clear skies
-        Rs_Rso = 0.75  # heuristic fallback within FAO brackets
-
-    cloud_term = 1.35 * Rs_Rso - 0.35
-    Rnl = SIGMA * (Tk**4) * emiss_term * cloud_term
-
-    return Rns - Rnl
-
-
-def soil_heat_flux_MJm2h(Rn_MJm2h, is_daytime):
-    # ASCE/FAO hourly approximation
-    return 0.1 * Rn_MJm2h if is_daytime else 0.5 * Rn_MJm2h
-
-
-def is_day(Rn_MJm2h):
-    return Rn_MJm2h > 0
+from agriBack.agronomy import compute_et0_for_zone
 
 
 @shared_task
 def compute_et0_vpd_hourly():
     """
-    For each Zone:
-      - Aggregate last FULL hour of sensor data (mean).
-      - Compute VPD and ET0 (ASCE hourly short crop).
-      - Insert into Et0Calculated and VPDWeather.
+    For each Zone, ask agriBack.agronomy for one hour of ET0 + VPD and
+    persist the result. All physics lives in that module.
     """
-    now = datetime.now(timezone.utc)
-    end = now.replace(minute=0, second=0, microsecond=0)  # top of current hour
-    start = end - timedelta(hours=1)
-
     zones = Zone.objects.all().select_related("user")
-    et0_records = []
-    vpd_records = []
-
-    # If you store elevation per zone, plug it here; otherwise derive from mean pressure.
-    default_elevation_m = 0.0
+    et0_records: list[Et0Calculated] = []
+    vpd_records: list[VPDWeather] = []
 
     for z in zones:
-        user = z.user
-
-        temp = (
-            TemperatureWeather.objects.filter(
-                zone=z, timestamp__gte=start, timestamp__lt=end
-            ).aggregate(v=Avg("value"))
-        )["v"]
-        rh = (
-            HumidityWeather.objects.filter(
-                zone=z, timestamp__gte=start, timestamp__lt=end
-            ).aggregate(v=Avg("value"))
-        )["v"]
-        u = (
-            WindSpeed.objects.filter(
-                zone=z, timestamp__gte=start, timestamp__lt=end
-            ).aggregate(v=Avg("value"))
-        )["v"]
-        sr_wm2 = (
-            SolarRadiation.objects.filter(
-                zone=z, timestamp__gte=start, timestamp__lt=end
-            ).aggregate(v=Avg("value"))
-        )["v"]
-        p_hpa = (
-            PressureWeather.objects.filter(
-                zone=z, timestamp__gte=start, timestamp__lt=end
-            ).aggregate(v=Avg("value"))
-        )["v"]
-
-        # Require minimum inputs for credible ET0
-        if temp is None or rh is None or u is None or sr_wm2 is None or p_hpa is None:
+        result = compute_et0_for_zone(z)
+        if result is None:
             continue
-
-        # Conversions
-        P_kPa = p_hpa * 0.1  # hPa → kPa
-        Rs_MJm2h = wperm2_to_MJm2_per_hour(sr_wm2)
-
-        # Vapor pressures & VPD
-        es = es_kpa(temp)
-        ea = es * (max(0.0, min(100.0, rh)) / 100.0)
-        vpd = max(0.0, es - ea)
-
-        # Slope & psychrometric
-        delta = slope_es_kpa_per_C(temp)
-        gamma = psychrometric_const_kpa_per_C(P_kPa)
-
-        # Hour context for Ra (optional but improves Rn)
-        # If you store zone lat/lon, compute Ra; else pass None
-        Ra_MJm2h = None
-        elevation_m = default_elevation_m
-
-        # Net radiation and soil heat flux
-        Rn = net_radiation_MJm2h(Rs_MJm2h, ea, temp, Ra_MJm2h, elevation_m)
-        daytime = is_day(Rn)
-        G = soil_heat_flux_MJm2h(Rn, daytime)
-
-        # ASCE hourly coefficients (short crop)
-        Cn, Cd = (37.0, (0.24 if daytime else 0.96))
-
-        # ET0 [mm/h]
-        numerator = 0.408 * delta * (Rn - G) + gamma * (Cn / (temp + 273.0)) * max(
-            u, 0.0
-        ) * (es - ea)
-        denominator = delta + gamma * (1.0 + Cd * max(u, 0.0))
-        et0_mm_per_h = max(0.0, numerator / max(denominator, 1e-6))
-
-        # Persist
         et0_records.append(
-            Et0Calculated(zone=z, user=user, value=et0_mm_per_h, timestamp=end)
+            Et0Calculated(
+                zone=z,
+                user=z.user,
+                value=result.et0_mm_per_h,
+                timestamp=result.timestamp,
+            )
         )
-        vpd_records.append(VPDWeather(zone=z, user=user, value=vpd, timestamp=end))
+        vpd_records.append(
+            VPDWeather(
+                zone=z,
+                user=z.user,
+                value=result.vpd_kpa,
+                timestamp=result.timestamp,
+            )
+        )
 
     with transaction.atomic():
         if et0_records:
@@ -306,7 +127,6 @@ def compute_et0_vpd_hourly():
 
 import math
 import random
-from dataclasses import dataclass
 from datetime import timedelta
 from zoneinfo import ZoneInfo
 
