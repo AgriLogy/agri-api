@@ -106,3 +106,6 @@ node_modules
 
 # ruff cache
 .ruff_cache/
+
+# Claude Code session state (CONTINUE.md and friends)
+.claude/
