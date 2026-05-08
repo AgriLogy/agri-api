@@ -44,6 +44,18 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
 
+    # Notification cadence: how often (in hours) to send the periodic
+    # field-status email, and when it last went out.
+    notify_every = models.PositiveSmallIntegerField(
+        default=4,
+        help_text="Hours between automated notification emails.",
+    )
+    last_notified = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the most recent notification email was dispatched.",
+    )
+
     objects = CustomUserManager()
 
     USERNAME_FIELD = "username"

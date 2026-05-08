@@ -24,6 +24,16 @@ urlpatterns = [
     ),
     path("alert/", AlertsAPIView.as_view(), name="user-alert"),
     path("sensors/weather/ingest/", WeatherIngestAPIView.as_view()),
+    path(
+        "notifications-and-alerts/",
+        NotificationsAndAlertsAPIView.as_view(),
+        name="notifications-and-alerts",
+    ),
+    path(
+        "zone-notification-outbound/",
+        ZoneNotificationOutboundAPIView.as_view(),
+        name="zone-notification-outbound",
+    ),
 ]
 
 urlpatterns += [

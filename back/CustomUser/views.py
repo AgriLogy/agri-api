@@ -318,37 +318,54 @@ class AdminSignUpAPIView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+import logging
+
+from django.conf import settings
 from django.core.mail import send_mail
 from django.utils.timezone import now
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-
-# views.py
 from rest_framework.views import APIView
 
 from .notification_helper import perform_calculations
 
+logger = logging.getLogger(__name__)
+
 
 class SendNotificationEmailView(APIView):
+    """
+    Send the current user the latest field-status email on demand.
+    Recipient is always request.user.email — no hardcoded fallback.
+    """
+
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         user = request.user
+        recipient = (getattr(user, "email", "") or "").strip()
+        if not recipient:
+            return Response(
+                {
+                    "success": False,
+                    "error": "user has no email address on file",
+                },
+                status=400,
+            )
 
         try:
             message = perform_calculations(user)
             send_mail(
                 subject="Mise à jour de votre terrain agricole",
                 message=message,
-                from_email="noreply@votreapp.com",
-                # recipient_list=[user.email]
-                recipient_list=[
-                    "makhkhas.zakaria@gmail.com",
-                    "contact.agrilogy@gmail.com",
-                ],
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[recipient],
+                fail_silently=False,
             )
-
+            user.last_notified = now()
+            user.save(update_fields=["last_notified"])
+            logger.info("Sent on-demand notification email to %s", recipient)
             return Response({"success": True, "message": "Email envoyé avec succès."})
 
-        except Exception as e:
-            return Response({"success": False, "error": str(e)}, status=500)
+        except Exception as exc:
+            logger.exception("Failed to send notification email to %s", recipient)
+            return Response({"success": False, "error": str(exc)}, status=500)
