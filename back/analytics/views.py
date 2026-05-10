@@ -108,24 +108,157 @@ class ActiveZonesView(APIView):
 
 
 class AlertsAPIView(APIView):
-    permission_classes = [IsAuthenticated]  # Ensure the user is authenticated
+    """List + create user alerts."""
+
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        alerts = Alert.objects.filter(user=request.user).order_by("-id")
-        serializer = AlertSerializer(alerts, many=True)
+        qs = Alert.objects.filter(user=request.user).order_by("-id")
+        sensor_key = request.query_params.get("sensor_key")
+        zone_id = request.query_params.get("zone_id")
+        if sensor_key:
+            qs = qs.filter(sensor_key=sensor_key)
+        if zone_id:
+            qs = qs.filter(zone_id=zone_id)
+        serializer = AlertSerializer(qs, many=True, context={"request": request})
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def post(self, request):
-        # Manually add the user to the request data before validation
-        data = request.data.copy()  # Make a copy of the request data
-        data["user"] = request.user.id  # Assign the authenticated user's ID
-
-        # Pass the updated data to the serializer
-        serializer = AlertSerializer(data=data)
+        data = request.data.copy()
+        data["user"] = request.user.id
+        serializer = AlertSerializer(data=data, context={"request": request})
         if serializer.is_valid():
-            serializer.save()
+            serializer.save(user=request.user)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class AlertDetailAPIView(APIView):
+    """Retrieve / update / delete a single alert (owned by the caller)."""
+
+    permission_classes = [IsAuthenticated]
+
+    def _get_object(self, request, pk):
+        try:
+            return Alert.objects.get(pk=pk, user=request.user)
+        except Alert.DoesNotExist:
+            return None
+
+    def get(self, request, pk):
+        alert = self._get_object(request, pk)
+        if alert is None:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(
+            AlertSerializer(alert, context={"request": request}).data,
+            status=status.HTTP_200_OK,
+        )
+
+    def put(self, request, pk):
+        return self._update(request, pk, partial=False)
+
+    def patch(self, request, pk):
+        return self._update(request, pk, partial=True)
+
+    def _update(self, request, pk, *, partial: bool):
+        alert = self._get_object(request, pk)
+        if alert is None:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        serializer = AlertSerializer(
+            alert, data=request.data, partial=partial, context={"request": request}
+        )
+        if serializer.is_valid():
+            serializer.save(user=request.user)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def delete(self, request, pk):
+        alert = self._get_object(request, pk)
+        if alert is None:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        alert.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class AlertsForGraphAPIView(APIView):
+    """
+    Plug-and-play endpoint a chart calls to learn which alerts apply to a
+    sensor_key (+ optional zone) and what their current state is. The
+    payload is shaped for direct consumption by recharts ReferenceLines.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from .alerts import SENSOR_KEY_REGISTRY, recent_triggers_for_user
+
+        sensor_key = request.query_params.get("sensor_key") or None
+        if sensor_key and sensor_key not in SENSOR_KEY_REGISTRY:
+            return Response(
+                {"detail": f"Unknown sensor_key '{sensor_key}'."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        zone_param = request.query_params.get("zone_id")
+        zone_id = int(zone_param) if zone_param and zone_param.isdigit() else None
+        rows = recent_triggers_for_user(
+            request.user, sensor_key=sensor_key, zone_id=zone_id
+        )
+        return Response({"alerts": rows}, status=status.HTTP_200_OK)
+
+
+class AlertSuggestAPIView(APIView):
+    """
+    GET /api/alerts/suggest/?sensor_key=<key>&zone_id=<id>
+
+    Returns a prefilled alert payload (name, threshold = mean of recent
+    readings, condition picked per sensor type, etc.) so the front-end
+    can drop the user into a half-completed create form when they click
+    "Ajouter une alerte" next to a graph.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from .alerts import SENSOR_KEY_REGISTRY, suggest_alert
+
+        sensor_key = request.query_params.get("sensor_key")
+        if not sensor_key:
+            return Response(
+                {"detail": "sensor_key is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if sensor_key not in SENSOR_KEY_REGISTRY:
+            return Response(
+                {"detail": f"Unknown sensor_key '{sensor_key}'."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        zone_param = request.query_params.get("zone_id")
+        zone_id = int(zone_param) if zone_param and zone_param.isdigit() else None
+
+        payload = suggest_alert(request.user, sensor_key=sensor_key, zone_id=zone_id)
+        if payload is None:
+            return Response(
+                {"detail": "Unable to build suggestion."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        return Response(payload, status=status.HTTP_200_OK)
+
+
+class AlertSensorKeysAPIView(APIView):
+    """Returns the registry of sensor keys the front can attach alerts to."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from .alerts import SENSOR_KEY_REGISTRY
+
+        return Response(
+            {
+                "keys": [
+                    {"key": key, "unit": meta["unit"], "label": meta["label"]}
+                    for key, meta in sorted(SENSOR_KEY_REGISTRY.items())
+                ]
+            }
+        )
 
 
 from django.utils import timezone
@@ -274,10 +407,9 @@ class NotificationsAndAlertsAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        rows = (
-            Notification.objects.filter(user=request.user)
-            .order_by("-notification_date")[:200]
-        )
+        rows = Notification.objects.filter(user=request.user).order_by(
+            "-notification_date"
+        )[:200]
 
         def serialize(n: Notification) -> dict:
             return {
@@ -329,10 +461,9 @@ class ZoneNotificationOutboundAPIView(APIView):
             # Nothing to do for non-email channels yet — accept and move on.
             return Response({"status": "noop"}, status=status.HTTP_202_ACCEPTED)
 
-        recipient = (
-            (data.get("contactEmail") or "").strip()
-            or (getattr(request.user, "email", "") or "").strip()
-        )
+        recipient = (data.get("contactEmail") or "").strip() or (
+            getattr(request.user, "email", "") or ""
+        ).strip()
         if not recipient:
             return Response(
                 {"detail": "no email address on user"},

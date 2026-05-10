@@ -1,37 +1,55 @@
-version: "3.9"
+## Agrilogy backend stack — Postgres, Redis, Django (web), Celery worker,
+## Celery beat, Mailpit, Adminer, optional Node bridge.
+##
+## Conventions:
+##   - `back/.env` is the source of truth for secrets. Hostnames that
+##     differ between host-mode and container-mode (POSTGRES_HOST,
+##     CELERY_BROKER_URL, EMAIL_HOST, …) are pinned here so the same
+##     .env keeps working both ways.
+##   - Every service runs from the same image (built once) and is
+##     specialised by its `command`.
+##   - Healthchecks gate the dependency graph so `docker compose up`
+##     finishes only when Django is actually serving.
 
 services:
-  # ---------- DB (PostgreSQL) ----------
+  # ---------- Postgres ------------------------------------------------
   agrydata:
     container_name: agrydata
     image: postgres:17
     env_file: ./back/.env
+    environment:
+      # `back/.env` may have these blank when developing on sqlite — the
+      # container needs concrete values so set sensible defaults here.
+      POSTGRES_DB: ${POSTGRES_DB:-agrilogy}
+      POSTGRES_USER: ${POSTGRES_USER:-agrilogy}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agrilogy}
     ports:
       - "5432:5432"
     volumes:
       - data_database:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-agrilogy}"]
       interval: 2s
       timeout: 5s
-      retries: 20
+      retries: 30
     restart: unless-stopped
     networks: [agro]
 
-  # ---------- ADMINER ----------
+  # ---------- Adminer (DB browser at http://localhost:8080) -----------
   agryadminer:
     container_name: agryadminer
     image: adminer
     environment:
-      - ADMINER_DEFAULT_SERVER=agrydata
+      ADMINER_DEFAULT_SERVER: agrydata
     ports:
       - "8080:8080"
     depends_on:
-      - agrydata
+      agrydata:
+        condition: service_healthy
     restart: unless-stopped
     networks: [agro]
 
-  # ---------- MAILPIT (local SMTP capture; web UI on :8025, SMTP on :1025) ----------
+  # ---------- Mailpit (SMTP capture; UI :8025, SMTP :1025) ------------
   mailpit:
     container_name: mailpit
     image: axllent/mailpit:latest
@@ -41,7 +59,7 @@ services:
     restart: unless-stopped
     networks: [agro]
 
-  # ---------- REDIS ----------
+  # ---------- Redis ---------------------------------------------------
   redis:
     container_name: redis
     image: redis:7-alpine
@@ -49,14 +67,14 @@ services:
       - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      retries: 5
-      start_period: 30s
-      timeout: 5s
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
     restart: unless-stopped
     networks: [agro]
 
-  # ---------- NODE SERVER (shared requests.json writer/reader) ----------
+  # ---------- Optional Node bridge (writes shared_data/requests.json) -
   agryserver:
     container_name: agryserver
     build:
@@ -67,61 +85,111 @@ services:
     volumes:
       - ./shared_data:/shared_data:rw
     restart: unless-stopped
-    networks: [agro]  
+    networks: [agro]
 
-  # ---------- BACK (Django) ----------
+  # ---------- Django (web) --------------------------------------------
   agrybackend:
     container_name: agrybackend
+    image: agriback:latest
     build:
       context: ./back
       dockerfile: Dockerfile
-    image: agriback:v1.0
     env_file: ./back/.env
+    environment:
+      USE_POSTGRES: "True"
+      POSTGRES_HOST: agrydata
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-agrilogy}
+      POSTGRES_USER: ${POSTGRES_USER:-agrilogy}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agrilogy}
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      # Default email goes to Mailpit when running compose; override in
+      # back/.env to point at Gmail in production.
+      EMAIL_HOST: ${EMAIL_HOST:-mailpit}
+      EMAIL_PORT: ${EMAIL_PORT:-1025}
+      DJANGO_RUN_MODE: web
+    command: ["bash", "/code/docker-entrypoint.sh", "web"]
     ports:
       - "8000:8000"
-    depends_on:
-      agrydata:
-        condition: service_started
-      redis:
-        condition: service_healthy
-    # ✅ bind mount a folder that lives inside your WSL project
     volumes:
       - ./back:/code:delegated
       - ./shared_data:/shared:rw
-    restart: unless-stopped
-    networks: [agro]
-
-  # ---------- CELERY BEAT ----------
-  celery-beat:
-    container_name: celery-beat
-    build:
-      context: ./back
-      dockerfile: Dockerfile
-    command: >
-      celery -A agriBack beat --loglevel=info
-      --scheduler django_celery_beat.schedulers:DatabaseScheduler
-    env_file: ./back/.env
     depends_on:
+      agrydata:
+        condition: service_healthy
       redis:
         condition: service_healthy
-      agrybackend:
-        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/admin/login/').status<500 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     restart: unless-stopped
     networks: [agro]
 
-  # ---------- CELERY WORKER ----------
+  # ---------- Celery worker -------------------------------------------
   celery-worker:
     container_name: celery-worker
+    image: agriback:latest
     build:
       context: ./back
       dockerfile: Dockerfile
-    command: celery -A agriBack worker --loglevel=info --concurrency=1
     env_file: ./back/.env
+    environment:
+      USE_POSTGRES: "True"
+      POSTGRES_HOST: agrydata
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-agrilogy}
+      POSTGRES_USER: ${POSTGRES_USER:-agrilogy}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agrilogy}
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      EMAIL_HOST: ${EMAIL_HOST:-mailpit}
+      EMAIL_PORT: ${EMAIL_PORT:-1025}
+      DJANGO_RUN_MODE: worker
+    command: ["bash", "/code/docker-entrypoint.sh", "worker"]
+    volumes:
+      - ./back:/code:delegated
+      - ./shared_data:/shared:rw
     depends_on:
+      agrybackend:
+        condition: service_healthy
       redis:
         condition: service_healthy
+    restart: unless-stopped
+    networks: [agro]
+
+  # ---------- Celery beat ---------------------------------------------
+  celery-beat:
+    container_name: celery-beat
+    image: agriback:latest
+    build:
+      context: ./back
+      dockerfile: Dockerfile
+    env_file: ./back/.env
+    environment:
+      USE_POSTGRES: "True"
+      POSTGRES_HOST: agrydata
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-agrilogy}
+      POSTGRES_USER: ${POSTGRES_USER:-agrilogy}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agrilogy}
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      EMAIL_HOST: ${EMAIL_HOST:-mailpit}
+      EMAIL_PORT: ${EMAIL_PORT:-1025}
+      DJANGO_RUN_MODE: beat
+    command: ["bash", "/code/docker-entrypoint.sh", "beat"]
+    volumes:
+      - ./back:/code:delegated
+      - ./shared_data:/shared:rw
+    depends_on:
       agrybackend:
-        condition: service_started
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     restart: unless-stopped
     networks: [agro]
 

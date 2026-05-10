@@ -78,7 +78,6 @@ class Notification(models.Model):
 
 
 class Alert(models.Model):
-
     GREATER_THAN = ">"
     LESS_THAN = "<"
     EQUAL_TO = "="
@@ -118,14 +117,37 @@ class Alert(models.Model):
         max_length=50,
         choices=ALERT_CHOICES,
     )
-    description = models.TextField(help_text="Detailed description of the alert.")
+    description = models.TextField(
+        help_text="Detailed description of the alert.", blank=True, default=""
+    )
 
     condition = models.CharField(
         max_length=1,
         choices=CONDITION_CHOICES,
         help_text="The condition for this alert (>, <, =)",
     )
-    condition_nbr = models.DecimalField(max_digits=7, decimal_places=0)
+    condition_nbr = models.DecimalField(max_digits=10, decimal_places=2)
+
+    # Plug-and-play fields: a stable sensor_key lets any chart on the front
+    # look up the alerts that apply to it without caring about the legacy
+    # `type` enum. zone is optional — when null the alert is user-wide.
+    sensor_key = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text="Stable sensor identifier for chart overlays (e.g. 'temperature_weather').",
+    )
+    zone = models.ForeignKey(
+        "Zone",
+        on_delete=models.CASCADE,
+        related_name="zone_alerts",
+        null=True,
+        blank=True,
+    )
+    is_active = models.BooleanField(default=True)
+    last_triggered_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True, null=True, blank=True)
 
     user = models.ForeignKey(
         User,
@@ -1255,6 +1277,20 @@ class ActiveGraph(models.Model):
 
     def __str__(self):
         return f"ActiveGraph for User {self.user.username} - Zone: {self.zone.name}"
+
+
+# Auto-toggle every chart ON for any newly-created Zone so the dashboard
+# renders out-of-the-box. Without this row, ActiveGraphSelfAPIView 404s
+# and the front shows an empty page until someone manually flips the
+# fields in /admin/. ActiveGraph fields all default to True, so simply
+# creating the row is enough.
+@receiver(post_save, sender=Zone)
+def create_active_graph_for_zone(sender, instance, created, **kwargs):
+    if not created:
+        return
+    ActiveGraph.objects.get_or_create(user=instance.user, zone=instance)
+    GraphName.objects.get_or_create(user=instance.user, zone=instance)
+    SensorColor.objects.get_or_create(user=instance.user, zone=instance)
 
 
 from django.conf import settings
