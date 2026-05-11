@@ -1,3 +1,12 @@
+# [1.3.0](https://github.com/AgriLogy/agrilogy-back/compare/v1.2.0...v1.3.0) (2026-05-11)
+
+
+### Features
+
+* **agronomy:** consolidate ET0 + irrigation math into one expert-own… ([#14](https://github.com/AgriLogy/agrilogy-back/issues/14)) ([7956830](https://github.com/AgriLogy/agrilogy-back/commit/79568306123bb42f32499fe519e421b3ca0465db))
+* **agronomy:** consolidate ET0 + irrigation math into one expert-owned module ([4bb0280](https://github.com/AgriLogy/agrilogy-back/commit/4bb0280cef0e71450c956a984ab2f26157560a6d)), closes [hi#level](https://github.com/hi/issues/level)
+* **alerts:** plug-and-play alert module + dev seed scripts + containerised stack ([c8855fc](https://github.com/AgriLogy/agrilogy-back/commit/c8855fc46711841ad2d000548d0d7e9669785e4e))
+
 # [1.2.0](https://github.com/AgriLogy/agrilogy-back/compare/v1.1.0...v1.2.0) (2026-05-08)
 
 
