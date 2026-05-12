@@ -12,15 +12,25 @@ from django.test import TestCase
 from django.utils import timezone
 
 from agriBack.agronomy import (
+    CLOUD_FACTOR_MIN,
+    CLOUD_RATIO_MAX,
+    CLOUD_RATIO_MIN,
     DEFAULT_KC,
+    LST_DEG_MOROCCO,
     actual_vapor_pressure_kpa,
+    cloudiness_ratio,
     compute_et0_for_zone,
+    equation_of_time_minutes,
+    extraterrestrial_radiation_hourly_mjm2h,
     field_snapshot,
+    is_daytime,
     penman_monteith_hourly_mm,
     psychrometric_constant_kpa_per_c,
     saturation_vapor_pressure_kpa,
     slope_svp_kpa_per_c,
+    solar_time_correction_hours,
     vpd_kpa,
+    wind_speed_at_2m,
     wperm2_to_mjm2_per_hour,
 )
 from analytics.models import (
@@ -76,15 +86,19 @@ class PureMathTests(TestCase):
         self.assertAlmostEqual(saturation_vapor_pressure_kpa(20.0), 2.339, places=2)
         self.assertAlmostEqual(saturation_vapor_pressure_kpa(40.0), 7.384, places=1)
 
-    def test_actual_vapor_pressure_clips_rh(self):
+    def test_actual_vapor_pressure_clamps_rh_to_one_to_hundred(self):
+        # Agronomist review (2026-05-10) asks for a [1, 100] RH clamp so
+        # bad inputs (sensor stuck at 0, or above 100) stay in physical
+        # range. RH=0 maps to 1% of es, not zero, to avoid an inflated VPD.
         es = saturation_vapor_pressure_kpa(20.0)
-        self.assertEqual(actual_vapor_pressure_kpa(20.0, 0), 0.0)
-        self.assertAlmostEqual(actual_vapor_pressure_kpa(20.0, 100), es, places=4)
-        # >100% RH clamped, not a programming error
         self.assertAlmostEqual(
-            actual_vapor_pressure_kpa(20.0, 150), es, places=4
+            actual_vapor_pressure_kpa(20.0, 0.0), es * 0.01, places=4
         )
-        self.assertAlmostEqual(actual_vapor_pressure_kpa(20.0, -10), 0.0, places=4)
+        self.assertAlmostEqual(
+            actual_vapor_pressure_kpa(20.0, -50.0), es * 0.01, places=4
+        )
+        self.assertAlmostEqual(actual_vapor_pressure_kpa(20.0, 100.0), es, places=4)
+        self.assertAlmostEqual(actual_vapor_pressure_kpa(20.0, 150.0), es, places=4)
 
     def test_vpd_never_negative(self):
         self.assertGreaterEqual(vpd_kpa(15.0, 80.0), 0.0)
@@ -123,6 +137,134 @@ class PureMathTests(TestCase):
         # Should not be negative and should be small
         self.assertGreaterEqual(result["et0_mm_per_h"], 0.0)
         self.assertLess(result["et0_mm_per_h"], 0.2)
+        # Daytime now derived from Rs, not Rn: Rs=0 -> nighttime regime.
+        self.assertFalse(result["daytime"])
+
+
+# ---------------------------------------------------------------------------
+# 1b. Agronomist-review corrections (2026-05-10)
+# ---------------------------------------------------------------------------
+
+
+class AgronomistReviewCorrectionsTests(TestCase):
+    """One named test per clause of the agronomist's review, so a future
+    refactor that drops a clause surfaces as a single, attributable failure."""
+
+    def test_wind_at_2m_is_identity_when_sensor_already_at_2m(self):
+        self.assertEqual(wind_speed_at_2m(3.0, 2.0), 3.0)
+
+    def test_wind_at_2m_clamps_negative(self):
+        self.assertEqual(wind_speed_at_2m(-1.0, 2.0), 0.0)
+
+    def test_wind_at_10m_projects_via_fao_eq_47(self):
+        # FAO eq. 47: u2 = u_z * 4.87 / ln(67.8*z - 5.42); at z=10 m the
+        # factor is approximately 0.748.
+        from math import log
+
+        expected = 5.0 * 4.87 / log(67.8 * 10.0 - 5.42)
+        self.assertAlmostEqual(wind_speed_at_2m(5.0, 10.0), expected, places=6)
+
+    def test_equation_of_time_stays_within_seventeen_minutes(self):
+        for doy in range(1, 367):
+            self.assertLess(abs(equation_of_time_minutes(doy)), 17.0)
+
+    def test_solar_time_correction_at_zone_meridian_is_just_eot(self):
+        # At Lloc == Lst the 4*(Lloc - Lst) term vanishes and only EoT
+        # contributes; converting min -> hours gives EoT/60.
+        correction = solar_time_correction_hours(80, lon_deg=15.0, lst_deg=15.0)
+        self.assertAlmostEqual(
+            correction, equation_of_time_minutes(80) / 60.0, places=9
+        )
+
+    def test_solar_time_correction_negative_for_casablanca(self):
+        # Casablanca lon=-7.6 in UTC+1 (Lst=+15): solar noon happens
+        # ~1.5 h AFTER local clock noon, so the local->solar correction
+        # must be roughly -1.5 h. Pick April 15 (EoT ~= 0) to isolate
+        # the longitude term.
+        correction = solar_time_correction_hours(
+            105, lon_deg=-7.6, lst_deg=LST_DEG_MOROCCO
+        )
+        self.assertAlmostEqual(correction, -1.507, delta=0.05)
+
+    def test_extraterrestrial_radiation_zero_at_local_midnight(self):
+        ra = extraterrestrial_radiation_hourly_mjm2h(
+            lat_deg=33.57, lon_deg=-7.6, day_of_year=172, local_clock_hour=0.0
+        )
+        self.assertEqual(ra, 0.0)
+
+    def test_extraterrestrial_radiation_symmetric_around_solar_noon(self):
+        # One hour before vs. one hour after solar noon yields equal Ra,
+        # to numerical precision, when integrated symmetrically.
+        lat, lon, doy = 33.57, -7.6, 172
+        solar_noon = 12.0 - solar_time_correction_hours(
+            doy, lon_deg=lon, lst_deg=LST_DEG_MOROCCO
+        )
+        ra_before = extraterrestrial_radiation_hourly_mjm2h(
+            lat_deg=lat,
+            lon_deg=lon,
+            day_of_year=doy,
+            local_clock_hour=solar_noon - 1,
+        )
+        ra_after = extraterrestrial_radiation_hourly_mjm2h(
+            lat_deg=lat,
+            lon_deg=lon,
+            day_of_year=doy,
+            local_clock_hour=solar_noon + 1,
+        )
+        self.assertAlmostEqual(ra_before, ra_after, places=6)
+
+    def test_cloudiness_ratio_clamped_to_03_to_10(self):
+        # Heavy overcast: physical Rs/Rso might dip below 0.3 but the
+        # cloudiness function needs the floor to stay positive.
+        self.assertEqual(cloudiness_ratio(0.1, 5.0), CLOUD_RATIO_MIN)
+        # Normal mid-day.
+        self.assertAlmostEqual(cloudiness_ratio(2.5, 5.0), 0.5, places=6)
+        # Sensor bias or snow can push above 1.
+        self.assertEqual(cloudiness_ratio(12.0, 5.0), CLOUD_RATIO_MAX)
+
+    def test_cloudiness_ratio_uses_night_floor_when_rso_zero(self):
+        # Rso==0 (deep night) -> ratio collapses to the 0.3 floor so
+        # the cloud function 1.35*ratio - 0.35 stays positive.
+        self.assertEqual(cloudiness_ratio(0.0, 0.0), CLOUD_RATIO_MIN)
+        # The floor produces a cloud_term of 0.055, comfortably above the
+        # defensive minimum.
+        self.assertGreater(1.35 * CLOUD_RATIO_MIN - 0.35, CLOUD_FACTOR_MIN - 1e-9)
+
+    def test_daytime_detected_by_solar_radiation(self):
+        # Day iff Rs>0, not Rn>0. A cool, humid hour with no sun must
+        # stay in the nighttime regime regardless of what Rn does.
+        self.assertTrue(is_daytime(0.1))
+        self.assertFalse(is_daytime(0.0))
+        self.assertFalse(is_daytime(-1.0))
+
+    def test_penman_monteith_uses_wired_ra_for_cloudiness(self):
+        # With Ra provided, Rs/Rso falls inside the [0.3, 1.0] band and
+        # cloud_term shifts. We don't pin the exact ET0 value but assert
+        # that supplying Ra changes the result vs. the heuristic.
+        common = dict(
+            temp_c=28.0,
+            rh_pct=45.0,
+            wind_ms=2.0,
+            pressure_kpa=101.0,
+            rs_mjm2h=2.5,
+        )
+        with_ra = penman_monteith_hourly_mm(**common, ra_mjm2h=3.5)
+        no_ra = penman_monteith_hourly_mm(**common, ra_mjm2h=None)
+        self.assertNotAlmostEqual(
+            with_ra["et0_mm_per_h"], no_ra["et0_mm_per_h"], places=6
+        )
+
+    def test_penman_monteith_negative_numerator_clamped_to_zero(self):
+        # Cold, humid, no sun, slow wind: the bare formula would go
+        # negative; the agronomist asks for a hard zero floor.
+        result = penman_monteith_hourly_mm(
+            temp_c=5.0,
+            rh_pct=98.0,
+            wind_ms=0.5,
+            pressure_kpa=101.0,
+            rs_mjm2h=0.0,
+        )
+        self.assertEqual(result["et0_mm_per_h"], 0.0)
 
 
 # ---------------------------------------------------------------------------
@@ -242,9 +384,7 @@ class FieldSnapshotTests(TestCase):
         SoilTemperatureMedium.objects.create(
             zone=zone, user=self.user, value=22.0, timestamp=self.now
         )
-        PhSoil.objects.create(
-            zone=zone, user=self.user, value=6.7, timestamp=self.now
-        )
+        PhSoil.objects.create(zone=zone, user=self.user, value=6.7, timestamp=self.now)
         NpkSensor.objects.create(
             zone=zone,
             user=self.user,
