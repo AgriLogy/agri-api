@@ -1,3 +1,11 @@
+## [1.3.1](https://github.com/AgriLogy/agrilogy-back/compare/v1.3.0...v1.3.1) (2026-05-12)
+
+
+### Bug Fixes
+
+* **agronomy:** apply 2026-05-10 review corrections to ET0 hourly math ([91b2e97](https://github.com/AgriLogy/agrilogy-back/commit/91b2e970a16331f8144b7efc9e4eaaaf23f930ff))
+* **agronomy:** apply 2026-05-10 review corrections to ET0 hourly math ([#19](https://github.com/AgriLogy/agrilogy-back/issues/19)) ([2ac9ad9](https://github.com/AgriLogy/agrilogy-back/commit/2ac9ad9430138f05d35e1ce587354cbf8ae9e750))
+
 # [1.3.0](https://github.com/AgriLogy/agrilogy-back/compare/v1.2.0...v1.3.0) (2026-05-11)
 
 
