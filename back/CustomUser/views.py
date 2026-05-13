@@ -179,20 +179,17 @@ class AdminSignInAPIView(APIView):
 
 
 class UserListView(APIView):
-    # permission_classes = [IsAdminUser]
-    permission_classes = [AllowAny]
+    permission_classes = [IsAdminUser]
 
     def get(self, request):
-        # if not request.user.is_staff:  # Double-check admin status
-        #     return Response({'error': 'Role non valid'}, status=status.HTTP_401_UNAUTHORIZED)
-
-        # Exclude the logged-in admin from the returned data
-        users = CustomUser.objects.exclude(id=request.user.id)
+        users = CustomUser.objects.exclude(id=request.user.id).order_by("-date_joined")
         serializer = AdminUserSerializer(users, many=True)
         return Response(serializer.data)
 
 
 class ModifyUserView(APIView):
+    permission_classes = [IsAdminUser]
+
     def get(self, request, *args, **kwargs):
         username = request.query_params.get("username")
         if not username:

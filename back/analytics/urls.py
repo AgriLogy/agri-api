@@ -1,7 +1,10 @@
 from django.urls import include, path
-from rest_framework.routers import DefaultRouter
 
 from .adminviews import *
+from .manager_affirmation import (
+    ManagerAffirmationDecisionAPIView,
+    ManagerAffirmationListCreateAPIView,
+)
 from .sensor_registry import generated_views
 from .views import *
 
@@ -13,7 +16,7 @@ urlpatterns = [
         ActiveGraphSelfAPIView.as_view(),
         name="active-graph-self",
     ),
-    # Admin
+    # Legacy admin endpoints (kept for the in-flight frontend migration)
     path(
         "active-graph/<str:username>/<int:zone_id>/",
         ActiveGraphAdminAPIView.as_view(),
@@ -21,6 +24,19 @@ urlpatterns = [
     ),
     path(
         "active-zones/<str:username>/", ActiveZonesView.as_view(), name="active-zones"
+    ),
+    # New admin tree
+    path("admin/", include("analytics.admin_urls")),
+    # Manager affirmations
+    path(
+        "manager-affirmations/",
+        ManagerAffirmationListCreateAPIView.as_view(),
+        name="manager-affirmations",
+    ),
+    path(
+        "manager-affirmations/<int:pk>/<str:action>/",
+        ManagerAffirmationDecisionAPIView.as_view(),
+        name="manager-affirmation-decision",
     ),
     path("alert/", AlertsAPIView.as_view(), name="user-alert"),
     path("alert/<int:pk>/", AlertDetailAPIView.as_view(), name="user-alert-detail"),
