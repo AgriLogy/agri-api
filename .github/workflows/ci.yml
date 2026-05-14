@@ -50,11 +50,18 @@ jobs:
           ALLOWED_HOSTS: "*"
           USE_POSTGRES: "False"
 
-      - name: Django tests
-        run: uv run python manage.py test --noinput
+      # We run pytest (pytest-django) because the project's test
+      # configuration lives in pyproject.toml's [tool.pytest.ini_options]
+      # and several test files rely on pytest fixtures (admin_user,
+      # admin_client, zone_factory, …) declared in `conftest.py`.
+      # pytest-django picks up legacy `django.test.TestCase`-based tests
+      # too, so this is a superset of `manage.py test`.
+      - name: Backend tests (pytest)
+        run: uv run pytest CustomUser/ analytics/ -v
         env:
           DJANGO_SETTINGS_MODULE: agriBack.settings
           SECRET_KEY: ci-placeholder-secret-key
           DEBUG: "True"
           ALLOWED_HOSTS: "*"
           USE_POSTGRES: "False"
+          EMAIL_BACKEND: "django.core.mail.backends.locmem.EmailBackend"

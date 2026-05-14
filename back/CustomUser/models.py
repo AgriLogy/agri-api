@@ -4,6 +4,7 @@ from django.contrib.auth.models import (
     PermissionsMixin,
 )
 from django.db import models
+from django.utils import timezone
 
 
 class CustomUserManager(BaseUserManager):
@@ -56,10 +57,22 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         help_text="When the most recent notification email was dispatched.",
     )
 
+    date_joined = models.DateTimeField(
+        default=timezone.now,
+        help_text="When the user account was created.",
+    )
+
     objects = CustomUserManager()
 
     USERNAME_FIELD = "username"
     REQUIRED_FIELDS = ["email"]
+
+    class Meta:
+        ordering = ["-date_joined"]
+        indexes = [
+            models.Index(fields=["-date_joined"]),
+            models.Index(fields=["is_active"]),
+        ]
 
     def __str__(self):
         return self.username

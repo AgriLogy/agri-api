@@ -43,9 +43,7 @@ def _format_message(user, snapshot: dict[str, Any]) -> str:
     zone_label = snapshot["zone_name"] or "votre zone"
 
     last_irrig_at = snapshot.get("last_irrigation_at")
-    last_irrig_str = (
-        last_irrig_at.strftime("%d/%m/%Y %H:%M") if last_irrig_at else "—"
-    )
+    last_irrig_str = last_irrig_at.strftime("%d/%m/%Y %H:%M") if last_irrig_at else "—"
     last_irrig_volume = (
         f"{snapshot['last_irrigation_l']:.0f} L"
         if snapshot.get("last_irrigation_l") is not None

@@ -1317,3 +1317,90 @@ class VPDWeather(models.Model):
 
     def __str__(self):
         return f"VPD ({self.value} kPa) at {self.timestamp} in Zone {self.zone_id}"
+
+
+# ---------------------------------------------------------------------------
+# Admin-side: per-user sensor unit preference + manager affirmation workflow
+# ---------------------------------------------------------------------------
+
+
+class UserSensorUnitPreference(models.Model):
+    """Persisted choice of unit per sensor_key for a given user.
+
+    Replaces the localStorage-only path in `SuperAdminUsersSettings` so
+    units stay consistent across devices.
+    """
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="sensor_unit_preferences",
+    )
+    sensor_key = models.CharField(max_length=64)
+    unit = models.CharField(max_length=32)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = [("user", "sensor_key")]
+        indexes = [models.Index(fields=["user", "sensor_key"])]
+
+    def __str__(self):
+        return f"{self.user_id}:{self.sensor_key}={self.unit}"
+
+
+class ManagerAffirmation(models.Model):
+    """A pending decision that a non-admin user needs an admin to approve.
+
+    `payload` carries the action-specific data (zone id, new param
+    values, etc.) — JSON, so new action types add without a migration.
+    """
+
+    STATUS_PENDING = "pending"
+    STATUS_APPROVED = "approved"
+    STATUS_REJECTED = "rejected"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_APPROVED, "Approved"),
+        (STATUS_REJECTED, "Rejected"),
+    ]
+
+    ACTION_PARAM_CHANGE = "zone_params_change"
+    ACTION_USER_REACTIVATE = "user_reactivate"
+    ACTION_KC_PERIODS = "kc_periods_change"
+    ACTION_CHOICES = [
+        (ACTION_PARAM_CHANGE, "Zone params change"),
+        (ACTION_KC_PERIODS, "Kc periods change"),
+        (ACTION_USER_REACTIVATE, "User reactivate"),
+    ]
+
+    requested_by = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="affirmations_requested",
+    )
+    action = models.CharField(max_length=64, choices=ACTION_CHOICES)
+    payload = models.JSONField(default=dict, blank=True)
+    status = models.CharField(
+        max_length=16, choices=STATUS_CHOICES, default=STATUS_PENDING
+    )
+    decided_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        related_name="affirmations_decided",
+        null=True,
+        blank=True,
+    )
+    decided_at = models.DateTimeField(null=True, blank=True)
+    decision_note = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["status"]),
+            models.Index(fields=["requested_by"]),
+        ]
+
+    def __str__(self):
+        return f"Affirmation #{self.pk} ({self.action}/{self.status})"
