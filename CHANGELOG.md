@@ -1,3 +1,11 @@
+# [1.4.0](https://github.com/AgriLogy/agrilogy-back/compare/v1.3.1...v1.4.0) (2026-05-14)
+
+
+### Features
+
+* **admin:** backoffice CRUD + manager affirmation ([#20](https://github.com/AgriLogy/agrilogy-back/issues/20)) ([ade25ad](https://github.com/AgriLogy/agrilogy-back/commit/ade25adea5adc5d50b03641beba61770400ac32a))
+* **admin:** backoffice CRUD endpoints + manager affirmation + tests ([df549f2](https://github.com/AgriLogy/agrilogy-back/commit/df549f2553ecfc31b480a85411c1fd2f0e9f217e))
+
 ## [1.3.1](https://github.com/AgriLogy/agrilogy-back/compare/v1.3.0...v1.3.1) (2026-05-12)
 
 
