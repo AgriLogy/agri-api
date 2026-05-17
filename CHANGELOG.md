@@ -1,3 +1,5 @@
+## [1.4.1](https://github.com/AgriLogy/agrilogy-back/compare/v1.4.0...v1.4.1) (2026-05-17)
+
 # [1.4.0](https://github.com/AgriLogy/agrilogy-back/compare/v1.3.1...v1.4.0) (2026-05-14)
 
 
