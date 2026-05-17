@@ -3,12 +3,14 @@ DEBUG=
 ALLOWED_HOSTS
 CORS_ALLOWED_ORIGINS=
 CSRF_TRUSTED_ORIGINS=
-USE_POSTGRES=
-POSTGRES_DB=
-POSTGRES_USER=
+USE_POSTGRES=True
+# Supabase Session pooler (eu-central-1). Find these in
+# Supabase Studio -> Project -> Connect -> Session pooler.
+POSTGRES_DB=postgres
+POSTGRES_USER=postgres.<project-ref>
 POSTGRES_PASSWORD=
-POSTGRES_HOST=
-POSTGRES_PORT=
+POSTGRES_HOST=aws-0-eu-central-1.pooler.supabase.com
+POSTGRES_PORT=5432
 CELERY_SCHEDULE_MODE=
 
 # ----- Email (notifications) ---------------------------------------------------

@@ -1,54 +1,18 @@
-## Agrilogy backend stack — Postgres, Redis, Django (web), Celery worker,
-## Celery beat, Mailpit, Adminer, optional Node bridge.
+## Agrilogy backend stack — Supabase-hosted Postgres + local Redis, Django
+## (web), Celery worker, Celery beat, Mailpit, optional Node bridge.
 ##
 ## Conventions:
-##   - `back/.env` is the source of truth for secrets. Hostnames that
-##     differ between host-mode and container-mode (POSTGRES_HOST,
-##     CELERY_BROKER_URL, EMAIL_HOST, …) are pinned here so the same
-##     .env keeps working both ways.
+##   - `back/.env` is the source of truth for secrets, including the
+##     Supabase POSTGRES_* values (Session pooler endpoint).
 ##   - Every service runs from the same image (built once) and is
 ##     specialised by its `command`.
 ##   - Healthchecks gate the dependency graph so `docker compose up`
 ##     finishes only when Django is actually serving.
+##
+## Postgres lives on Supabase (no local container). Browse it via the
+## Supabase Studio dashboard instead of Adminer.
 
 services:
-  # ---------- Postgres ------------------------------------------------
-  agrydata:
-    container_name: agrydata
-    image: postgres:17
-    env_file: ./back/.env
-    environment:
-      # `back/.env` may have these blank when developing on sqlite — the
-      # container needs concrete values so set sensible defaults here.
-      POSTGRES_DB: ${POSTGRES_DB:-agrilogy}
-      POSTGRES_USER: ${POSTGRES_USER:-agrilogy}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agrilogy}
-    ports:
-      - "5432:5432"
-    volumes:
-      - data_database:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-agrilogy}"]
-      interval: 2s
-      timeout: 5s
-      retries: 30
-    restart: unless-stopped
-    networks: [agro]
-
-  # ---------- Adminer (DB browser at http://localhost:8080) -----------
-  agryadminer:
-    container_name: agryadminer
-    image: adminer
-    environment:
-      ADMINER_DEFAULT_SERVER: agrydata
-    ports:
-      - "8080:8080"
-    depends_on:
-      agrydata:
-        condition: service_healthy
-    restart: unless-stopped
-    networks: [agro]
-
   # ---------- Mailpit (SMTP capture; UI :8025, SMTP :1025) ------------
   mailpit:
     container_name: mailpit
@@ -96,12 +60,7 @@ services:
       dockerfile: Dockerfile
     env_file: ./back/.env
     environment:
-      USE_POSTGRES: "True"
-      POSTGRES_HOST: agrydata
-      POSTGRES_PORT: "5432"
-      POSTGRES_DB: ${POSTGRES_DB:-agrilogy}
-      POSTGRES_USER: ${POSTGRES_USER:-agrilogy}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agrilogy}
+      # Postgres connection comes from back/.env (Supabase pooler).
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
       # Default email goes to Mailpit when running compose; override in
@@ -116,8 +75,6 @@ services:
       - ./back:/code:delegated
       - ./shared_data:/shared:rw
     depends_on:
-      agrydata:
-        condition: service_healthy
       redis:
         condition: service_healthy
     healthcheck:
@@ -138,12 +95,7 @@ services:
       dockerfile: Dockerfile
     env_file: ./back/.env
     environment:
-      USE_POSTGRES: "True"
-      POSTGRES_HOST: agrydata
-      POSTGRES_PORT: "5432"
-      POSTGRES_DB: ${POSTGRES_DB:-agrilogy}
-      POSTGRES_USER: ${POSTGRES_USER:-agrilogy}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agrilogy}
+      # Postgres connection comes from back/.env (Supabase pooler).
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
       EMAIL_HOST: ${EMAIL_HOST:-mailpit}
@@ -170,12 +122,7 @@ services:
       dockerfile: Dockerfile
     env_file: ./back/.env
     environment:
-      USE_POSTGRES: "True"
-      POSTGRES_HOST: agrydata
-      POSTGRES_PORT: "5432"
-      POSTGRES_DB: ${POSTGRES_DB:-agrilogy}
-      POSTGRES_USER: ${POSTGRES_USER:-agrilogy}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agrilogy}
+      # Postgres connection comes from back/.env (Supabase pooler).
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
       EMAIL_HOST: ${EMAIL_HOST:-mailpit}
@@ -195,6 +142,3 @@ services:
 
 networks:
   agro:
-
-volumes:
-  data_database:

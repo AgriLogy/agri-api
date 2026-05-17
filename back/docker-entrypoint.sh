@@ -72,17 +72,15 @@ PY
 }
 
 # --- Migrations -------------------------------------------------------------
-# Only the web container owns migrations; worker/beat just wait on it.
-run_migrations() {
-  log "Running migrations ..."
-  python manage.py migrate --noinput
-}
+# Schema is owned by the agrilogy-db repo (Alembic). Django no longer runs
+# `migrate` on container boot — see /Users/mks/agrilogy/agrilogy-db.
+# To bootstrap a fresh Supabase project: `make upgrade-dev` in agrilogy-db
+# BEFORE bringing this stack up.
 
 # --- Roles ------------------------------------------------------------------
 case "$ROLE" in
   web)
     wait_for_postgres
-    run_migrations
     log "Seeding dev users (idempotent; SEED_DEV_USERS=$SEED_DEV_USERS_DEFAULT)"
     python seed_dev_users.py || log "  (user seed skipped or failed; continuing)"
     log "Backfilling dev sensor data (idempotent; SEED_DEV_DATA=${SEED_DEV_DATA:-true})"
