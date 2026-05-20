@@ -1,3 +1,11 @@
+# [1.5.0](https://github.com/AgriLogy/agrilogy-back/compare/v1.4.2...v1.5.0) (2026-05-20)
+
+
+### Features
+
+* **agronomy:** Dr/RAW-based irrigation decision per agronomist spec ([6b72c58](https://github.com/AgriLogy/agrilogy-back/commit/6b72c58d8c105ac6b28c29d34a5eff456f4015d8))
+* **agronomy:** Dr/RAW-based irrigation decision per agronomist spec ([#32](https://github.com/AgriLogy/agrilogy-back/issues/32)) ([67d8171](https://github.com/AgriLogy/agrilogy-back/commit/67d8171b4a4ef917d755c80ac6885fcb737a8a6c))
+
 ## [1.4.2](https://github.com/AgriLogy/agrilogy-back/compare/v1.4.1...v1.4.2) (2026-05-20)
 
 
