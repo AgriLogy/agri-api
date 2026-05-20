@@ -31,7 +31,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta
 from math import acos, cos, exp, log, pi, radians, sin, sqrt, tan
-from typing import Any
+from typing import Any, Iterable
 from zoneinfo import ZoneInfo
 
 from django.db.models import Avg
@@ -54,6 +54,37 @@ DEFAULT_KC = 1.0
 # Default critical soil-moisture threshold (%) below which irrigation is
 # recommended. TODO(expert): pull from per-zone configuration.
 DEFAULT_CRITICAL_SOIL_MOISTURE_PCT = 20.0
+
+# ---- Water-balance defaults (agronomist spec, doc § 2.2 / § 4) ------------
+
+# α — fraction of rainfall stored in the root zone (FAO-56 effective rain).
+# Calibrate per soil + intensity; 0.8 is a defensible mid-band.
+DEFAULT_RAINFALL_EFFICIENCY = 0.8
+
+# Net→gross irrigation losses. Drip ≈ 0.9, sprinkler ≈ 0.75; pick the mid-band
+# until the zone declares its method.
+DEFAULT_IRRIGATION_EFFICIENCY = 0.85
+
+# Kr — canopy density coefficient. 1.0 = full cover; lower for partial cover.
+DEFAULT_CANOPY_DENSITY_KR = 1.0
+
+# Above this single-shot duration the daily volume is split into
+# morning + evening to reduce runoff (doc § 4.1).
+DEFAULT_DURATION_SPLIT_THRESHOLD_HR = 4.0
+
+# Doc § 4.2: rain forecast above this threshold triggers the rain branch.
+RAIN_FORECAST_TRIGGER_MM = 2.0
+
+# Doc § 2.2 — crop-stage → effective root depth + TAW + RAW. The
+# agronomist marked these as authoritative for the current crop calibration;
+# choosing the right stage at runtime is deferred (TODO below).
+CROP_STAGE_PROFILES: dict[str, dict[str, float]] = {
+    "emergence":         {"zr_m": 0.10, "taw_mm": 18.0,  "raw_mm": 9.0},
+    "early_vegetative":  {"zr_m": 0.25, "taw_mm": 45.0,  "raw_mm": 22.5},
+    "vegetative_growth": {"zr_m": 0.45, "taw_mm": 81.0,  "raw_mm": 40.5},
+    "flowering":         {"zr_m": 0.70, "taw_mm": 126.0, "raw_mm": 63.0},
+    "fruit_filling":     {"zr_m": 1.00, "taw_mm": 180.0, "raw_mm": 90.0},
+}
 
 # FAO-56 solar constant for the hourly Ra computation (eq. 28).
 SOLAR_CONSTANT_MJ_M2_MIN = 0.0820
@@ -322,6 +353,228 @@ def penman_monteith_hourly_mm(
     }
 
 
+# ----- 2b. Water-balance & irrigation decision (doc § 3–§ 4) ----------------
+
+
+def effective_rainfall_mm(
+    rain_mm: float, alpha: float = DEFAULT_RAINFALL_EFFICIENCY
+) -> float:
+    """Pe = α · P — the fraction of rainfall that reaches the root zone."""
+    return max(0.0, alpha * rain_mm)
+
+
+def etc_mm(
+    et0_mm: float,
+    kc: float = DEFAULT_KC,
+    *,
+    permeability_loss_mm: float = 0.0,
+) -> float:
+    """
+    Crop evapotranspiration adjusted for permeability losses (doc § 4.1):
+        ETc_adj = ET0 · Kc + loss_due_to_permeability
+    """
+    return max(0.0, et0_mm * kc + permeability_loss_mm)
+
+
+def update_daily_depletion(
+    *,
+    dr_yesterday_mm: float,
+    etc_today_mm: float,
+    pe_today_mm: float,
+    irrigation_applied_mm: float,
+) -> float:
+    """
+    FAO-56 / doc § 3.1:
+        Dr,i = max(0, Dr,(i-1) + ETc - Pe - In)
+    """
+    return max(
+        0.0,
+        dr_yesterday_mm + etc_today_mm - pe_today_mm - irrigation_applied_mm,
+    )
+
+
+def cumulative_dr_after_missed_days(
+    *,
+    dr_baseline_mm: float,
+    et0_per_day_mm: Iterable[float],
+    rain_per_day_mm: Iterable[float],
+    kc: float = DEFAULT_KC,
+    alpha: float = DEFAULT_RAINFALL_EFFICIENCY,
+    permeability_loss_mm: float = 0.0,
+) -> float:
+    """
+    Doc § 4.3 catch-up rule. When the user did not irrigate for one or more
+    days, cumulate ETc and Pe over those days and roll Dr forward in one
+    step rather than blindly repeating yesterday's irrigation volume.
+    """
+    et0_list = list(et0_per_day_mm)
+    rain_list = list(rain_per_day_mm)
+    etc_cumul = sum(
+        etc_mm(e, kc, permeability_loss_mm=permeability_loss_mm)
+        for e in et0_list
+    )
+    pe_cumul = sum(effective_rainfall_mm(r, alpha) for r in rain_list)
+    effective = max(0.0, etc_cumul - pe_cumul)
+    return max(0.0, dr_baseline_mm + effective)
+
+
+@dataclass
+class IrrigationDecision:
+    """Result of `irrigation_decision_dr`. See `reason` for the branch taken."""
+
+    irrigate: bool
+    # One of: "stress", "soil_moisture_low", "no_stress", "rain_will_suffice",
+    # "complementary".
+    reason: str
+    net_mm: float                          # In_net — net depth to bring to FC
+    gross_mm: float                        # Ig — net / efficiency × Kr
+    volume_m3: float                       # gross applied to zone area
+    duration_hr: float                     # volume / flow_rate
+    morning_volume_m3: float | None        # split when duration > threshold
+    evening_volume_m3: float | None
+    capped_to_daily_max: bool              # True if volume hit max_water_per_day
+
+
+def _build_irrigation_struct(
+    *,
+    reason: str,
+    net_mm: float,
+    zone_area_m2: float,
+    irrigation_efficiency: float,
+    kr: float,
+    flow_rate_m3h: float,
+    max_water_per_day_m3: float,
+    duration_split_threshold_hr: float,
+) -> IrrigationDecision:
+    """
+    Net depth → gross depth → m³ for the zone → duration, with the daily
+    cap and the morning/evening split applied (doc § 4.1 / § 3.2).
+    """
+    if net_mm <= 0.0:
+        return IrrigationDecision(
+            irrigate=False,
+            reason=reason,
+            net_mm=0.0,
+            gross_mm=0.0,
+            volume_m3=0.0,
+            duration_hr=0.0,
+            morning_volume_m3=None,
+            evening_volume_m3=None,
+            capped_to_daily_max=False,
+        )
+
+    gross_mm = (net_mm * kr) / max(irrigation_efficiency, 1e-6)
+    volume_m3 = gross_mm * zone_area_m2 / 1000.0
+
+    capped = False
+    if max_water_per_day_m3 > 0 and volume_m3 > max_water_per_day_m3:
+        volume_m3 = max_water_per_day_m3
+        capped = True
+
+    duration_hr = volume_m3 / max(flow_rate_m3h, 1e-6)
+
+    morning = evening = None
+    if duration_hr > duration_split_threshold_hr:
+        morning = evening = volume_m3 / 2.0
+
+    return IrrigationDecision(
+        irrigate=True,
+        reason=reason,
+        net_mm=net_mm,
+        gross_mm=gross_mm,
+        volume_m3=volume_m3,
+        duration_hr=duration_hr,
+        morning_volume_m3=morning,
+        evening_volume_m3=evening,
+        capped_to_daily_max=capped,
+    )
+
+
+def irrigation_decision_dr(
+    *,
+    dr_today_mm: float,
+    raw_mm: float,
+    soil_moisture_pct: float | None,
+    critical_moisture_pct: float,
+    zone_area_m2: float,
+    flow_rate_m3h: float,
+    max_water_per_day_m3: float = 0.0,
+    irrigation_efficiency: float = DEFAULT_IRRIGATION_EFFICIENCY,
+    kr: float = DEFAULT_CANOPY_DENSITY_KR,
+    duration_split_threshold_hr: float = DEFAULT_DURATION_SPLIT_THRESHOLD_HR,
+    precipitation_forecast_mm: float = 0.0,
+    alpha_rain: float = DEFAULT_RAINFALL_EFFICIENCY,
+) -> IrrigationDecision:
+    """
+    Dr/RAW-based irrigation decision (doc § 4.1 + § 4.2).
+
+    Trigger logic:
+        Dr >= RAW                                  → stress       → irrigate
+        soil_moisture < critical_moisture_pct      → soil_moisture_low → irrigate
+        rain forecast > 2 mm AND Dr < RAW          → rain_will_suffice → suspend
+        rain forecast > 2 mm AND Dr >= RAW         → complementary → irrigate Dr − Pe
+        otherwise                                  → no_stress    → suspend
+
+    Net depth follows § 4.1: In_net = Dr_today (bring soil back to FC), then
+    gross = In_net · Kr / efficiency, volume = gross · area / 1000, capped
+    at max_water_per_day, split morning/evening if duration > threshold.
+    """
+    soil_stressed = dr_today_mm >= raw_mm
+    soil_dry = (
+        soil_moisture_pct is not None
+        and soil_moisture_pct < critical_moisture_pct
+    )
+
+    if precipitation_forecast_mm > RAIN_FORECAST_TRIGGER_MM:
+        pe_forecast = effective_rainfall_mm(precipitation_forecast_mm, alpha_rain)
+        if not soil_stressed:
+            return IrrigationDecision(
+                irrigate=False,
+                reason="rain_will_suffice",
+                net_mm=0.0,
+                gross_mm=0.0,
+                volume_m3=0.0,
+                duration_hr=0.0,
+                morning_volume_m3=None,
+                evening_volume_m3=None,
+                capped_to_daily_max=False,
+            )
+        return _build_irrigation_struct(
+            reason="complementary",
+            net_mm=max(0.0, dr_today_mm - pe_forecast),
+            zone_area_m2=zone_area_m2,
+            irrigation_efficiency=irrigation_efficiency,
+            kr=kr,
+            flow_rate_m3h=flow_rate_m3h,
+            max_water_per_day_m3=max_water_per_day_m3,
+            duration_split_threshold_hr=duration_split_threshold_hr,
+        )
+
+    if not (soil_stressed or soil_dry):
+        return IrrigationDecision(
+            irrigate=False,
+            reason="no_stress",
+            net_mm=0.0,
+            gross_mm=0.0,
+            volume_m3=0.0,
+            duration_hr=0.0,
+            morning_volume_m3=None,
+            evening_volume_m3=None,
+            capped_to_daily_max=False,
+        )
+
+    return _build_irrigation_struct(
+        reason="stress" if soil_stressed else "soil_moisture_low",
+        net_mm=max(0.0, dr_today_mm),
+        zone_area_m2=zone_area_m2,
+        irrigation_efficiency=irrigation_efficiency,
+        kr=kr,
+        flow_rate_m3h=flow_rate_m3h,
+        max_water_per_day_m3=max_water_per_day_m3,
+        duration_split_threshold_hr=duration_split_threshold_hr,
+    )
+
+
 # ----- 3. Sensor aggregation helpers (DB I/O) -------------------------------
 
 
@@ -434,14 +687,41 @@ def compute_et0_for_zone(zone, *, end: datetime | None = None) -> ZoneEt0 | None
     )
 
 
-def _format_decision(et0_kc_mm: float | None, soil_moisture_pct: float | None) -> str:
-    """
-    Translate the ET0×Kc figure and current soil moisture into a one-line
-    recommendation in French.
+_DECISION_PHRASE = {
+    "stress": "Irrigation recommandée — Dr ≥ RAW (zone de stress)",
+    "soil_moisture_low": "Irrigation recommandée — humidité du sol sous le seuil",
+    "complementary": "Irrigation complémentaire — pluie prévue insuffisante",
+    "rain_will_suffice": "Pas d'irrigation — la pluie prévue suffira",
+    "no_stress": "Pas d'irrigation requise — pas d'état de stress",
+}
 
-    TODO(expert): replace the threshold-based rule below with a proper
-    irrigation model (water balance, root-zone depletion, RAW/TAW, …).
+
+def _format_decision(
+    et0_kc_mm: float | None,
+    soil_moisture_pct: float | None,
+    *,
+    decision: IrrigationDecision | None = None,
+) -> str:
     """
+    Translate the irrigation recommendation into a one-line French message.
+
+    When a structured ``decision`` is provided (Dr/RAW path), the message
+    is derived from its ``reason`` + volume; otherwise the function falls
+    back to the legacy soil-moisture-threshold rule so callers without a
+    persisted Dr keep their existing behaviour.
+    """
+    if decision is not None:
+        head = _DECISION_PHRASE.get(decision.reason, decision.reason)
+        if decision.irrigate:
+            tail = (
+                f" — {decision.volume_m3:.2f} m³ "
+                f"(~{decision.duration_hr * 60:.0f} min)."
+            )
+            if decision.capped_to_daily_max:
+                tail += " Plafonné à max_water_per_day."
+            return head + tail
+        return head + "."
+
     if et0_kc_mm is None or soil_moisture_pct is None:
         return "Données insuffisantes — recommandation indisponible."
 
@@ -460,11 +740,23 @@ def _format_decision(et0_kc_mm: float | None, soil_moisture_pct: float | None) -
     )
 
 
-def field_snapshot(user) -> dict[str, Any]:
+def field_snapshot(
+    user,
+    *,
+    dr_today_mm: float | None = None,
+    precipitation_forecast_mm: float = 0.0,
+) -> dict[str, Any]:
     """
     Return everything the notification email needs to render a status
     update for ``user``. This is the function an agronomy expert is
     expected to evolve over time.
+
+    Pass ``dr_today_mm`` (the persisted daily depletion from the previous
+    Celery rollover) to enable the Dr/RAW branch from the agronomist
+    spec § 4. Pass ``precipitation_forecast_mm`` to enable the rain
+    branch § 4.2. When ``dr_today_mm`` is None the function falls back
+    to the legacy soil-moisture-threshold rule and the new Dr-related
+    keys are returned as None / 0.
 
     Output contract — keys the email template depends on:
 
@@ -486,6 +778,15 @@ def field_snapshot(user) -> dict[str, Any]:
         perfect_irrigation_window str            "06:00 – 07:00" (placeholder)
         kc_used                float
         irrigation_decision    str               French sentence
+        # New, doc § 3–§ 4. Filled when ``dr_today_mm`` is supplied:
+        dr_today_mm            float | None
+        raw_mm                 float | None
+        taw_mm                 float | None
+        decision_reason        str | None       "stress" | "complementary" | …
+        recommended_volume_m3  float | None
+        recommended_duration_min float | None
+        morning_volume_m3      float | None     when split is required
+        evening_volume_m3      float | None
     """
     from analytics.models import (
         EcSalinitySensor,
@@ -533,6 +834,14 @@ def field_snapshot(user) -> dict[str, Any]:
                 "Aucune zone configurée pour ce compte — créez une zone pour"
                 " activer les recommandations."
             ),
+            "dr_today_mm": None,
+            "raw_mm": None,
+            "taw_mm": None,
+            "decision_reason": None,
+            "recommended_volume_m3": None,
+            "recommended_duration_min": None,
+            "morning_volume_m3": None,
+            "evening_volume_m3": None,
         }
 
     yesterday_temp = _avg(
@@ -569,6 +878,34 @@ def field_snapshot(user) -> dict[str, Any]:
         else None
     )
 
+    raw_mm = getattr(zone, "soil_param_RAW", None)
+    taw_mm = getattr(zone, "soil_param_TAW", None)
+
+    decision: IrrigationDecision | None = None
+    if dr_today_mm is not None and raw_mm and zone.space and zone.pomp_flow_rate:
+        # pomp_flow_rate is configured in L/s in the Zone model.
+        flow_rate_m3h = zone.pomp_flow_rate * 3.6
+        # irrigation_water_quantity is the daily cap in L → m³.
+        max_water_per_day_m3 = (
+            (zone.irrigation_water_quantity or 0.0) / 1000.0
+            if hasattr(zone, "irrigation_water_quantity")
+            else 0.0
+        )
+        decision = irrigation_decision_dr(
+            dr_today_mm=dr_today_mm,
+            raw_mm=raw_mm,
+            soil_moisture_pct=soil_moisture_pct,
+            critical_moisture_pct=(
+                zone.critical_moisture_threshold
+                if zone.critical_moisture_threshold is not None
+                else DEFAULT_CRITICAL_SOIL_MOISTURE_PCT
+            ),
+            zone_area_m2=zone.space,
+            flow_rate_m3h=flow_rate_m3h,
+            max_water_per_day_m3=max_water_per_day_m3,
+            precipitation_forecast_mm=precipitation_forecast_mm,
+        )
+
     return {
         "zone_name": zone.name,
         "date_today": now.date(),
@@ -590,5 +927,17 @@ def field_snapshot(user) -> dict[str, Any]:
         # TODO(expert): derive from solar / morning vs. evening windows.
         "perfect_irrigation_window": "06:00 – 07:00",
         "kc_used": kc_used,
-        "irrigation_decision": _format_decision(et0_kc_mm, soil_moisture_pct),
+        "irrigation_decision": _format_decision(
+            et0_kc_mm, soil_moisture_pct, decision=decision
+        ),
+        "dr_today_mm": dr_today_mm,
+        "raw_mm": raw_mm,
+        "taw_mm": taw_mm,
+        "decision_reason": decision.reason if decision else None,
+        "recommended_volume_m3": decision.volume_m3 if decision else None,
+        "recommended_duration_min": (
+            decision.duration_hr * 60.0 if decision else None
+        ),
+        "morning_volume_m3": decision.morning_volume_m3 if decision else None,
+        "evening_volume_m3": decision.evening_volume_m3 if decision else None,
     }
