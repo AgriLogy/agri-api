@@ -15,20 +15,28 @@ from agriBack.agronomy import (
     CLOUD_FACTOR_MIN,
     CLOUD_RATIO_MAX,
     CLOUD_RATIO_MIN,
+    CROP_STAGE_PROFILES,
     DEFAULT_KC,
+    DEFAULT_RAINFALL_EFFICIENCY,
     LST_DEG_MOROCCO,
+    RAIN_FORECAST_TRIGGER_MM,
     actual_vapor_pressure_kpa,
     cloudiness_ratio,
     compute_et0_for_zone,
+    cumulative_dr_after_missed_days,
+    effective_rainfall_mm,
     equation_of_time_minutes,
+    etc_mm,
     extraterrestrial_radiation_hourly_mjm2h,
     field_snapshot,
+    irrigation_decision_dr,
     is_daytime,
     penman_monteith_hourly_mm,
     psychrometric_constant_kpa_per_c,
     saturation_vapor_pressure_kpa,
     slope_svp_kpa_per_c,
     solar_time_correction_hours,
+    update_daily_depletion,
     vpd_kpa,
     wind_speed_at_2m,
     wperm2_to_mjm2_per_hour,
@@ -442,3 +450,226 @@ class FieldSnapshotTests(TestCase):
         _zone(self.user)
         snap = field_snapshot(self.user)
         self.assertIn("Données insuffisantes", snap["irrigation_decision"])
+
+
+# ---------------------------------------------------------------------------
+# 4. Water-balance pure math (doc § 3–§ 4)
+# ---------------------------------------------------------------------------
+
+
+class WaterBalanceMathTests(TestCase):
+    def test_effective_rainfall_applies_alpha(self):
+        self.assertAlmostEqual(effective_rainfall_mm(10.0, 0.8), 8.0)
+        self.assertAlmostEqual(effective_rainfall_mm(0.0), 0.0)
+
+    def test_effective_rainfall_never_negative(self):
+        # Defensive — α and P are physically >= 0 but a buggy caller might
+        # pass a negative number; the helper must clamp.
+        self.assertEqual(effective_rainfall_mm(-5.0, 0.8), 0.0)
+
+    def test_etc_with_kc_and_permeability_loss(self):
+        # ETc = ET0·Kc + loss_due_to_permeability — doc § 4.1
+        self.assertAlmostEqual(etc_mm(5.0, 1.2), 6.0)
+        self.assertAlmostEqual(
+            etc_mm(5.0, 1.2, permeability_loss_mm=0.5), 6.5
+        )
+
+    def test_update_daily_depletion_basic(self):
+        # Dr,i = max(0, Dr,(i-1) + ETc - Pe - In)
+        dr = update_daily_depletion(
+            dr_yesterday_mm=10.0,
+            etc_today_mm=5.0,
+            pe_today_mm=2.0,
+            irrigation_applied_mm=3.0,
+        )
+        self.assertAlmostEqual(dr, 10.0 + 5.0 - 2.0 - 3.0)
+
+    def test_update_daily_depletion_clamps_to_zero(self):
+        # Heavy rain + irrigation > Dr+ETc → soil is back to FC, depletion 0.
+        dr = update_daily_depletion(
+            dr_yesterday_mm=2.0,
+            etc_today_mm=1.0,
+            pe_today_mm=10.0,
+            irrigation_applied_mm=0.0,
+        )
+        self.assertEqual(dr, 0.0)
+
+    def test_cumulative_dr_after_missed_days(self):
+        # Two days skipped — ETc and Pe cumulate per doc § 4.3.
+        dr = cumulative_dr_after_missed_days(
+            dr_baseline_mm=0.0,
+            et0_per_day_mm=[4.0, 5.0],
+            rain_per_day_mm=[0.0, 1.0],
+            kc=1.0,
+            alpha=DEFAULT_RAINFALL_EFFICIENCY,
+        )
+        # ETc cumul = 9, Pe cumul = 0.8 → effective ETc = 8.2
+        self.assertAlmostEqual(dr, 8.2)
+
+    def test_crop_stage_profile_table(self):
+        # Sanity-check the doc § 2.2 table — RAW is always p·TAW with the
+        # typical p ≈ 0.5 the agronomist used.
+        for stage, prof in CROP_STAGE_PROFILES.items():
+            self.assertAlmostEqual(
+                prof["raw_mm"], 0.5 * prof["taw_mm"], places=2,
+                msg=f"stage={stage}",
+            )
+
+
+# ---------------------------------------------------------------------------
+# 5. Dr/RAW decision (doc § 4.1 + § 4.2)
+# ---------------------------------------------------------------------------
+
+
+class IrrigationDecisionDrTests(TestCase):
+    """Each test exercises one branch of irrigation_decision_dr."""
+
+    DEFAULT_ARGS = dict(
+        raw_mm=40.0,
+        soil_moisture_pct=30.0,
+        critical_moisture_pct=20.0,
+        zone_area_m2=1000.0,
+        flow_rate_m3h=3.6,
+        max_water_per_day_m3=0.0,
+    )
+
+    def test_no_stress_when_dr_below_raw_and_soil_ok(self):
+        d = irrigation_decision_dr(dr_today_mm=10.0, **self.DEFAULT_ARGS)
+        self.assertFalse(d.irrigate)
+        self.assertEqual(d.reason, "no_stress")
+        self.assertEqual(d.volume_m3, 0.0)
+
+    def test_stress_when_dr_at_or_above_raw(self):
+        d = irrigation_decision_dr(dr_today_mm=45.0, **self.DEFAULT_ARGS)
+        self.assertTrue(d.irrigate)
+        self.assertEqual(d.reason, "stress")
+        self.assertGreater(d.volume_m3, 0.0)
+        self.assertGreater(d.duration_hr, 0.0)
+
+    def test_soil_moisture_low_triggers_even_below_raw(self):
+        args = {**self.DEFAULT_ARGS, "soil_moisture_pct": 10.0}
+        d = irrigation_decision_dr(dr_today_mm=5.0, **args)
+        self.assertTrue(d.irrigate)
+        self.assertEqual(d.reason, "soil_moisture_low")
+
+    def test_rain_will_suffice_when_forecast_above_threshold_and_dr_below_raw(self):
+        d = irrigation_decision_dr(
+            dr_today_mm=10.0,
+            precipitation_forecast_mm=RAIN_FORECAST_TRIGGER_MM + 0.1,
+            **self.DEFAULT_ARGS,
+        )
+        self.assertFalse(d.irrigate)
+        self.assertEqual(d.reason, "rain_will_suffice")
+
+    def test_complementary_when_forecast_above_threshold_and_dr_above_raw(self):
+        d = irrigation_decision_dr(
+            dr_today_mm=45.0,
+            precipitation_forecast_mm=10.0,
+            **self.DEFAULT_ARGS,
+        )
+        self.assertTrue(d.irrigate)
+        self.assertEqual(d.reason, "complementary")
+        # net_mm = max(0, 45 - α·10) = 45 - 8 = 37 (with α=0.8 default)
+        self.assertAlmostEqual(d.net_mm, 37.0, places=2)
+
+    def test_complementary_zero_when_rain_covers_everything(self):
+        d = irrigation_decision_dr(
+            dr_today_mm=40.0,
+            precipitation_forecast_mm=100.0,
+            **self.DEFAULT_ARGS,
+        )
+        self.assertEqual(d.reason, "complementary")
+        # net = max(0, 40 - 80) = 0 → returns False / 0 volume
+        self.assertFalse(d.irrigate)
+        self.assertEqual(d.net_mm, 0.0)
+
+    def test_daily_volume_cap_applied(self):
+        d = irrigation_decision_dr(
+            dr_today_mm=100.0,
+            raw_mm=40.0,
+            soil_moisture_pct=30.0,
+            critical_moisture_pct=20.0,
+            zone_area_m2=1000.0,
+            flow_rate_m3h=3.6,
+            max_water_per_day_m3=5.0,
+        )
+        self.assertTrue(d.capped_to_daily_max)
+        self.assertEqual(d.volume_m3, 5.0)
+
+    def test_morning_evening_split_for_long_durations(self):
+        # zone is small but flow_rate is tiny → big duration → triggers split
+        d = irrigation_decision_dr(
+            dr_today_mm=50.0,
+            raw_mm=40.0,
+            soil_moisture_pct=30.0,
+            critical_moisture_pct=20.0,
+            zone_area_m2=10000.0,
+            flow_rate_m3h=0.1,  # 100 L/h — extremely slow
+            max_water_per_day_m3=0.0,
+        )
+        self.assertTrue(d.irrigate)
+        self.assertIsNotNone(d.morning_volume_m3)
+        self.assertIsNotNone(d.evening_volume_m3)
+        self.assertAlmostEqual(
+            d.morning_volume_m3 + d.evening_volume_m3, d.volume_m3
+        )
+
+
+# ---------------------------------------------------------------------------
+# 6. field_snapshot — Dr branch integration
+# ---------------------------------------------------------------------------
+
+
+class FieldSnapshotDrIntegrationTests(TestCase):
+    def setUp(self):
+        self.user = _user()
+        self.zone = _zone(self.user)
+        # Give the zone a real soil profile so the Dr branch lights up.
+        self.zone.soil_param_RAW = 40.0
+        self.zone.soil_param_TAW = 80.0
+        self.zone.irrigation_water_quantity = 50_000.0  # 50 m³ cap
+        self.zone.save()
+        self.now = timezone.now()
+        SoilMoistureMedium.objects.create(
+            zone=self.zone, user=self.user, value=30.0, timestamp=self.now
+        )
+
+    def test_dr_keys_absent_when_dr_not_provided(self):
+        snap = field_snapshot(self.user)
+        self.assertIsNone(snap["dr_today_mm"])
+        self.assertIsNone(snap["decision_reason"])
+        self.assertIsNone(snap["recommended_volume_m3"])
+        # legacy decision message still produced
+        self.assertIsInstance(snap["irrigation_decision"], str)
+
+    def test_no_stress_path_populated_when_dr_below_raw(self):
+        snap = field_snapshot(self.user, dr_today_mm=10.0)
+        self.assertEqual(snap["decision_reason"], "no_stress")
+        self.assertEqual(snap["recommended_volume_m3"], 0.0)
+        self.assertEqual(snap["raw_mm"], 40.0)
+        self.assertEqual(snap["taw_mm"], 80.0)
+
+    def test_stress_path_produces_volume_and_duration(self):
+        snap = field_snapshot(self.user, dr_today_mm=45.0)
+        self.assertEqual(snap["decision_reason"], "stress")
+        self.assertGreater(snap["recommended_volume_m3"], 0.0)
+        self.assertGreater(snap["recommended_duration_min"], 0.0)
+        self.assertIn("Irrigation recommandée", snap["irrigation_decision"])
+
+    def test_rain_branch_suspends_when_forecast_exceeds_threshold(self):
+        snap = field_snapshot(
+            self.user,
+            dr_today_mm=10.0,
+            precipitation_forecast_mm=5.0,
+        )
+        self.assertEqual(snap["decision_reason"], "rain_will_suffice")
+        self.assertEqual(snap["recommended_volume_m3"], 0.0)
+
+    def test_rain_branch_complementary_when_dr_above_raw(self):
+        snap = field_snapshot(
+            self.user,
+            dr_today_mm=45.0,
+            precipitation_forecast_mm=5.0,
+        )
+        self.assertEqual(snap["decision_reason"], "complementary")
+        self.assertGreater(snap["recommended_volume_m3"], 0.0)
