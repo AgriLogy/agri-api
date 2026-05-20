@@ -1,3 +1,10 @@
+# [1.7.0](https://github.com/AgriLogy/agrilogy-back/compare/v1.6.0...v1.7.0) (2026-05-20)
+
+
+### Features
+
+* **ingest:** accept the full sensor catalogue via registry-driven view ([#39](https://github.com/AgriLogy/agrilogy-back/issues/39)) ([b0d47ec](https://github.com/AgriLogy/agrilogy-back/commit/b0d47ec055be845d22882dcc37a8b7c0466bc951)), closes [#38](https://github.com/AgriLogy/agrilogy-back/issues/38)
+
 # [1.6.0](https://github.com/AgriLogy/agrilogy-back/compare/v1.5.1...v1.6.0) (2026-05-20)
 
 
