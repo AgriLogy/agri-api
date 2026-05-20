@@ -447,11 +447,10 @@ a Jira-style two-step.
   A user with no incoming sensor data and who never opens the app will
   not be notified that "nothing has happened" — there's no liveness
   alert.
-- **Push only fires for the 6 weather metrics today.**
-  `WeatherIngestAPIView` is the only wired ingest path; soil / fruit /
-  leaf / NPK / water alerts will fire as soon as those sensors get a
-  device-facing ingest endpoint (extends naturally — the dispatcher
-  switches on `sensor_key`).
+- **NPK doesn't push yet.** `NpkSensor` has three value fields and
+  needs per-field registry routing; the ingest path explicitly skips
+  the `npk` key today. All other sensors in `SENSOR_KEY_REGISTRY` fire
+  alerts on ingest.
 - **Per-alert grace override missing.** The cool-down is global per
   sensor key. Users cannot ask "ping me every minute for this one
   critical alert".

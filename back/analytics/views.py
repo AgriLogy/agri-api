@@ -276,26 +276,34 @@ from .models import (
     Zone,
 )
 
-METRIC_KEYS = [
-    "wind_speed",
-    "pressure_weather",
-    "temperature_weather",
-    "humidity_weather",
-    "solar_radiation",
-    "wind_direction",
-]
+# NPK is intentionally excluded — NpkSensor has three value fields and
+# needs per-key field routing. Tracked separately.
+_INGEST_SKIP_KEYS: set[str] = {"npk"}
 
 
 class WeatherIngestAPIView(APIView):
     """
-    Expects a JSON OBJECT (not list), same as what Node forwards.
-    If ALL metric fields are None/missing => insert nothing.
+    Expects a JSON OBJECT (not list), same as what the Node bridge forwards.
+
+    Registry-driven: any key in ``SENSOR_KEY_REGISTRY`` that appears in the
+    payload with a non-None value is written to the matching model and
+    handed to ``dispatch_alerts_for_reading`` so alert emails can fire.
+
+    Keys outside the registry are silently dropped — this matches the
+    legacy ``METRIC_KEYS`` behaviour for unknown fields while letting new
+    sensors come online by adding a registry entry, no view change needed.
     """
 
     authentication_classes = []
     permission_classes = []
 
     def post(self, request):
+        from analytics.alerts import (
+            SENSOR_KEY_REGISTRY,
+            dispatch_alerts_for_reading,
+            get_sensor_model,
+        )
+
         payload = request.data
 
         if not isinstance(payload, dict):
@@ -304,9 +312,19 @@ class WeatherIngestAPIView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        metrics = {k: payload.get(k, None) for k in METRIC_KEYS}
+        # Collect known sensor keys present in the payload with a usable
+        # value. Two keys can resolve to the same model (back-compat aliases:
+        # ``soil_ph`` → ``PhSoil``, ``et0`` → ``Et0Calculated``); we accept
+        # both as the device may emit either.
+        metrics = {
+            key: payload[key]
+            for key in SENSOR_KEY_REGISTRY
+            if key in payload
+            and payload[key] is not None
+            and key not in _INGEST_SKIP_KEYS
+        }
 
-        if all(v is None for v in metrics.values()):
+        if not metrics:
             return Response(
                 {"inserted": 0, "detail": "all_metrics_none"},
                 status=status.HTTP_200_OK,
@@ -339,11 +357,8 @@ class WeatherIngestAPIView(APIView):
         now = timezone.now()
 
         inserted = 0
-
-        def _persist_and_dispatch(model_cls, sensor_key: str, value):
-            """Write one sensor row and fan an alert email if any rule fires."""
-            from analytics.alerts import dispatch_alerts_for_reading
-
+        for sensor_key, value in metrics.items():
+            model_cls = get_sensor_model(sensor_key)
             model_cls.objects.create(
                 user=user, zone=zone, value=value, timestamp=now
             )
@@ -353,41 +368,6 @@ class WeatherIngestAPIView(APIView):
                 user=user,
                 value=value,
                 timestamp=now,
-            )
-
-        if metrics["wind_speed"] is not None:
-            _persist_and_dispatch(WindSpeed, "wind_speed", metrics["wind_speed"])
-            inserted += 1
-
-        if metrics["pressure_weather"] is not None:
-            _persist_and_dispatch(
-                PressureWeather, "pressure_weather", metrics["pressure_weather"]
-            )
-            inserted += 1
-
-        if metrics["temperature_weather"] is not None:
-            _persist_and_dispatch(
-                TemperatureWeather,
-                "temperature_weather",
-                metrics["temperature_weather"],
-            )
-            inserted += 1
-
-        if metrics["humidity_weather"] is not None:
-            _persist_and_dispatch(
-                HumidityWeather, "humidity_weather", metrics["humidity_weather"]
-            )
-            inserted += 1
-
-        if metrics["solar_radiation"] is not None:
-            _persist_and_dispatch(
-                SolarRadiation, "solar_radiation", metrics["solar_radiation"]
-            )
-            inserted += 1
-
-        if metrics["wind_direction"] is not None:
-            _persist_and_dispatch(
-                WindDirection, "wind_direction", metrics["wind_direction"]
             )
             inserted += 1
 

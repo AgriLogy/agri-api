@@ -159,6 +159,98 @@ SENSOR_KEY_REGISTRY: dict[str, dict[str, Any]] = {
         "label": "Consommation électrique",
         "type": "Periodic maintenance",
     },
+    # ----- Filled in to cover the rest of analytics.models sensors.
+    # Convention: snake_case of the model class name, with a trailing
+    # ``Sensor`` stripped. Two legacy keys (``soil_ph``, ``et0``) are kept
+    # as aliases below so the frontend and existing Alert rows keep working
+    # until they migrate.
+    "wind_direction": {
+        "model": "WindDirection",
+        "unit": "°",
+        "label": "Direction du vent",
+        "type": "Wind Speed",
+    },
+    "ec_soil_low": {
+        "model": "ECSoilLow",
+        "unit": "μS/cm",
+        "label": "EC du sol (profondeur basse)",
+        "type": "EC (Electrical Conductivity)",
+    },
+    "ec_soil_medium": {
+        "model": "ECSoilMedium",
+        "unit": "μS/cm",
+        "label": "EC du sol (profondeur moyenne)",
+        "type": "EC (Electrical Conductivity)",
+    },
+    "ec_soil_high": {
+        "model": "ECSoilHigh",
+        "unit": "μS/cm",
+        "label": "EC du sol (profondeur haute)",
+        "type": "EC (Electrical Conductivity)",
+    },
+    "soil_moisture_low": {
+        "model": "SoilMoistureLow",
+        "unit": "%",
+        "label": "Humidité du sol (profondeur basse)",
+        "type": "Humidity",
+    },
+    "soil_moisture_high": {
+        "model": "SoilMoistureHigh",
+        "unit": "%",
+        "label": "Humidité du sol (profondeur haute)",
+        "type": "Humidity",
+    },
+    "soil_temperature_low": {
+        "model": "SoilTemperatureLow",
+        "unit": "°C",
+        "label": "Température du sol (profondeur basse)",
+        "type": "Soil Temperature",
+    },
+    "soil_temperature_high": {
+        "model": "SoilTemperatureHigh",
+        "unit": "°C",
+        "label": "Température du sol (profondeur haute)",
+        "type": "Soil Temperature",
+    },
+    "ec_salinity": {
+        "model": "EcSalinitySensor",
+        "unit": "dS/m",
+        "label": "Salinité (EC)",
+        "type": "EC (Electrical Conductivity)",
+    },
+    "multi_depth_soil_moisture": {
+        "model": "MultiDepthSoilMoistureSensor",
+        "unit": "%",
+        "label": "Humidité du sol (multi-profondeur)",
+        "type": "Humidity",
+    },
+    "water_level": {
+        "model": "WaterLevelSensor",
+        "unit": "m",
+        "label": "Niveau d'eau",
+        "type": "Flow",
+    },
+    "et0_weather": {
+        "model": "Et0Weather",
+        "unit": "mm/h",
+        "label": "ET₀ (station météo)",
+        "type": "Weather Temperature",
+    },
+    "et0_calculated": {
+        "model": "Et0Calculated",
+        "unit": "mm/h",
+        "label": "ET₀ (calculé)",
+        "type": "Weather Temperature",
+    },
+    # Canonical pH key matching the device's ``ph_soil`` payload. ``soil_ph``
+    # stays in the registry below as a back-compat alias for existing Alert
+    # rows / frontend code that hasn't migrated.
+    "ph_soil": {
+        "model": "PhSoil",
+        "unit": "pH",
+        "label": "pH du sol",
+        "type": "pH Level",
+    },
 }
 
 

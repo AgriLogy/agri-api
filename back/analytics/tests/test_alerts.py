@@ -40,8 +40,14 @@ from analytics.alerts import (
 )
 from analytics.models import (
     Alert,
+    ECSoilLow,
+    PhSoil,
+    SoilMoistureLow,
     SoilMoistureMedium,
+    SoilTemperatureLow,
     TemperatureWeather,
+    WaterLevelSensor,
+    WindDirection,
     Zone,
 )
 
@@ -604,6 +610,99 @@ class IngestViewAlertDispatchTests(TestCase):
             )
         self.assertEqual(r.status_code, 201)
         self.assertEqual(send.call_count, 2)
+
+
+# ---------------------------------------------------------------------------
+# 9b. WeatherIngestAPIView — extended sensor catalogue
+# ---------------------------------------------------------------------------
+
+
+class IngestViewFullCatalogueTests(TestCase):
+    """The registry-driven ingest accepts every sensor key in
+    SENSOR_KEY_REGISTRY (minus the NPK exception). Soil keys that Router01
+    historically sent must now land in the DB."""
+
+    def setUp(self):
+        self.user = _user("router-user")
+        self.user.username = "Router01"
+        self.user.save()
+        self.zone = _zone(self.user)
+        self.client = APIClient()
+
+    def _post(self, **fields):
+        payload = {"client": "Router01", **fields}
+        return self.client.post(
+            "/api/sensors/weather/ingest/", payload, format="json"
+        )
+
+    def test_soil_keys_persist_per_model(self):
+        r = self._post(
+            ec_soil_low=160.0,
+            soil_moisture_low=15.9,
+            soil_temperature_low=15.5,
+        )
+        self.assertEqual(r.status_code, 201)
+        self.assertEqual(r.json()["inserted"], 3)
+        self.assertEqual(ECSoilLow.objects.count(), 1)
+        self.assertEqual(SoilMoistureLow.objects.count(), 1)
+        self.assertEqual(SoilTemperatureLow.objects.count(), 1)
+        self.assertAlmostEqual(ECSoilLow.objects.first().value, 160.0)
+
+    def test_wind_direction_now_lands(self):
+        r = self._post(wind_direction=172.0)
+        self.assertEqual(r.status_code, 201)
+        self.assertEqual(WindDirection.objects.count(), 1)
+        self.assertAlmostEqual(WindDirection.objects.first().value, 172.0)
+
+    def test_water_level_lands(self):
+        r = self._post(water_level=3.4)
+        self.assertEqual(r.status_code, 201)
+        self.assertEqual(WaterLevelSensor.objects.count(), 1)
+
+    def test_unknown_keys_are_silently_dropped(self):
+        r = self._post(temperature_weather=22.0, totally_made_up_key=999.0)
+        self.assertEqual(r.status_code, 201)
+        # one row for temperature_weather, none for the bogus key
+        self.assertEqual(r.json()["inserted"], 1)
+        self.assertEqual(TemperatureWeather.objects.count(), 1)
+
+    def test_only_unknown_keys_returns_all_metrics_none(self):
+        r = self._post(totally_made_up_key=1.0, another_fake=2.0)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["detail"], "all_metrics_none")
+        self.assertEqual(TemperatureWeather.objects.count(), 0)
+
+    def test_npk_payload_is_skipped(self):
+        # NPK is intentionally deferred — NpkSensor has three value fields
+        # and needs per-key field routing. The ingest must not blow up,
+        # just skip it.
+        r = self._post(npk=42.0, wind_speed=3.0)
+        self.assertEqual(r.status_code, 201)
+        # only wind_speed persisted
+        self.assertEqual(r.json()["inserted"], 1)
+
+    def test_soil_ph_alias_still_resolves(self):
+        # Back-compat — both `soil_ph` and `ph_soil` resolve to PhSoil.
+        r = self._post(soil_ph=6.7)
+        self.assertEqual(r.status_code, 201)
+        self.assertEqual(PhSoil.objects.count(), 1)
+
+    def test_ph_soil_canonical_key_resolves(self):
+        r = self._post(ph_soil=6.5)
+        self.assertEqual(r.status_code, 201)
+        self.assertEqual(PhSoil.objects.count(), 1)
+
+    def test_alert_on_soil_key_fires_through_ingest(self):
+        _alert(
+            self.user, zone=self.zone, sensor_key="soil_moisture_low",
+            condition_nbr=Decimal("20.00"), condition="<",
+            name="Soil too dry",
+        )
+        with patch("agriBack.tasks.send_alert_email.delay") as send:
+            r = self._post(soil_moisture_low=12.0)
+        self.assertEqual(r.status_code, 201)
+        send.assert_called_once()
+        self.assertEqual(send.call_args.kwargs["value"], 12.0)
 
 
 # ---------------------------------------------------------------------------
