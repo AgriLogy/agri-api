@@ -18,8 +18,12 @@ Device (Router0X)  →  agryserver:9090 (Node)  →  agrybackend:8000 (Django)  
 
 - Devices hit the **Node bridge directly on port 9090** (bypasses nginx).
 - Node archives every payload and forwards (best-effort) to Django.
-- Django’s `WeatherIngestAPIView` accepts only 6 weather keys; everything
-  else in the payload is silently dropped. Auth-less.
+- Django's `WeatherIngestAPIView` is **registry-driven**: any key in
+  `analytics/alerts.py:SENSOR_KEY_REGISTRY` that appears in the payload
+  with a non-None value lands in its model and fans out to the alert
+  dispatcher. Unknown keys are silently dropped. NPK is the one
+  intentional exclusion (multi-value model, tracked separately).
+  Auth-less.
 - Once an hour (prod) the Celery worker recomputes ET0 + VPD per zone
   from the last hour of weather data and writes new rows.
 
@@ -77,7 +81,7 @@ sequenceDiagram
     Node->>FS: append timestamped line to .logs
     Node->>Dj: POST /api/sensors/weather/ingest/<br/>Content-Type: application/json<br/>timeout 8 s
     alt Django 2xx
-      Dj->>Dj: validate JSON object<br/>extract 6 METRIC_KEYS<br/>resolve client→User→Zone
+      Dj->>Dj: validate JSON object<br/>pick payload keys ∈ SENSOR_KEY_REGISTRY<br/>resolve client→User→Zone
       Dj->>PG: WindSpeed / TemperatureWeather / …<br/>(user, zone, value, timestamp=now)
       Note over Dj: per metric — see docs/flows/alerts.md §10<br/>dispatch_alerts_for_reading(...)<br/>→ may enqueue send_alert_email Celery task
       Dj-->>Node: 201 {"inserted": N}
@@ -143,36 +147,37 @@ sequenceDiagram
   even if the forward to Django failed (timeout, 4xx, 5xx) —
   `server.js:103-104`. Operationally risky; see Known issues below.
 
-### 3. The Django ingest view — `back/analytics/views.py:289-382`
+### 3. The Django ingest view — `back/analytics/views.py:WeatherIngestAPIView`
 
 - Route: `back/analytics/urls.py:50` →
   `path("sensors/weather/ingest/", WeatherIngestAPIView.as_view())`.
-- **No auth and no permissions** — `views.py:295-296`:
-  `authentication_classes = []`, `permission_classes = []`.
+- **No auth and no permissions** — `authentication_classes = []`,
+  `permission_classes = []`.
 - Validation chain:
-  1. Body must be a JSON **object**, not an array — `views.py:301-305`.
-  2. The six `METRIC_KEYS` (`wind_speed`, `pressure_weather`,
-     `temperature_weather`, `humidity_weather`, `solar_radiation`,
-     `wind_direction`) are extracted with `.get(k, None)` —
-     `views.py:279-286, 307`.
-  3. If every metric is `None` → `200 {"inserted": 0, "detail": "all_metrics_none"}` —
-     `views.py:309-313`.
-  4. `client` field is **required** as soon as any metric is provided —
-     `views.py:315-320`.
+  1. Body must be a JSON **object**, not an array.
+  2. The view collects every key in
+     `analytics/alerts.py:SENSOR_KEY_REGISTRY` that appears in the
+     payload with a non-None value.
+  3. If the resulting set is empty → `200 {"inserted": 0, "detail": "all_metrics_none"}`.
+  4. `client` field is **required** as soon as any metric is provided.
 - Resolution:
-  - `CustomUser.objects.filter(username=client).first()` — `views.py:324`.
-  - First zone of that user (lowest id) — `views.py:331`.
-  - Returns 400 if user or zone missing — `views.py:325-336`.
-- Persistence:
-  - One row per non-None metric, model chosen explicitly per key —
-    `views.py:343-380`. All rows share `(user, zone, timestamp=now)` and
-    use `value=<metric>`.
-- Response: `201 {"inserted": N}` — `views.py:382`.
+  - `CustomUser.objects.filter(username=client).first()`.
+  - First zone of that user (lowest id).
+  - Returns 400 if user or zone missing.
+- Persistence — one loop, one row per known key:
+  ```python
+  for sensor_key, value in metrics.items():
+      model_cls = get_sensor_model(sensor_key)
+      model_cls.objects.create(user=user, zone=zone, value=value, timestamp=now)
+      dispatch_alerts_for_reading(sensor_key=…, zone=…, user=…, value=…, timestamp=…)
+  ```
+- Response: `201 {"inserted": N}`.
 
-**Anything the device sends outside `METRIC_KEYS` is silently dropped.**
-This is the reason Router01's soil readings (`soil_moisture_*`,
-`ec_soil_*`, `soil_temperature_*`) historically landed in
-`requests.json` but never in `agrydata`.
+**Anything outside `SENSOR_KEY_REGISTRY` is silently dropped** — same
+behaviour as the legacy `METRIC_KEYS` approach for unknown fields, but
+new sensors now come online by adding a registry entry (and a model)
+rather than editing the view. `npk` is the one intentional exclusion
+(`NpkSensor` has three value fields, tracked separately).
 
 ### 4. The auto-generated per-sensor endpoints — `back/analytics/sensor_registry.py`
 
@@ -281,9 +286,10 @@ All services share the `agro` bridge network.
   so it is a latent footgun rather than a live bug.
 - **Silent forward failure.** A Django 5xx or timeout returns 200 to the
   device; only `/app/.logs` records `FORWARDED_FAIL`. There is no alert.
-- **METRIC_KEYS is the only schema.** Anything not in those six keys is
-  dropped. To accept soil keys, extend `views.py:279-286` and the
-  if-tree at `views.py:343-380` (or generalise via `sensor_registry`).
+- **Adding a new sensor.** Add a row in `SENSOR_KEY_REGISTRY` pointing
+  at the model, plus a grace period in `settings.py:ALERT_GRACE_PERIODS`
+  if you don't want the 30-min default. The ingest view picks it up
+  automatically — no view edit needed.
 - **`USE_POSTGRES` case-sensitivity** in `back/docker-entrypoint.sh:29`
   uses `"True"`; the rest of the code accepts `"true"`. Lowercase env
   values skip the `wait_for_postgres` step.
