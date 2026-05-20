@@ -21,7 +21,7 @@ The whole module is intentionally I/O-light so unit tests can call
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Iterable
 
 from django.utils import timezone
@@ -297,6 +297,105 @@ def assert_keys_resolve(keys: Iterable[str]) -> None:
     """Test helper: every key in the registry must point at a live model."""
     for key in keys:
         get_sensor_model(key)
+
+
+# ----- 5b. Push-on-ingest dispatch -----------------------------------------
+
+
+def grace_period_seconds_for(sensor_key: str) -> int:
+    """
+    Per-sensor_key cool-down between alert emails, in seconds.
+
+    Reads ``settings.ALERT_GRACE_PERIODS`` first, then falls back to
+    ``settings.DEFAULT_ALERT_GRACE_PERIOD`` (and finally 1800 s when even
+    that is unset, so older settings.py files keep booting).
+    """
+    from django.conf import settings
+
+    table = getattr(settings, "ALERT_GRACE_PERIODS", {}) or {}
+    default = getattr(settings, "DEFAULT_ALERT_GRACE_PERIOD", 1800)
+    return int(table.get(sensor_key, default))
+
+
+def dispatch_alerts_for_reading(
+    *,
+    sensor_key: str,
+    zone,
+    user,
+    value: float | None,
+    timestamp: datetime,
+) -> int:
+    """
+    Evaluate every active alert that matches ``(user, sensor_key, zone)``
+    against ``value`` and enqueue one alert email per alert that:
+      • is currently triggered, AND
+      • whose ``last_emailed_at`` is older than this sensor's grace period
+        (or has never been emailed at all).
+
+    The grace gate is applied via a CONDITIONAL UPDATE on ``last_emailed_at``
+    so a burst of readings arriving simultaneously cannot dispatch the same
+    email twice — only the row whose UPDATE actually flipped the timestamp
+    enqueues a task.
+
+    Called from the ingest path AFTER the sensor row is created so the
+    alert reflects the data the database now contains. Returns the number
+    of emails enqueued (useful for tests).
+    """
+    if value is None:
+        return 0
+    if sensor_key not in SENSOR_KEY_REGISTRY:
+        # Unknown key — nothing to evaluate. The ingest path can stay generic.
+        return 0
+
+    # Importing the model lazily so this module stays import-safe at the
+    # bottom of the stack (alerts.py is imported by views.py).
+    from analytics.models import Alert
+
+    alerts_qs = Alert.objects.filter(
+        user=user,
+        sensor_key=sensor_key,
+        is_active=True,
+    )
+    if zone is not None:
+        # zone-scoped alerts target this zone; zone=None alerts are user-wide.
+        from django.db.models import Q
+
+        alerts_qs = alerts_qs.filter(Q(zone=zone) | Q(zone__isnull=True))
+    else:
+        alerts_qs = alerts_qs.filter(zone__isnull=True)
+
+    now_ts = timezone.now()
+    grace_seconds = grace_period_seconds_for(sensor_key)
+    cutoff = now_ts - timedelta(seconds=grace_seconds)
+    enqueued = 0
+
+    for alert in alerts_qs:
+        if not evaluate_alert(alert, value):
+            continue
+
+        # Atomic grace gate: only flip last_emailed_at if it is missing or
+        # older than the cutoff. The row that "wins" returns 1; concurrent
+        # callers see 0 and skip.
+        from django.db.models import Q
+
+        won = Alert.objects.filter(pk=alert.pk).filter(
+            Q(last_emailed_at__isnull=True) | Q(last_emailed_at__lt=cutoff)
+        ).update(last_emailed_at=now_ts, last_triggered_at=now_ts)
+        if not won:
+            continue
+
+        # Hand off the actual email send to Celery so the ingest hot path
+        # stays fast (and a flaky SMTP cannot stall the device's request).
+        from agriBack.tasks import send_alert_email
+
+        send_alert_email.delay(
+            alert_id=alert.pk,
+            value=float(value),
+            timestamp_iso=timestamp.isoformat(),
+        )
+        enqueued += 1
+
+    return enqueued
 
 
 # ----- 6. Suggestion (mean-based prefill for the alert form) ----------------

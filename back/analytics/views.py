@@ -340,42 +340,54 @@ class WeatherIngestAPIView(APIView):
 
         inserted = 0
 
-        if metrics["wind_speed"] is not None:
-            WindSpeed.objects.create(
-                user=user, zone=zone, value=metrics["wind_speed"], timestamp=now
+        def _persist_and_dispatch(model_cls, sensor_key: str, value):
+            """Write one sensor row and fan an alert email if any rule fires."""
+            from analytics.alerts import dispatch_alerts_for_reading
+
+            model_cls.objects.create(
+                user=user, zone=zone, value=value, timestamp=now
             )
+            dispatch_alerts_for_reading(
+                sensor_key=sensor_key,
+                zone=zone,
+                user=user,
+                value=value,
+                timestamp=now,
+            )
+
+        if metrics["wind_speed"] is not None:
+            _persist_and_dispatch(WindSpeed, "wind_speed", metrics["wind_speed"])
             inserted += 1
 
         if metrics["pressure_weather"] is not None:
-            PressureWeather.objects.create(
-                user=user, zone=zone, value=metrics["pressure_weather"], timestamp=now
+            _persist_and_dispatch(
+                PressureWeather, "pressure_weather", metrics["pressure_weather"]
             )
             inserted += 1
 
         if metrics["temperature_weather"] is not None:
-            TemperatureWeather.objects.create(
-                user=user,
-                zone=zone,
-                value=metrics["temperature_weather"],
-                timestamp=now,
+            _persist_and_dispatch(
+                TemperatureWeather,
+                "temperature_weather",
+                metrics["temperature_weather"],
             )
             inserted += 1
 
         if metrics["humidity_weather"] is not None:
-            HumidityWeather.objects.create(
-                user=user, zone=zone, value=metrics["humidity_weather"], timestamp=now
+            _persist_and_dispatch(
+                HumidityWeather, "humidity_weather", metrics["humidity_weather"]
             )
             inserted += 1
 
         if metrics["solar_radiation"] is not None:
-            SolarRadiation.objects.create(
-                user=user, zone=zone, value=metrics["solar_radiation"], timestamp=now
+            _persist_and_dispatch(
+                SolarRadiation, "solar_radiation", metrics["solar_radiation"]
             )
             inserted += 1
 
         if metrics["wind_direction"] is not None:
-            WindDirection.objects.create(
-                user=user, zone=zone, value=metrics["wind_direction"], timestamp=now
+            _persist_and_dispatch(
+                WindDirection, "wind_direction", metrics["wind_direction"]
             )
             inserted += 1
 

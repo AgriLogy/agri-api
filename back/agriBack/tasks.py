@@ -67,6 +67,73 @@ def send_periodic_notifications():
 
 
 ######################################################################################################
+######################   Alert email dispatch (triggered from ingest path)         ###################
+######################################################################################################
+
+
+@shared_task
+def send_alert_email(*, alert_id: int, value: float, timestamp_iso: str) -> dict:
+    """
+    Render and send one alert email. Enqueued by
+    ``analytics.alerts.dispatch_alerts_for_reading`` after the grace-period
+    gate has already won the conditional UPDATE, so this task does NOT
+    re-check the gate — it just delivers.
+
+    The task is defensive about state changes that may have happened between
+    enqueue and execution: it reloads the alert, skips delivery if the
+    alert is now inactive or has been deleted, and bails out cleanly if the
+    owner has no email address.
+    """
+    from analytics.alerts import SENSOR_KEY_REGISTRY
+    from analytics.models import Alert
+
+    try:
+        alert = Alert.objects.select_related("user", "zone").get(pk=alert_id)
+    except Alert.DoesNotExist:
+        logger.info("send_alert_email: alert %s gone — skipping", alert_id)
+        return {"sent": 0, "reason": "alert_missing"}
+
+    if not alert.is_active:
+        return {"sent": 0, "reason": "alert_inactive"}
+
+    user = alert.user
+    recipient = (getattr(user, "email", "") or "").strip() if user else ""
+    if not recipient:
+        return {"sent": 0, "reason": "no_recipient"}
+
+    spec = SENSOR_KEY_REGISTRY.get(alert.sensor_key, {})
+    unit = spec.get("unit") or ""
+    label = spec.get("label") or alert.sensor_key
+    zone_label = alert.zone.name if alert.zone else "votre compte"
+
+    subject = f"Alerte — {alert.name}"
+    body = (
+        f"Bonjour {getattr(user, 'firstname', '') or user.username},\n\n"
+        f"L'alerte « {alert.name} » sur {zone_label} s'est déclenchée.\n\n"
+        f"Capteur     : {label} ({alert.sensor_key})\n"
+        f"Valeur      : {value} {unit}\n"
+        f"Seuil       : {alert.condition} {alert.condition_nbr}\n"
+        f"Horodatage  : {timestamp_iso}\n\n"
+        f"Vous pouvez ajuster ou désactiver cette alerte depuis votre tableau "
+        f"de bord.\n"
+    )
+
+    try:
+        send_mail(
+            subject=subject,
+            message=body,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[recipient],
+            fail_silently=False,
+        )
+    except Exception:
+        logger.exception("Failed to send alert email for alert %s", alert_id)
+        return {"sent": 0, "reason": "smtp_error"}
+
+    return {"sent": 1, "alert_id": alert_id}
+
+
+######################################################################################################
 ######################   ET0 / VPD persistence (math lives in agriBack.agronomy)   ###################
 ######################################################################################################
 

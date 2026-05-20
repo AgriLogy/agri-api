@@ -24,13 +24,17 @@ from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APIClient
 
+from unittest.mock import patch
+
 from analytics.alerts import (
     EQUALITY_TOLERANCE,
     SENSOR_KEY_REGISTRY,
     assert_keys_resolve,
+    dispatch_alerts_for_reading,
     evaluate,
     evaluate_alert,
     get_sensor_model,
+    grace_period_seconds_for,
     latest_value_for,
     recent_triggers_for_user,
 )
@@ -393,3 +397,263 @@ class SensorKeysEndpointTests(TestCase):
         keys = {row["key"] for row in r.json()["keys"]}
         self.assertIn("temperature_weather", keys)
         self.assertIn("soil_moisture_medium", keys)
+
+
+# ---------------------------------------------------------------------------
+# 8. dispatch_alerts_for_reading — grace-period + race semantics
+# ---------------------------------------------------------------------------
+
+
+class DispatchAlertsForReadingTests(TestCase):
+    """The push-on-ingest path. Every test patches ``send_alert_email.delay``
+    so we can assert *what* would be enqueued without a Celery worker."""
+
+    def setUp(self):
+        self.user = _user()
+        self.zone = _zone(self.user)
+        self.alert = _alert(
+            self.user, zone=self.zone, condition_nbr=Decimal("20.00"),
+            sensor_key="wind_speed", name="High wind",
+        )
+        self.now = timezone.now()
+
+    def _dispatch(self, value):
+        with patch("agriBack.tasks.send_alert_email.delay") as send:
+            count = dispatch_alerts_for_reading(
+                sensor_key="wind_speed",
+                zone=self.zone,
+                user=self.user,
+                value=value,
+                timestamp=self.now,
+            )
+            return count, send
+
+    def test_no_dispatch_when_value_below_threshold(self):
+        count, send = self._dispatch(value=10.0)
+        self.assertEqual(count, 0)
+        send.assert_not_called()
+        self.alert.refresh_from_db()
+        self.assertIsNone(self.alert.last_emailed_at)
+
+    def test_dispatch_when_value_above_threshold(self):
+        count, send = self._dispatch(value=25.0)
+        self.assertEqual(count, 1)
+        send.assert_called_once()
+        kwargs = send.call_args.kwargs
+        self.assertEqual(kwargs["alert_id"], self.alert.pk)
+        self.assertEqual(kwargs["value"], 25.0)
+        self.alert.refresh_from_db()
+        self.assertIsNotNone(self.alert.last_emailed_at)
+        self.assertIsNotNone(self.alert.last_triggered_at)
+
+    def test_grace_period_blocks_second_dispatch(self):
+        # First reading wins, second (right after) must be silenced.
+        _, send1 = self._dispatch(value=25.0)
+        send1.assert_called_once()
+        _, send2 = self._dispatch(value=30.0)
+        send2.assert_not_called()
+
+    def test_dispatch_resumes_after_grace_period(self):
+        self._dispatch(value=25.0)
+        # Backdate the cursor past the wind_speed grace period (15 min default).
+        Alert.objects.filter(pk=self.alert.pk).update(
+            last_emailed_at=timezone.now() - timedelta(hours=1)
+        )
+        _, send = self._dispatch(value=25.0)
+        send.assert_called_once()
+
+    def test_inactive_alert_is_silent(self):
+        Alert.objects.filter(pk=self.alert.pk).update(is_active=False)
+        count, send = self._dispatch(value=25.0)
+        self.assertEqual(count, 0)
+        send.assert_not_called()
+
+    def test_zone_scoped_alert_ignores_other_zone(self):
+        other_zone = _zone(self.user, name="z-other")
+        with patch("agriBack.tasks.send_alert_email.delay") as send:
+            dispatch_alerts_for_reading(
+                sensor_key="wind_speed",
+                zone=other_zone,
+                user=self.user,
+                value=25.0,
+                timestamp=self.now,
+            )
+        send.assert_not_called()
+
+    def test_user_wide_alert_fires_for_any_zone(self):
+        Alert.objects.filter(pk=self.alert.pk).update(zone=None)
+        other_zone = _zone(self.user, name="z-other")
+        with patch("agriBack.tasks.send_alert_email.delay") as send:
+            dispatch_alerts_for_reading(
+                sensor_key="wind_speed",
+                zone=other_zone,
+                user=self.user,
+                value=25.0,
+                timestamp=self.now,
+            )
+        send.assert_called_once()
+
+    def test_unknown_sensor_key_is_silent(self):
+        with patch("agriBack.tasks.send_alert_email.delay") as send:
+            n = dispatch_alerts_for_reading(
+                sensor_key="not_a_real_sensor",
+                zone=self.zone,
+                user=self.user,
+                value=999.0,
+                timestamp=self.now,
+            )
+        self.assertEqual(n, 0)
+        send.assert_not_called()
+
+    def test_value_none_is_silent(self):
+        with patch("agriBack.tasks.send_alert_email.delay") as send:
+            n = dispatch_alerts_for_reading(
+                sensor_key="wind_speed",
+                zone=self.zone,
+                user=self.user,
+                value=None,
+                timestamp=self.now,
+            )
+        self.assertEqual(n, 0)
+        send.assert_not_called()
+
+
+class GracePeriodLookupTests(TestCase):
+    def test_known_key_returns_configured_value(self):
+        # Default fixture in settings.py: water_flow = 5 min = 300 s
+        self.assertEqual(grace_period_seconds_for("water_flow"), 300)
+
+    def test_unknown_key_falls_back_to_default(self):
+        from django.test import override_settings
+
+        with override_settings(DEFAULT_ALERT_GRACE_PERIOD=42):
+            self.assertEqual(grace_period_seconds_for("totally_unknown_key"), 42)
+
+    def test_override_settings_replaces_value(self):
+        from django.test import override_settings
+
+        with override_settings(ALERT_GRACE_PERIODS={"wind_speed": 1}):
+            self.assertEqual(grace_period_seconds_for("wind_speed"), 1)
+
+
+# ---------------------------------------------------------------------------
+# 9. WeatherIngestAPIView push integration
+# ---------------------------------------------------------------------------
+
+
+class IngestViewAlertDispatchTests(TestCase):
+    """Posting to the ingest endpoint must dispatch alerts for every metric
+    whose value crosses an active rule."""
+
+    def setUp(self):
+        self.user = _user("router-user")
+        self.user.username = "Router02"
+        self.user.save()
+        self.zone = _zone(self.user)
+        self.client = APIClient()
+
+    def test_post_above_threshold_dispatches_alert(self):
+        _alert(
+            self.user, zone=self.zone, sensor_key="wind_speed",
+            condition_nbr=Decimal("20.00"), name="High wind",
+        )
+        payload = {
+            "client": "Router02",
+            "wind_speed": 25.0,
+            "pressure_weather": 1010.0,
+        }
+        with patch("agriBack.tasks.send_alert_email.delay") as send:
+            r = self.client.post(
+                "/api/sensors/weather/ingest/", payload, format="json"
+            )
+        self.assertEqual(r.status_code, 201)
+        self.assertEqual(r.json()["inserted"], 2)
+        send.assert_called_once()
+        self.assertEqual(send.call_args.kwargs["value"], 25.0)
+
+    def test_post_below_threshold_does_not_dispatch(self):
+        _alert(
+            self.user, zone=self.zone, sensor_key="wind_speed",
+            condition_nbr=Decimal("20.00"), name="High wind",
+        )
+        payload = {"client": "Router02", "wind_speed": 5.0}
+        with patch("agriBack.tasks.send_alert_email.delay") as send:
+            r = self.client.post(
+                "/api/sensors/weather/ingest/", payload, format="json"
+            )
+        self.assertEqual(r.status_code, 201)
+        send.assert_not_called()
+
+    def test_post_fires_alerts_per_matching_metric(self):
+        _alert(
+            self.user, zone=self.zone, sensor_key="wind_speed",
+            condition_nbr=Decimal("20.00"), name="High wind",
+        )
+        _alert(
+            self.user, zone=self.zone, sensor_key="temperature_weather",
+            condition_nbr=Decimal("35.00"), name="Hot day",
+        )
+        payload = {
+            "client": "Router02",
+            "wind_speed": 25.0,
+            "temperature_weather": 40.0,
+        }
+        with patch("agriBack.tasks.send_alert_email.delay") as send:
+            r = self.client.post(
+                "/api/sensors/weather/ingest/", payload, format="json"
+            )
+        self.assertEqual(r.status_code, 201)
+        self.assertEqual(send.call_count, 2)
+
+
+# ---------------------------------------------------------------------------
+# 10. send_alert_email Celery task — defensive branches
+# ---------------------------------------------------------------------------
+
+
+class SendAlertEmailTaskTests(TestCase):
+    def setUp(self):
+        self.user = _user()
+        self.zone = _zone(self.user)
+        self.alert = _alert(
+            self.user, zone=self.zone, condition_nbr=Decimal("20.00"),
+            sensor_key="wind_speed", name="High wind",
+        )
+
+    def _call(self, alert_id=None):
+        from agriBack.tasks import send_alert_email
+
+        return send_alert_email.apply(
+            kwargs=dict(
+                alert_id=alert_id or self.alert.pk,
+                value=25.0,
+                timestamp_iso=timezone.now().isoformat(),
+            )
+        ).get()
+
+    def test_skips_when_alert_missing(self):
+        result = self._call(alert_id=9_999_999)
+        self.assertEqual(result["sent"], 0)
+        self.assertEqual(result["reason"], "alert_missing")
+
+    def test_skips_when_alert_inactive(self):
+        Alert.objects.filter(pk=self.alert.pk).update(is_active=False)
+        result = self._call()
+        self.assertEqual(result["sent"], 0)
+        self.assertEqual(result["reason"], "alert_inactive")
+
+    def test_skips_when_no_recipient(self):
+        self.user.email = ""
+        self.user.save()
+        result = self._call()
+        self.assertEqual(result["sent"], 0)
+        self.assertEqual(result["reason"], "no_recipient")
+
+    def test_sends_email_when_everything_ok(self):
+        from django.core import mail
+
+        result = self._call()
+        self.assertEqual(result["sent"], 1)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("High wind", mail.outbox[0].subject)
+        self.assertIn(self.user.email, mail.outbox[0].to)

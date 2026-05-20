@@ -238,6 +238,64 @@ else:
     }
 
 # -----------------------------------------------------------------------------
+# Alert email throttling
+# -----------------------------------------------------------------------------
+# Per-sensor_key grace period (in seconds) between consecutive alert emails
+# for the same alert row. Tuned per sensor family — water needs minute-scale
+# reactions, fruit-size readings drift over hours, soil chemistry is slow.
+# Any sensor_key not listed here falls back to DEFAULT_ALERT_GRACE_PERIOD.
+DEFAULT_ALERT_GRACE_PERIOD = 1800  # 30 minutes
+
+ALERT_GRACE_PERIODS: dict[str, int] = {
+    # Water — high-stakes, fast-changing
+    "water_flow":                 5 * 60,
+    "water_level":                5 * 60,
+    "water_pressure":             5 * 60,
+    "water_ec":                   5 * 60,
+    "ph_water":                   5 * 60,
+    # Wind — volatile but worth knowing quickly
+    "wind_speed":                15 * 60,
+    "wind_direction":            15 * 60,
+    # Weather — moderate cadence
+    "temperature_weather":      30 * 60,
+    "humidity_weather":         30 * 60,
+    "pressure_weather":         30 * 60,
+    "solar_radiation":          30 * 60,
+    "precipitation_rate":       30 * 60,
+    # ET0 — derived hourly anyway
+    "et0_weather":              60 * 60,
+    "et0_calculated":           60 * 60,
+    # Soil moisture — slow-changing series
+    "soil_moisture_low":        60 * 60,
+    "soil_moisture_medium":     60 * 60,
+    "soil_moisture_high":       60 * 60,
+    "multi_depth_soil_moisture_sensor": 60 * 60,
+    # Soil temperature
+    "soil_temperature_low":   2 * 60 * 60,
+    "soil_temperature_medium":2 * 60 * 60,
+    "soil_temperature_high":  2 * 60 * 60,
+    # Soil chemistry — drift on the hour scale
+    "ec_soil_low":            2 * 60 * 60,
+    "ec_soil_medium":         2 * 60 * 60,
+    "ec_soil_high":           2 * 60 * 60,
+    "ph_soil":                2 * 60 * 60,
+    "soil_conductivity":      2 * 60 * 60,
+    "soil_salinity":          2 * 60 * 60,
+    "ec_salinity":            2 * 60 * 60,
+    # NPK — very slow
+    "npk":                    4 * 60 * 60,
+    # Leaf
+    "leaf_moisture":             30 * 60,
+    "leaf_temperature":          30 * 60,
+    # Fruit — multi-hour growth signals
+    "fruit_size":             6 * 60 * 60,
+    "large_fruit_diameter":   6 * 60 * 60,
+    # Energy
+    "electricity_consumption":   30 * 60,
+}
+
+
+# -----------------------------------------------------------------------------
 # Email
 # -----------------------------------------------------------------------------
 # DEBUG defaults to the console backend (emails print to stdout). Set
