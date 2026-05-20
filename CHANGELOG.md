@@ -1,3 +1,10 @@
+# [1.6.0](https://github.com/AgriLogy/agrilogy-back/compare/v1.5.1...v1.6.0) (2026-05-20)
+
+
+### Features
+
+* **alerts:** email on ingest when an active alert fires, throttled per sensor ([#35](https://github.com/AgriLogy/agrilogy-back/issues/35)) ([cc7a0bc](https://github.com/AgriLogy/agrilogy-back/commit/cc7a0bc6c156e2006009dcde07b53485d99b7ae8)), closes [#36](https://github.com/AgriLogy/agrilogy-back/issues/36)
+
 ## [1.5.1](https://github.com/AgriLogy/agrilogy-back/compare/v1.5.0...v1.5.1) (2026-05-20)
 
 # [1.5.0](https://github.com/AgriLogy/agrilogy-back/compare/v1.4.2...v1.5.0) (2026-05-20)
