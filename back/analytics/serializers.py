@@ -28,9 +28,7 @@ class ZonesNameSerializer(serializers.ModelSerializer):
 
 
 class BaseSensorSerializer(serializers.ModelSerializer):
-    timestamp = serializers.DateTimeField(format="%Y-%m-%d")
-    # value = serializers.SerializerMethodField()
-
+    timestamp = serializers.DateTimeField(format="%Y-%m-%dT%H:%M:%SZ")
     default_unit = serializers.SerializerMethodField()
     available_units = serializers.SerializerMethodField()
 
