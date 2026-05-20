@@ -14,23 +14,32 @@ User creates alert  ─▶  Alert row (rule + state in one model)
                               ▼
                           Postgres
                               ▲
-                              │ on every chart load:
-                              │ AlertsForGraphAPIView →
-                              │   recent_triggers_for_user(user) →
-                              │     latest_value_for(alert) (single SELECT)
-                              │     evaluate_alert(alert, value)
-                              │     if first-ever trigger: stamp last_triggered_at
-                              ▼
-                       chart overlay JSON
+                              │
+                ┌─────────────┴──────────────┐
+                │                            │
+   chart overlay path                push-on-ingest path
+   (lazy, on read)                   (eager, on write)
+                │                            │
+   AlertsForGraphAPIView →     WeatherIngestAPIView (and any future
+     recent_triggers_for_user      ingest path) →
+       latest_value_for             dispatch_alerts_for_reading →
+       evaluate_alert                 evaluate_alert
+       stamp last_triggered_at        atomic gate on last_emailed_at
+       on first fire                  enqueue send_alert_email Celery task
+                                      send_mail to alert.user.email
 ```
 
 - An "Alert" is **both the rule and the state**. There is no `AlertRule`
   table.
-- Evaluation happens **lazily**, on read, when the dashboard asks for
-  `/api/alerts/for-graph/`. There is no Celery task that fires alerts.
-- A triggered alert produces **no email, no notification row, no push**.
-  It only sets `last_triggered_at` on first fire and is shown as an
-  overlay on the chart.
+- **Two evaluation paths run today:**
+  1. **Push on ingest** — fires an email Celery task whenever a new sensor
+     reading crosses an active alert's threshold, gated by a per-sensor
+     grace period so a chatty device cannot spam the inbox.
+  2. **Lazy on read** — when the dashboard asks for
+     `/api/alerts/for-graph/` we re-evaluate every active alert from the
+     latest reading and return chart-overlay JSON. Stamps
+     `last_triggered_at` on first ever fire (separate field, separate
+     purpose from the email cursor).
 - `/api/alerts/suggest/` is a **rule-based prefill** for the create-alert
   form — not AI, not auto-creating alerts.
 - **Manager affirmations** are an admin-approval workflow for sensitive
@@ -252,11 +261,125 @@ Plus admin tree — `back/analytics/admin_urls.py:44-51`:
 
 - ✅ On `GET /api/alerts/for-graph/` — every chart load triggers a full
   re-evaluation pass.
-- ❌ Not on ingest. `WeatherIngestAPIView` writes a row and returns
-  immediately — no alert check — `views.py:298-382`.
+- ✅ On `POST /api/sensors/weather/ingest/` — after each sensor row is
+  written, `dispatch_alerts_for_reading` fans out alert emails via
+  Celery. See §10 below.
 - ❌ Not on a schedule. None of `simulate_sensor_ingest`,
   `compute_et0_vpd_hourly`, or `send_periodic_notifications` evaluate
-  alerts — `tasks.py:16-66, 80-121, 324-791`.
+  alerts — `tasks.py:16-66, 80-121, 324-791`. The push-on-ingest path
+  covers real device data; simulated/synthetic readings intentionally
+  do not email anyone.
+
+### 10. Push-on-ingest dispatch (`dispatch_alerts_for_reading`)
+
+The ingest view calls this helper after writing each sensor row. Live
+in `back/analytics/alerts.py`, ~70 lines, no signals — just a function
+called from the ingest path.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Dev as Device
+  participant Ingest as WeatherIngestAPIView
+  participant DB as Postgres
+  participant Disp as dispatch_alerts_for_reading
+  participant Cel as send_alert_email (Celery)
+  participant SMTP as Email backend
+
+  Dev->>Ingest: POST /api/sensors/weather/ingest/<br/>{wind_speed: 25, …}
+  Ingest->>DB: INSERT WindSpeed(user, zone, value=25, timestamp=now)
+  Ingest->>Disp: dispatch_alerts_for_reading(<br/>sensor_key="wind_speed", zone, user, value=25, ts)
+  Disp->>DB: SELECT active alerts WHERE user=? AND sensor_key=?<br/>(also zone=? OR zone IS NULL)
+  loop per matching alert
+    Disp->>Disp: evaluate_alert(alert, 25)
+    alt below threshold
+      Disp-->>Disp: skip
+    else above threshold
+      Disp->>DB: UPDATE alert SET last_emailed_at=now,<br/>last_triggered_at=now<br/>WHERE pk=? AND<br/>(last_emailed_at IS NULL OR last_emailed_at < cutoff)
+      alt UPDATE returned 0 (lost the race)
+        Disp-->>Disp: skip
+      else UPDATE returned 1 (won)
+        Disp->>Cel: send_alert_email.delay(alert_id, value, ts_iso)
+      end
+    end
+  end
+  Disp-->>Ingest: enqueued count
+  Ingest-->>Dev: 201 {inserted: N}
+
+  Cel->>DB: SELECT alert (defensive reload)
+  alt alert missing / inactive / no recipient
+    Cel-->>Cel: {sent:0, reason:…}
+  else
+    Cel->>SMTP: send_mail(subject, body, from, [user.email])
+    Cel-->>Cel: {sent:1}
+  end
+```
+
+#### Grace period (`ALERT_GRACE_PERIODS` in settings)
+
+Per-sensor cool-down between consecutive emails for the same alert row.
+Configured in `back/agriBack/settings.py` (`ALERT_GRACE_PERIODS` dict +
+`DEFAULT_ALERT_GRACE_PERIOD` fallback). Defaults at the time of writing:
+
+| Sensor family            | Default grace |
+|--------------------------|--------------:|
+| Water (flow, level, pressure, EC, pH) | 5 min |
+| Wind (speed, direction)  | 15 min        |
+| Weather (T, RH, P, solar, precipitation) | 30 min |
+| Leaf moisture / temperature | 30 min     |
+| Electricity consumption  | 30 min        |
+| ET0 (weather, calculated) | 1 h          |
+| Soil moisture            | 1 h           |
+| Soil temperature         | 2 h           |
+| Soil chemistry (EC, pH, conductivity, salinity) | 2 h |
+| NPK                      | 4 h           |
+| Fruit size / large fruit diameter | 6 h  |
+| _any unlisted key_       | 30 min (`DEFAULT_ALERT_GRACE_PERIOD`) |
+
+`grace_period_seconds_for(sensor_key)` is the single read API.
+
+#### Race semantics
+
+The grace gate is a **conditional UPDATE**, not a Python check:
+
+```python
+won = Alert.objects.filter(pk=alert.pk).filter(
+    Q(last_emailed_at__isnull=True) | Q(last_emailed_at__lt=cutoff)
+).update(last_emailed_at=now_ts, last_triggered_at=now_ts)
+if won:
+    send_alert_email.delay(...)
+```
+
+This means: even if two devices POST simultaneously and two Django
+workers evaluate the same alert at the same time, only one of them will
+flip the timestamp and only one email is enqueued. The other sees the
+freshly-bumped cursor and drops silently.
+
+#### The Celery task
+
+`send_alert_email(alert_id, value, timestamp_iso)` in
+`back/agriBack/tasks.py`. The task is intentionally simple: it reloads
+the alert, bails out on `alert_missing` / `alert_inactive` /
+`no_recipient` / `smtp_error`, and otherwise sends a French plaintext
+email to `alert.user.email`. The grace gate has already been won
+synchronously in the ingest path, so the task never re-checks it.
+
+Email shape:
+
+```
+Sujet: Alerte — <alert.name>
+
+Bonjour <firstname>,
+
+L'alerte « <name> » sur <zone.name | "votre compte"> s'est déclenchée.
+
+Capteur     : <label> (<sensor_key>)
+Valeur      : <value> <unit>
+Seuil       : <condition> <condition_nbr>
+Horodatage  : <ISO timestamp>
+
+Vous pouvez ajuster ou désactiver cette alerte depuis votre tableau de bord.
+```
 
 ## Manager affirmations — adjacent, NOT alert-related
 
@@ -319,17 +442,21 @@ a Jira-style two-step.
 
 ## Known issues / gaps
 
-- **No alert → notification dispatch.** A triggered alert does not send
-  email, push, SMS, or webhook. It updates `last_triggered_at` and that
-  is all.
-- **No scheduled checker.** Alerts are evaluated only when the dashboard
-  asks. A user who never opens the app never has alerts evaluated, and
-  the operator can't run a `make check-alerts` pass either.
-- **No debounce.** `last_triggered_at` is stamped only on first fire,
-  but evaluation re-runs on every chart load and would re-stamp if it
-  were reset. There is no per-alert silence window.
-- **No rate limit / aggregation.** Multiple alerts on the same series
-  fire independently.
+- **No scheduled fallback checker.** Alerts only fire when (a) a new
+  reading arrives on the ingest path or (b) the dashboard loads a chart.
+  A user with no incoming sensor data and who never opens the app will
+  not be notified that "nothing has happened" — there's no liveness
+  alert.
+- **Push only fires for the 6 weather metrics today.**
+  `WeatherIngestAPIView` is the only wired ingest path; soil / fruit /
+  leaf / NPK / water alerts will fire as soon as those sensors get a
+  device-facing ingest endpoint (extends naturally — the dispatcher
+  switches on `sensor_key`).
+- **Per-alert grace override missing.** The cool-down is global per
+  sensor key. Users cannot ask "ping me every minute for this one
+  critical alert".
+- **No rate limit / aggregation across alerts.** If two alerts on the
+  same series fire on the same reading, the user gets two emails.
 - **`AlertSuggest` does not back-test.** The threshold is the mean of
   the last 50 readings, period — no percentile, no SD, no seasonality.
 - **`type` field is decoupled from `sensor_key`.** A user can create an

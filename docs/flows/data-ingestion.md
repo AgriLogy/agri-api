@@ -79,6 +79,7 @@ sequenceDiagram
     alt Django 2xx
       Dj->>Dj: validate JSON object<br/>extract 6 METRIC_KEYS<br/>resolve client→User→Zone
       Dj->>PG: WindSpeed / TemperatureWeather / …<br/>(user, zone, value, timestamp=now)
+      Note over Dj: per metric — see docs/flows/alerts.md §10<br/>dispatch_alerts_for_reading(...)<br/>→ may enqueue send_alert_email Celery task
       Dj-->>Node: 201 {"inserted": N}
       Node->>FS: log "FORWARDED_OK"
     else Django 4xx/5xx/timeout

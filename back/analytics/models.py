@@ -146,6 +146,11 @@ class Alert(models.Model):
     )
     is_active = models.BooleanField(default=True)
     last_triggered_at = models.DateTimeField(null=True, blank=True)
+    # Stamped every time an alert email is actually dispatched. Distinct from
+    # ``last_triggered_at`` (which is "first fire ever, for chart overlays")
+    # so the per-sensor grace-period gate in ``dispatch_alerts_for_reading``
+    # has a dedicated cursor it can bump on every notification.
+    last_emailed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True, null=True, blank=True)
 
