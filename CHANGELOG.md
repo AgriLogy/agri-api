@@ -1,3 +1,11 @@
+## [1.4.2](https://github.com/AgriLogy/agrilogy-back/compare/v1.4.1...v1.4.2) (2026-05-20)
+
+
+### Bug Fixes
+
+* **analytics:** serialize sensor timestamps with full ISO 8601 precision ([661b34d](https://github.com/AgriLogy/agrilogy-back/commit/661b34d061ffe79ece7009500dee2979df59dc0c)), closes [#29](https://github.com/AgriLogy/agrilogy-back/issues/29)
+* **notifications:** space numeric values from units (°C, %) in email body ([b638506](https://github.com/AgriLogy/agrilogy-back/commit/b63850632ba8cb70e851c800c13c691cd8119ff6)), closes [#30](https://github.com/AgriLogy/agrilogy-back/issues/30)
+
 ## [1.4.1](https://github.com/AgriLogy/agrilogy-back/compare/v1.4.0...v1.4.1) (2026-05-17)
 
 # [1.4.0](https://github.com/AgriLogy/agrilogy-back/compare/v1.3.1...v1.4.0) (2026-05-14)
