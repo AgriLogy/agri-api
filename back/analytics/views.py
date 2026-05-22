@@ -362,14 +362,27 @@ class WeatherIngestAPIView(APIView):
             model_cls.objects.create(
                 user=user, zone=zone, value=value, timestamp=now
             )
-            dispatch_alerts_for_reading(
-                sensor_key=sensor_key,
-                zone=zone,
-                user=user,
-                value=value,
-                timestamp=now,
-            )
             inserted += 1
+            # Alert dispatch must never abort the ingest loop: the sensor row
+            # is already persisted, and a downstream alerts bug (schema drift,
+            # broker outage, etc.) shouldn't drop the remaining keys in the
+            # payload — we hit exactly that on prod with a missing column on
+            # analytics_alert.
+            try:
+                dispatch_alerts_for_reading(
+                    sensor_key=sensor_key,
+                    zone=zone,
+                    user=user,
+                    value=value,
+                    timestamp=now,
+                )
+            except Exception:
+                logger.exception(
+                    "alert dispatch failed for sensor_key=%s user=%s zone=%s",
+                    sensor_key,
+                    getattr(user, "username", user),
+                    zone.id,
+                )
 
         return Response({"inserted": inserted}, status=status.HTTP_201_CREATED)
 
