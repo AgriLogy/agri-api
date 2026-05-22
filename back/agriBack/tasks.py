@@ -389,7 +389,7 @@ def get_or_create_user_and_zones():
 
 # --- main simulator ---
 @shared_task
-def simulate_sensor_ingest(self):
+def simulate_sensor_ingest():
     """
     Runs every 15 minutes. Writes one sample for *each sensor model* per zone,
     using quarter-hour aligned timestamps for fast-changing sensors, hourly/daily
