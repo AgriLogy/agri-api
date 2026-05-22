@@ -63,10 +63,6 @@ services:
       # Postgres connection comes from back/.env (Supabase pooler).
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
-      # Default email goes to Mailpit when running compose; override in
-      # back/.env to point at Gmail in production.
-      EMAIL_HOST: ${EMAIL_HOST:-mailpit}
-      EMAIL_PORT: ${EMAIL_PORT:-1025}
       DJANGO_RUN_MODE: web
     command: ["bash", "/code/docker-entrypoint.sh", "web"]
     ports:
@@ -98,8 +94,6 @@ services:
       # Postgres connection comes from back/.env (Supabase pooler).
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
-      EMAIL_HOST: ${EMAIL_HOST:-mailpit}
-      EMAIL_PORT: ${EMAIL_PORT:-1025}
       DJANGO_RUN_MODE: worker
     command: ["bash", "/code/docker-entrypoint.sh", "worker"]
     volumes:
@@ -125,8 +119,6 @@ services:
       # Postgres connection comes from back/.env (Supabase pooler).
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
-      EMAIL_HOST: ${EMAIL_HOST:-mailpit}
-      EMAIL_PORT: ${EMAIL_PORT:-1025}
       DJANGO_RUN_MODE: beat
     command: ["bash", "/code/docker-entrypoint.sh", "beat"]
     volumes:
