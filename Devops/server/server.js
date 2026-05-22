@@ -32,7 +32,7 @@ function postToPython(payload) {
         res.on("end", () => {
           const ok = res.statusCode >= 200 && res.statusCode < 300;
           if (!ok) return reject(new Error(`Python ${res.statusCode}: ${body}`));
-          resolve(body);
+          resolve({ statusCode: res.statusCode, body });
         });
       }
     );
@@ -86,14 +86,20 @@ const server = http.createServer((req, res) => {
 
         // only forward if it is a JSON object (not array)
         if (newData && typeof newData === "object" && !Array.isArray(newData)) {
-        try {
-            await postToPython(newData);
-            logEntry += ` | FORWARDED_OK`;
-            console.log("true")
-        } catch (e) {
-            logEntry += ` | FORWARDED_FAIL: ${e.message}`;
-            console.log("false")
-        }
+            const client = newData.client || "<unknown>";
+            const keyCount = Object.keys(newData).filter((k) => k !== "client").length;
+            try {
+                const { statusCode, body: respBody } = await postToPython(newData);
+                logEntry += ` | FORWARDED_OK`;
+                console.log(
+                    `[${timestamp}] forward ok   client=${client} keys=${keyCount} status=${statusCode} body=${respBody}`
+                );
+            } catch (e) {
+                logEntry += ` | FORWARDED_FAIL: ${e.message}`;
+                console.error(
+                    `[${timestamp}] forward FAIL client=${client} keys=${keyCount} error=${e.message}`
+                );
+            }
         }
 
 
