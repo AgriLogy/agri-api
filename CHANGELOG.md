@@ -1,3 +1,12 @@
+## [1.7.1](https://github.com/AgriLogy/agrilogy-back/compare/v1.7.0...v1.7.1) (2026-05-22)
+
+
+### Bug Fixes
+
+* **bridge:** structured logs with client, status, and error body ([#45](https://github.com/AgriLogy/agrilogy-back/issues/45)) ([a07a719](https://github.com/AgriLogy/agrilogy-back/commit/a07a7196d06b637db5db1d5fcd62f8ef0a1e64b7)), closes [#44](https://github.com/AgriLogy/agrilogy-back/issues/44)
+* **ingest:** isolate alert dispatch so a failure can't drop sensor writes ([#43](https://github.com/AgriLogy/agrilogy-back/issues/43)) ([e2eecea](https://github.com/AgriLogy/agrilogy-back/commit/e2eeceaec9acefd23f5799fa4f8aa660e9e65d17)), closes [#42](https://github.com/AgriLogy/agrilogy-back/issues/42)
+* **tasks:** drop unused self arg breaking simulate_sensor_ingest ([#41](https://github.com/AgriLogy/agrilogy-back/issues/41)) ([d08762a](https://github.com/AgriLogy/agrilogy-back/commit/d08762a74b8e7b86efd19dc8934077ca6a272492)), closes [#40](https://github.com/AgriLogy/agrilogy-back/issues/40)
+
 # [1.7.0](https://github.com/AgriLogy/agrilogy-back/compare/v1.6.0...v1.7.0) (2026-05-20)
 
 
