@@ -1,3 +1,10 @@
+# [1.11.0](https://github.com/AgriLogy/agrilogy-back/compare/v1.10.0...v1.11.0) (2026-05-28)
+
+
+### Features
+
+* **lorawan/chirpstack:** pydantic-typed webhook for ChirpStack v4 uplink ([#64](https://github.com/AgriLogy/agrilogy-back/issues/64)) ([f64f514](https://github.com/AgriLogy/agrilogy-back/commit/f64f514549e8264302409859d4bd3513d19feb28))
+
 # [1.10.0](https://github.com/AgriLogy/agrilogy-back/compare/v1.9.0...v1.10.0) (2026-05-28)
 
 
