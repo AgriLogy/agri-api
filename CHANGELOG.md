@@ -1,3 +1,10 @@
+## [1.8.1](https://github.com/AgriLogy/agrilogy-back/compare/v1.8.0...v1.8.1) (2026-05-28)
+
+
+### Bug Fixes
+
+* **phase-2:** wire DJANGO_ENV through Makefile + entrypoint + compose + env-example ([#58](https://github.com/AgriLogy/agrilogy-back/issues/58)) ([e32b9d4](https://github.com/AgriLogy/agrilogy-back/commit/e32b9d42a95d49164986acfc5a4e1c3eec3e780a)), closes [#56](https://github.com/AgriLogy/agrilogy-back/issues/56)
+
 # [1.8.0](https://github.com/AgriLogy/agrilogy-back/compare/v1.7.4...v1.8.0) (2026-05-28)
 
 
