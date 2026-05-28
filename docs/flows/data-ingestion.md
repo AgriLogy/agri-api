@@ -66,7 +66,7 @@ graph LR
 sequenceDiagram
   autonumber
   participant Dev as Device (Router02)
-  participant Node as agri-bridge :9090<br/>Devops/server/server.js
+  participant Node as agri-bridge :9090<br/>../agri-bridge/src/server.js
   participant FS as shared volume<br/>requests.json + .logs
   participant Dj as agri-api-web :8000<br/>WeatherIngestAPIView
   participant PG as Postgres
@@ -127,7 +127,7 @@ sequenceDiagram
   }
   ```
 
-### 2. The Node bridge — `Devops/server/server.js`
+### 2. The Node bridge — `../agri-bridge/src/server.js`
 
 - Listens on `0.0.0.0:9090` — `server.js:108-110`.
 - Parses with `JSON.parse(body)` — `server.js:61`.
