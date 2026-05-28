@@ -29,10 +29,13 @@ log() { printf "\033[1;36m[entrypoint:%s]\033[0m %s\n" "$ROLE" "$*"; }
 # --- Wait for Postgres ------------------------------------------------------
 # Every role needs the DB up because Django imports ORM at module load.
 wait_for_postgres() {
-  if [[ "${USE_POSTGRES:-False}" != "True" ]]; then
-    log "USE_POSTGRES != True — skipping DB wait."
-    return 0
-  fi
+  case "${USE_POSTGRES:-false}" in
+    [Tt][Rr][Uu][Ee]) ;;
+    *)
+      log "USE_POSTGRES != true — skipping DB wait."
+      return 0
+      ;;
+  esac
   log "Waiting for postgres at ${POSTGRES_HOST:-agrydata}:${POSTGRES_PORT:-5432} ..."
   python - <<'PY'
 import os, socket, time, sys
