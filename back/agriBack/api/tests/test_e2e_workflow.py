@@ -243,7 +243,59 @@ def test_workflow():
     )
     assert resp.status_code == 404
 
+    # --- 14. weather ingest (PR 8) — bridge webhook path ----------------
+    # Needs a Zone to write to, so create one tied to the e2e user.
+    from analytics.models import TemperatureWeather, Zone
+    from apps.users.models import CustomUser
+
+    e2e_user = CustomUser.objects.get(username=USER["username"])
+    Zone.objects.create(
+        user=e2e_user,
+        name="E2E zone",
+        space=1000,
+        critical_moisture_threshold=18.0,
+    )
+
+    # All-None payload short-circuits to 200 with detail=all_metrics_none.
+    resp = client.post(
+        "/api/sensors/weather/ingest/",
+        data={"client": USER["username"]},
+        format="json",
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"inserted": 0, "detail": "all_metrics_none"}
+
+    # Real metrics + client → 201, rows persisted, dispatch fired (no
+    # alerts configured for this user, so no email enqueued).
+    payload = {
+        "client": USER["username"],
+        "temperature_weather": 22.5,
+        "humidity_weather": 55.0,
+    }
+    resp = client.post(
+        "/api/sensors/weather/ingest/", data=payload, format="json",
+    )
+    assert resp.status_code == 201
+    assert resp.json() == {"inserted": 2}
+    assert TemperatureWeather.objects.filter(user=e2e_user).count() == 1
+
+    # Missing client + metrics present → 400.
+    resp = client.post(
+        "/api/sensors/weather/ingest/",
+        data={"temperature_weather": 22.5},
+        format="json",
+    )
+    assert resp.status_code == 400
+
+    # Unknown client → 400.
+    resp = client.post(
+        "/api/sensors/weather/ingest/",
+        data={"client": "nobody", "temperature_weather": 22.5},
+        format="json",
+    )
+    assert resp.status_code == 400
+
     # Carry the user/access onwards for future chapters added by later PRs.
     ctx["aff_id"] = aff_id
-    ctx["next_chapter"] = 14
+    ctx["next_chapter"] = 15
     assert ctx["access"] == access  # sentinel — ctx kept for later chapters
