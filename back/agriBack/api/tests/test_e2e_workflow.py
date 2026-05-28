@@ -295,7 +295,111 @@ def test_workflow():
     )
     assert resp.status_code == 400
 
+    # --- 15. admin tree (PR 10) — non-admin path ------------------------
+    # The e2e user is NOT staff: every admin endpoint must 403, including
+    # the /auth/admin/* sub-tree, the analytics /api/admin/* tree, and
+    # the legacy /api/active-graph/<u>/<z>/.
+    resp = client.get("/auth/admin/users/", **_auth_headers(access))
+    assert resp.status_code == 403
+    resp = client.get("/api/admin/overview/", **_auth_headers(access))
+    assert resp.status_code == 403
+    resp = client.get(
+        "/api/admin/users/admin/zones/", **_auth_headers(access),
+    )
+    assert resp.status_code == 403
+    resp = client.get(
+        "/api/active-graph/admin/1/", **_auth_headers(access),
+    )
+    assert resp.status_code == 403
+
+    # Promote the e2e user to staff and re-exercise the admin tree.
+    e2e_user.is_staff = True
+    e2e_user.save(update_fields=["is_staff"])
+
+    # New access token to pick up is_staff = True.
+    admin_tokens = _signin(client)
+    admin_access = admin_tokens["access"]
+
+    # /auth/admin/users/ — at least the other seeded user shows up.
+    resp = client.get("/auth/admin/users/", **_auth_headers(admin_access))
+    assert resp.status_code == 200
+    rows = resp.json()
+    assert isinstance(rows, list)
+
+    # /api/admin/overview/ — KPIs payload.
+    resp = client.get("/api/admin/overview/", **_auth_headers(admin_access))
+    assert resp.status_code == 200
+    over = resp.json()
+    for k in ("users_total", "users_active", "staff_total", "zones_total"):
+        assert k in over
+
+    # /api/admin/users/<self>/zones/ — at least the one created in chapter 14.
+    resp = client.get(
+        f"/api/admin/users/{USER['username']}/zones/",
+        **_auth_headers(admin_access),
+    )
+    assert resp.status_code == 200
+    zones = resp.json()
+    assert len(zones) >= 1
+    zone_id = zones[0]["id"]
+
+    # GET zone params subset.
+    resp = client.get(
+        f"/api/admin/users/{USER['username']}/zones/{zone_id}/params/",
+        **_auth_headers(admin_access),
+    )
+    assert resp.status_code == 200
+    assert "soil_param_TAW" in resp.json()
+
+    # PATCH the zone (idempotent re-save) — proves the validation path.
+    resp = client.patch(
+        f"/api/admin/users/{USER['username']}/zones/{zone_id}/",
+        data={"critical_moisture_threshold": 20.0},
+        format="json",
+        **_auth_headers(admin_access),
+    )
+    assert resp.status_code == 200
+    assert resp.json()["critical_moisture_threshold"] == 20.0
+
+    # GET active-graph for the same zone (gets-or-creates).
+    resp = client.get(
+        f"/api/admin/users/{USER['username']}/zones/{zone_id}/active-graph/",
+        **_auth_headers(admin_access),
+    )
+    assert resp.status_code == 200
+
+    # Legacy active-graph admin URL — same row, same shape.
+    resp = client.get(
+        f"/api/active-graph/{USER['username']}/{zone_id}/",
+        **_auth_headers(admin_access),
+    )
+    assert resp.status_code == 200
+
+    # Per-user activity timeline.
+    resp = client.get(
+        f"/api/admin/users/{USER['username']}/activity/",
+        **_auth_headers(admin_access),
+    )
+    assert resp.status_code == 200
+    assert "events" in resp.json()
+
+    # Per-user sensor-units GET (empty for a fresh user).
+    resp = client.get(
+        f"/api/admin/users/{USER['username']}/sensor-units/",
+        **_auth_headers(admin_access),
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {}
+
+    # User soft-delete via /auth/admin/users/<u>/ DELETE.
+    resp = client.delete(
+        f"/auth/admin/users/{USER['username']}/",
+        **_auth_headers(admin_access),
+    )
+    # Admin cannot delete their own admin account.
+    assert resp.status_code == 400
+
     # Carry the user/access onwards for future chapters added by later PRs.
     ctx["aff_id"] = aff_id
-    ctx["next_chapter"] = 15
+    ctx["next_chapter"] = 16
     assert ctx["access"] == access  # sentinel — ctx kept for later chapters
