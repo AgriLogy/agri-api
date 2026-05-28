@@ -1,3 +1,10 @@
+# [1.14.0](https://github.com/AgriLogy/agri-api/compare/v1.13.0...v1.14.0) (2026-05-28)
+
+
+### Features
+
+* **sensors:** extract sensor models into apps/sensors/ ([#80](https://github.com/AgriLogy/agri-api/issues/80)) ([06b9266](https://github.com/AgriLogy/agri-api/commit/06b92661d80ab65ca2ea97238adfbce5c955dd97))
+
 # [1.13.0](https://github.com/AgriLogy/agri-api/compare/v1.12.7...v1.13.0) (2026-05-28)
 
 
