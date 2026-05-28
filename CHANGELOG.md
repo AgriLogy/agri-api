@@ -1,3 +1,10 @@
+# [1.13.0](https://github.com/AgriLogy/agri-api/compare/v1.12.7...v1.13.0) (2026-05-28)
+
+
+### Features
+
+* **users:** rename CustomUser package to apps/users ([#78](https://github.com/AgriLogy/agri-api/issues/78)) ([8b75c6e](https://github.com/AgriLogy/agri-api/commit/8b75c6e7856519408e5392650f91a1eec534937c))
+
 ## [1.12.7](https://github.com/AgriLogy/agri-api/compare/v1.12.6...v1.12.7) (2026-05-28)
 
 ## [1.12.6](https://github.com/AgriLogy/agri-api/compare/v1.12.5...v1.12.6) (2026-05-28)
