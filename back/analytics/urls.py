@@ -24,7 +24,8 @@ urlpatterns = [
     # (analytics.router_manager_affirmation).
     # Alerts CRUD + for-graph / sensor-keys / suggest migrated to
     # django-ninja in analytics.router_alerts.
-    path("sensors/weather/ingest/", WeatherIngestAPIView.as_view()),
+    # sensors/weather/ingest/ migrated to django-ninja
+    # (analytics.router_weather_ingest).
     # notifications-and-alerts/ and zone-notification-outbound/ migrated
     # to django-ninja (analytics.router_notifications).
 ]
