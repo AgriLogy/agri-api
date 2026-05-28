@@ -13,9 +13,9 @@
 #   project-sync.sh close <url>                       # sets Status=Done
 #
 # Examples:
-#   ./scripts/project-sync.sh add https://github.com/AgriLogy/agrilogy-back/issues/49 --estimate 5
-#   ./scripts/project-sync.sh add https://github.com/AgriLogy/agrilogy-back/pull/50 --estimate 5 --status "In review"
-#   ./scripts/project-sync.sh close https://github.com/AgriLogy/agrilogy-back/issues/49
+#   ./scripts/project-sync.sh add https://github.com/AgriLogy/agri-api/issues/49 --estimate 5
+#   ./scripts/project-sync.sh add https://github.com/AgriLogy/agri-api/pull/50 --estimate 5 --status "In review"
+#   ./scripts/project-sync.sh close https://github.com/AgriLogy/agri-api/issues/49
 #
 # Fibonacci sizing convention (story points):
 #   1  — trivial (one-line, one-file change)
