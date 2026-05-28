@@ -1,3 +1,10 @@
+# [1.22.0](https://github.com/AgriLogy/agri-api/compare/v1.21.0...v1.22.0) (2026-05-28)
+
+
+### Features
+
+* **api:** migrate apps/users auth endpoints to django-ninja ([#100](https://github.com/AgriLogy/agri-api/issues/100)) ([a53b690](https://github.com/AgriLogy/agri-api/commit/a53b690f020a9e09f6de820ed47de6a512823a6b))
+
 # [1.21.0](https://github.com/AgriLogy/agri-api/compare/v1.20.0...v1.21.0) (2026-05-28)
 
 
