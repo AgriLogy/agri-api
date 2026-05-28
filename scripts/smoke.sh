@@ -131,6 +131,50 @@ else
     fail=$((fail + 1))
 fi
 
+# Bridge end-to-end (Phase 5x). POST a Router0X-format payload to :9090,
+# expect 202 with backend_status=202 — proves the full transform + forward path.
+bridge_payload='{"user":"smoke","timestamp":"2026-05-28T11:00:00Z","humidity_weather":70.0,"wind_speed":35.42}'
+bridge_out=$(curl -sSL -m "$TIMEOUT" \
+    -X POST -H "Content-Type: application/json" \
+    -d "$bridge_payload" \
+    -w '%{http_code}' -o /tmp/smoke_bridge_body \
+    "http://localhost:9090/" 2>&1)
+if [[ "$bridge_out" == "202" ]]; then
+    printf "${GREEN}✓${RESET} %-32s ${DIM}POST :9090/ — status=202, body=%s${RESET}\n" \
+        "agri-bridge end-to-end" "$(cat /tmp/smoke_bridge_body 2>/dev/null | head -c 100)"
+    pass=$((pass + 1))
+else
+    printf "${RED}✗${RESET} %-32s ${DIM}POST :9090/ — status=%s body=%s${RESET}\n" \
+        "agri-bridge end-to-end" "$bridge_out" "$(cat /tmp/smoke_bridge_body 2>/dev/null | head -c 200)"
+    fail=$((fail + 1))
+fi
+
+# Bridge rejection — non-numeric sensor value must 400 (zod-rejected at bridge)
+bridge_bad=$(curl -sSL -m "$TIMEOUT" \
+    -X POST -H "Content-Type: application/json" \
+    -d '{"user":"","not_a_number":"hot"}' \
+    -w '%{http_code}' -o /dev/null \
+    "http://localhost:9090/" 2>&1)
+if [[ "$bridge_bad" == "400" ]]; then
+    printf "${GREEN}✓${RESET} %-32s ${DIM}POST :9090/ — status=400 (zod-rejected)${RESET}\n" "agri-bridge (invalid)"
+    pass=$((pass + 1))
+else
+    printf "${RED}✗${RESET} %-32s ${DIM}POST :9090/ — status=%s (expected 400)${RESET}\n" \
+        "agri-bridge (invalid)" "$bridge_bad"
+    fail=$((fail + 1))
+fi
+
+# Bridge health
+bridge_health=$(curl -sSL -m 3 -w '%{http_code}' -o /dev/null "http://localhost:9090/health" 2>&1)
+if [[ "$bridge_health" == "200" ]]; then
+    printf "${GREEN}✓${RESET} %-32s ${DIM}GET :9090/health — status=200${RESET}\n" "agri-bridge health"
+    pass=$((pass + 1))
+else
+    printf "${RED}✗${RESET} %-32s ${DIM}GET :9090/health — status=%s${RESET}\n" \
+        "agri-bridge health" "$bridge_health"
+    fail=$((fail + 1))
+fi
+
 # ChirpStack uplink (Phase 5b). POST a minimal valid v4 uplink event; expect 202.
 chirpstack_payload='{"deviceInfo":{"devEui":"0011223344556677","deviceName":"smoke"},"rxInfo":[{"rssi":-85.2,"snr":7.5}],"object":{"airTemperature":{"value":22.5,"unit":"C"}}}'
 cs_out=$(curl -sSL -m "$TIMEOUT" \
