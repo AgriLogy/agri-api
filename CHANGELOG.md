@@ -1,3 +1,10 @@
+# [1.19.0](https://github.com/AgriLogy/agri-api/compare/v1.18.0...v1.19.0) (2026-05-28)
+
+
+### Features
+
+* **api:** scaffold django-ninja /api/v2 surface ([#94](https://github.com/AgriLogy/agri-api/issues/94)) ([2af3e3f](https://github.com/AgriLogy/agri-api/commit/2af3e3fa512f48deb5ad6bd15beee007204122c4))
+
 # [1.18.0](https://github.com/AgriLogy/agri-api/compare/v1.17.0...v1.18.0) (2026-05-28)
 
 
