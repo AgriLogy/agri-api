@@ -1,3 +1,10 @@
+## [1.7.4](https://github.com/AgriLogy/agrilogy-back/compare/v1.7.3...v1.7.4) (2026-05-28)
+
+
+### Bug Fixes
+
+* **phase-1:** drop Dockerfile run.sh refs + update entrypoint paths ([#54](https://github.com/AgriLogy/agrilogy-back/issues/54)) ([437ca4c](https://github.com/AgriLogy/agrilogy-back/commit/437ca4c5c741f56dd6a5bf39725df980754f8244)), closes [#52](https://github.com/AgriLogy/agrilogy-back/issues/52)
+
 ## [1.7.3](https://github.com/AgriLogy/agrilogy-back/compare/v1.7.2...v1.7.3) (2026-05-28)
 
 ## [1.7.2](https://github.com/AgriLogy/agrilogy-back/compare/v1.7.1...v1.7.2) (2026-05-28)
