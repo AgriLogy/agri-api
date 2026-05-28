@@ -1,3 +1,10 @@
+# [1.15.0](https://github.com/AgriLogy/agri-api/compare/v1.14.1...v1.15.0) (2026-05-28)
+
+
+### Features
+
+* **agronomy:** lift field_snapshot into agri-core ([#84](https://github.com/AgriLogy/agri-api/issues/84)) ([c1b8444](https://github.com/AgriLogy/agri-api/commit/c1b8444b038e1d38edbf16c31b1b70ab1b533438))
+
 ## [1.14.1](https://github.com/AgriLogy/agri-api/compare/v1.14.0...v1.14.1) (2026-05-28)
 
 # [1.14.0](https://github.com/AgriLogy/agri-api/compare/v1.13.0...v1.14.0) (2026-05-28)
