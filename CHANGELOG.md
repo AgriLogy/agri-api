@@ -1,3 +1,10 @@
+# [1.21.0](https://github.com/AgriLogy/agri-api/compare/v1.20.0...v1.21.0) (2026-05-28)
+
+
+### Features
+
+* **api:** migrate Bivocom uplink webhook to django-ninja ([#98](https://github.com/AgriLogy/agri-api/issues/98)) ([2cb2d8e](https://github.com/AgriLogy/agri-api/commit/2cb2d8e977e7754ccc0160dbd1d5367f1555f1d3)), closes [#96](https://github.com/AgriLogy/agri-api/issues/96)
+
 # [1.20.0](https://github.com/AgriLogy/agri-api/compare/v1.19.0...v1.20.0) (2026-05-28)
 
 
