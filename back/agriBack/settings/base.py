@@ -1,14 +1,37 @@
+"""Common Django settings shared by dev/prod/test.
+
+Things that LIVE here:
+  - INSTALLED_APPS, MIDDLEWARE, ROOT_URLCONF, TEMPLATES, WSGI_APPLICATION
+  - AUTH (password validators, AUTH_USER_MODEL)
+  - I18N / TZ
+  - Static / Media URL conventions
+  - DRF + SIMPLE_JWT
+  - Celery base + CELERY_BEAT_SCHEDULE (both schedule modes)
+  - Alert throttling table (domain config, env-invariant)
+  - LOGGING skeleton
+
+Things that LIVE in dev/prod/test instead:
+  - DEBUG, SECRET_KEY, ALLOWED_HOSTS
+  - DATABASES
+  - CORS / CSRF origin lists
+  - EMAIL_BACKEND + EMAIL_*
+  - Production-only security flags (SECURE_SSL_REDIRECT, etc.)
+"""
+from __future__ import annotations
+
 import os
 from datetime import timedelta
 from pathlib import Path
 
+from celery.schedules import crontab
 from corsheaders.defaults import default_headers
 from dotenv import load_dotenv
 
 # -----------------------------------------------------------------------------
 # Paths & .env
 # -----------------------------------------------------------------------------
-BASE_DIR = Path(__file__).resolve().parent.parent
+# back/agriBack/settings/base.py → back/
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 load_dotenv(BASE_DIR / ".env")  # loads back/.env
 
 
@@ -16,19 +39,6 @@ def _csv_env(name: str, default: str = "") -> list[str]:
     raw = os.getenv(name, default) or ""
     return [item.strip() for item in raw.split(",") if item.strip()]
 
-
-# -----------------------------------------------------------------------------
-# Core
-# -----------------------------------------------------------------------------
-SECRET_KEY = os.getenv("SECRET_KEY", "dev-not-secret-please-override")
-DEBUG = os.getenv("DEBUG", "True").lower() in ("1", "true", "yes")
-
-ALLOWED_HOSTS = _csv_env(
-    "ALLOWED_HOSTS",
-    "localhost,127.0.0.1,0.0.0.0,agri-api-web,157.245.43.196,agrogo-datafarm.com,www.agrogo-datafarm.com",
-)
-
-SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 # -----------------------------------------------------------------------------
 # Apps
@@ -83,58 +93,13 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "agriBack.wsgi.application"
 
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
 # -----------------------------------------------------------------------------
-# CORS / CSRF
+# CORS / CSRF headers (origins live in per-env files)
 # -----------------------------------------------------------------------------
-CORS_ALLOWED_ORIGINS = _csv_env(
-    "CORS_ALLOWED_ORIGINS",
-    (
-        "http://localhost:3000,"
-        "http://127.0.0.1:3000,"
-        "http://157.245.43.196:3000,"
-        "https://157.245.43.196:3000,"
-        "https://www.agrogo-datafarm.com"
-    ),
-)
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_HEADERS = list(default_headers)
-
-CSRF_TRUSTED_ORIGINS = _csv_env(
-    "CSRF_TRUSTED_ORIGINS",
-    (
-        "http://localhost:3000,"
-        "http://127.0.0.1:3000,"
-        "http://157.245.43.196,"
-        "http://157.245.43.196:3000,"
-        "https://157.245.43.196,"
-        "https://157.245.43.196:3000,"
-        "https://www.agrogo-datafarm.com"
-    ),
-)
-
-# -----------------------------------------------------------------------------
-# Database
-# -----------------------------------------------------------------------------
-USE_POSTGRES = os.getenv("USE_POSTGRES", "False").lower() in ("1", "true", "yes")
-
-if USE_POSTGRES:
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.postgresql",
-            "NAME": os.getenv("POSTGRES_DB", "agrydata_db"),
-            "USER": os.getenv("POSTGRES_USER", "agry_admin"),
-            "PASSWORD": os.getenv("POSTGRES_PASSWORD", ""),
-            "HOST": os.getenv("POSTGRES_HOST", "agrydata"),  # docker service name
-            "PORT": int(os.getenv("POSTGRES_PORT", 5432)),
-        }
-    }
-else:
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR / "db.sqlite3",
-        }
-    }
 
 # -----------------------------------------------------------------------------
 # Auth
@@ -194,8 +159,6 @@ SIMPLE_JWT = {
 # -----------------------------------------------------------------------------
 # Celery
 # -----------------------------------------------------------------------------
-from celery.schedules import crontab
-
 CELERY_ENABLE_UTC = True
 CELERY_TIMEZONE = os.getenv("DJANGO_TIME_ZONE", "UTC")
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
@@ -238,7 +201,7 @@ else:
     }
 
 # -----------------------------------------------------------------------------
-# Alert email throttling
+# Alert email throttling (domain config — env-invariant)
 # -----------------------------------------------------------------------------
 # Per-sensor_key grace period (in seconds) between consecutive alert emails
 # for the same alert row. Tuned per sensor family — water needs minute-scale
@@ -294,32 +257,8 @@ ALERT_GRACE_PERIODS: dict[str, int] = {
     "electricity_consumption":   30 * 60,
 }
 
-
 # -----------------------------------------------------------------------------
-# Email
-# -----------------------------------------------------------------------------
-# DEBUG defaults to the console backend (emails print to stdout). Set
-# EMAIL_BACKEND in the environment to force SMTP delivery — required when
-# testing against Mailpit locally.
-_default_backend = (
-    "django.core.mail.backends.console.EmailBackend"
-    if DEBUG
-    else "django.core.mail.backends.smtp.EmailBackend"
-)
-EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", _default_backend)
-
-EMAIL_HOST = os.getenv("EMAIL_HOST", "")
-EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
-EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
-EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587") or 587)
-EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True").lower() in ("1", "true", "yes")
-EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "False").lower() in ("1", "true", "yes")
-DEFAULT_FROM_EMAIL = os.getenv(
-    "DEFAULT_FROM_EMAIL", "Agrilogy <noreply@agrilogy.local>"
-)
-
-# -----------------------------------------------------------------------------
-# Logging
+# Logging skeleton (handlers/loggers shared; per-env may tweak levels)
 # -----------------------------------------------------------------------------
 LOGGING = {
     "version": 1,
