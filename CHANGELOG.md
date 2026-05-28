@@ -1,3 +1,10 @@
+# [1.16.0](https://github.com/AgriLogy/agri-api/compare/v1.15.1...v1.16.0) (2026-05-28)
+
+
+### Features
+
+* **agronomy:** lift compute_et0_for_zone into agri-core ([#88](https://github.com/AgriLogy/agri-api/issues/88)) ([df461eb](https://github.com/AgriLogy/agri-api/commit/df461eb6a041673019ca0ee1080307943f3d09a9))
+
 ## [1.15.1](https://github.com/AgriLogy/agri-api/compare/v1.15.0...v1.15.1) (2026-05-28)
 
 # [1.15.0](https://github.com/AgriLogy/agri-api/compare/v1.14.1...v1.15.0) (2026-05-28)
