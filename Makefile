@@ -8,7 +8,7 @@ all: up
 bootstrap: install hooks  ## First-time setup: deps + git hooks
 
 install:  ## Sync the local virtualenv via uv (incl. dev deps)
-	cd back && uv sync
+	cd back && uv sync --frozen
 
 hooks:  ## Wire .githooks/ to git so commit-msg + pre-push fire
 	./scripts/install-hooks.sh
