@@ -1,4 +1,4 @@
-"""Smoke for the v2 ``GET /api/v2/sensors/keys`` endpoint.
+"""Smoke for the ``GET /sensors`` catalog endpoint.
 
 Locks in the django-ninja + JWT auth wiring + the response shape.
 The exhaustive registry-content tests live in agri-core's
@@ -12,8 +12,8 @@ from django.test import Client, TestCase
 from agri.core.alerts import SENSOR_KEY_REGISTRY
 
 
-class SensorKeysEndpointTests(TestCase):
-    URL = "/api/v2/sensors/keys"
+class SensorCatalogEndpointTests(TestCase):
+    URL = "/sensors"
 
     def setUp(self):
         self.user = get_user_model().objects.create_user(
@@ -23,7 +23,7 @@ class SensorKeysEndpointTests(TestCase):
 
     def _token(self) -> str:
         resp = self.client.post(
-            "/auth/token/",
+            "/auth/sessions",
             data={"username": "v2-tester", "password": "pw"},
             content_type="application/json",
         )
@@ -40,8 +40,8 @@ class SensorKeysEndpointTests(TestCase):
         )
         self.assertEqual(resp.status_code, 200)
         body = resp.json()
-        self.assertIn("items", body)
-        self.assertEqual(len(body["items"]), len(SENSOR_KEY_REGISTRY))
-        sample = body["items"][0]
+        self.assertIn("keys", body)
+        self.assertEqual(len(body["keys"]), len(SENSOR_KEY_REGISTRY))
+        sample = body["keys"][0]
         for field in ("key", "label", "unit", "type"):
             self.assertIn(field, sample)

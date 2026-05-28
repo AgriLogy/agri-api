@@ -57,7 +57,7 @@ def test_schema_ignores_extra_chirpstack_fields() -> None:
 def test_uplink_endpoint_accepts_valid() -> None:
     client = APIClient()
     resp = client.post(
-        "/api/v1/lorawan/chirpstack/uplink",
+        "/ingest/lorawan/chirpstack",
         data=_valid_uplink_payload(),
         format="json",
     )
@@ -70,7 +70,7 @@ def test_uplink_endpoint_accepts_valid() -> None:
 def test_uplink_endpoint_rejects_invalid() -> None:
     client = APIClient()
     resp = client.post(
-        "/api/v1/lorawan/chirpstack/uplink",
+        "/ingest/lorawan/chirpstack",
         data={"deviceInfo": {"devEui": "TOO_SHORT"}},
         format="json",
     )

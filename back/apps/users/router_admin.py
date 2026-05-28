@@ -138,7 +138,27 @@ class AdminResetPasswordIn(Schema):
 
 
 @router.get(
-    "/users/",
+    "/me",
+    auth=JwtAuth(),
+    summary="Caller's profile (identity)",
+)
+def get_me_top(request):
+    return {"username": request.auth.username}
+
+
+@router.post(
+    "/me/notifications",
+    auth=JwtAuth(),
+    summary="Send the caller a field-status notification email",
+)
+def send_me_notification_top(request):
+    from apps.users.router import _send_notification
+
+    return _send_notification(request)
+
+
+@router.get(
+    "",
     auth=JwtAuth(),
     summary="Admin: list all users",
 )
@@ -154,7 +174,7 @@ def list_users(request, search: str | None = None):
 
 
 @router.post(
-    "/users/",
+    "",
     auth=JwtAuth(),
     summary="Admin: create a user",
 )
@@ -194,7 +214,7 @@ def create_user(request, payload: AdminUserCreateIn):
 
 
 @router.get(
-    "/users/{username}/",
+    "/{username}",
     auth=JwtAuth(),
     summary="Admin: fetch one user",
 )
@@ -209,7 +229,7 @@ def get_user(request, username: str):
 
 
 @router.patch(
-    "/users/{username}/",
+    "/{username}",
     auth=JwtAuth(),
     summary="Admin: patch one user",
 )
@@ -240,7 +260,7 @@ def patch_user(request, username: str, payload: AdminUserUpdateIn):
 
 
 @router.delete(
-    "/users/{username}/",
+    "/{username}",
     auth=JwtAuth(),
     summary="Admin: soft-delete (deactivate) one user",
 )
@@ -262,7 +282,7 @@ def delete_user(request, username: str):
 
 
 @router.post(
-    "/users/{username}/activate/",
+    "/{username}/activate",
     auth=JwtAuth(),
     summary="Admin: toggle is_active",
 )
@@ -289,7 +309,7 @@ def activate_user(request, username: str, payload: AdminActivateIn):
 
 
 @router.post(
-    "/users/{username}/reset-password/",
+    "/{username}/password-reset",
     auth=JwtAuth(),
     summary="Admin: reset a user's password",
 )

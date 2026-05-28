@@ -132,7 +132,7 @@ class AdminModifyUserIn(Schema):
 # ---------------------------------------------------------------------------
 
 
-@router.post("/signup/", auth=None, summary="Public user signup")
+@router.post("/signup", auth=None, summary="Public user signup")
 def signup(request, payload: SignUpIn):
     if CustomUser.objects.filter(email=payload.email).exists():
         return Response({"email": "This email is already in use."}, status=400)
@@ -185,7 +185,7 @@ def _signin_core(payload: SignInIn) -> Response:
     )
 
 
-@router.post("/signin/", auth=None, summary="Public user signin")
+@router.post("/sessions", auth=None, summary="Public user sign-in (issue JWT)")
 def signin(request, payload: SignInIn):
     response = _signin_core(payload)
     # The legacy DRF view called Django's login() to set a session cookie too.
@@ -196,7 +196,7 @@ def signin(request, payload: SignInIn):
     return response
 
 
-@router.post("/admin-signin/", auth=None, summary="Admin-only signin (no is_staff field)")
+@router.post("/admin-sessions", auth=None, summary="Admin-only sign-in (response omits is_staff)")
 def admin_signin(request, payload: SignInIn):
     """Same flow as ``/signin/`` but the response omits ``is_staff``. Matches
     the legacy ``AdminSignInAPIView`` shape so the admin login page keeps
@@ -213,112 +213,13 @@ def admin_signin(request, payload: SignInIn):
 
 
 # ---------------------------------------------------------------------------
-# Admin signup
+# Admin signup, admin user list, modify-user moved to apps.users.router_admin
+# which mounts at /users (the unified user-resources surface).
+# Send-notification moves to POST /users/me/notifications (also in router_admin).
 # ---------------------------------------------------------------------------
 
 
-@router.post("/admin-signup/", auth=JwtAuth(), summary="Admin creates a user")
-def admin_signup(request, payload: AdminSignUpIn):
-    guard = _require_admin(request)
-    if guard is not None:
-        return guard
-    if (
-        CustomUser.objects.filter(email=payload.email).exists()
-        or CustomUser.objects.filter(username=payload.username).exists()
-    ):
-        return Response(
-            {"error": "Username or email already exists."}, status=400,
-        )
-    try:
-        validate_password(payload.password)
-    except ValidationError as exc:
-        return Response({"password": exc.messages}, status=400)
-
-    user = CustomUser(
-        username=payload.username,
-        email=payload.email,
-        firstname=payload.firstname,
-        lastname=payload.lastname,
-        phone_number=payload.phone_number,
-        is_staff=payload.is_staff,
-    )
-    user.set_password(payload.password)
-    user.save()
-    return Response({"status": "Account created successfully"}, status=201)
-
-
-# ---------------------------------------------------------------------------
-# Admin user list + modify
-# ---------------------------------------------------------------------------
-
-
-def _serialize_admin_user(user: CustomUser) -> dict[str, Any]:
-    return {
-        "username": user.username,
-        "email": user.email,
-        "phone_number": user.phone_number,
-        "payement_status": user.payement_status,
-        "is_staff": user.is_staff,
-    }
-
-
-def _serialize_modify_user(user: CustomUser) -> dict[str, Any]:
-    return {
-        "username": user.username,
-        "email": user.email,
-        "firstname": user.firstname,
-        "lastname": user.lastname,
-        "phone_number": user.phone_number,
-        "payement_status": user.payement_status,
-        "is_staff": user.is_staff,
-        "longitude": user.longitude,
-        "latitude": user.latitude,
-    }
-
-
-@router.get("/users/", auth=JwtAuth(), summary="Admin lists all other users")
-def list_users(request):
-    guard = _require_admin(request)
-    if guard is not None:
-        return guard
-    qs = CustomUser.objects.exclude(id=request.auth.id).order_by("-date_joined")
-    return [_serialize_admin_user(u) for u in qs]
-
-
-@router.get("/modify-user/", auth=JwtAuth(), summary="Admin fetches one user")
-def fetch_user(request, username: str = ""):
-    guard = _require_admin(request)
-    if guard is not None:
-        return guard
-    if not username:
-        return Response({"error": "Username is required."}, status=400)
-    user = get_object_or_404(CustomUser, username=username)
-    return _serialize_modify_user(user)
-
-
-@router.put("/modify-user/", auth=JwtAuth(), summary="Admin updates one user")
-def modify_user(request, payload: AdminModifyUserIn):
-    guard = _require_admin(request)
-    if guard is not None:
-        return guard
-    user = get_object_or_404(CustomUser, username=payload.username)
-    data = payload.model_dump(exclude_unset=True, exclude={"username"})
-    for k, v in data.items():
-        setattr(user, k, v)
-    user.save()
-    return {
-        "message": "User data updated successfully.",
-        "data": _serialize_modify_user(user),
-    }
-
-
-# ---------------------------------------------------------------------------
-# Send notification email on demand
-# ---------------------------------------------------------------------------
-
-
-@router.get("/send-notification/", auth=JwtAuth(), summary="Email the current user a field-status update")
-def send_notification(request):
+def _send_notification(request):  # retained as a helper; no longer routed here
     user = request.auth
     recipient = (getattr(user, "email", "") or "").strip()
     if not recipient:

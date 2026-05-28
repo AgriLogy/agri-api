@@ -38,9 +38,9 @@ _INGEST_SKIP_KEYS: set[str] = {"npk"}
 
 
 @router.post(
-    "/sensors/weather/ingest/",
+    "/weather",
     auth=None,
-    summary="Multi-sensor weather ingest webhook",
+    summary="Multi-sensor weather ingest webhook (POST /ingest/weather)",
 )
 def weather_ingest(request):
     """Multi-sensor ingest. Payload shape is opaque (the registry drives

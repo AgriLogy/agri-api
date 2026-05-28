@@ -79,7 +79,7 @@ class DecisionIn(Schema):
 
 
 @router.get(
-    "/manager-affirmations/",
+    "",
     auth=JwtAuth(),
     summary="List manager affirmations (own; admin sees all)",
 )
@@ -93,7 +93,7 @@ def list_affirmations(request, status: str | None = None):
 
 
 @router.post(
-    "/manager-affirmations/",
+    "",
     auth=JwtAuth(),
     summary="Create a manager affirmation",
 )
@@ -121,19 +121,10 @@ def create_affirmation(request, payload: ManagerAffirmationIn):
 # ---------------------------------------------------------------------------
 
 
-@router.post(
-    "/manager-affirmations/{pk}/{action}/",
-    auth=JwtAuth(),
-    summary="Admin: approve or reject a manager affirmation",
-)
-def decide_affirmation(request, pk: int, action: str, payload: DecisionIn):
+def _decide(request, pk: int, action: str, payload):
     guard = _require_admin(request)
     if guard is not None:
         return guard
-    if action not in {"approve", "reject"}:
-        return Response(
-            {"detail": "Action must be approve or reject."}, status=400,
-        )
     try:
         a = ManagerAffirmation.objects.get(pk=pk)
     except ManagerAffirmation.DoesNotExist:
@@ -167,3 +158,21 @@ def decide_affirmation(request, pk: int, action: str, payload: DecisionIn):
         a.pk,
     )
     return _serialize(a)
+
+
+@router.post(
+    "/{pk}/approve",
+    auth=JwtAuth(),
+    summary="Admin: approve a manager affirmation",
+)
+def approve_affirmation(request, pk: int, payload: DecisionIn):
+    return _decide(request, pk, "approve", payload)
+
+
+@router.post(
+    "/{pk}/reject",
+    auth=JwtAuth(),
+    summary="Admin: reject a manager affirmation",
+)
+def reject_affirmation(request, pk: int, payload: DecisionIn):
+    return _decide(request, pk, "reject", payload)

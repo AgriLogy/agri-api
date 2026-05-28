@@ -44,27 +44,22 @@ def _active_graph_dict(ag: ActiveGraph) -> dict[str, Any]:
     return d
 
 
-@router.get("/header/", auth=JwtAuth(), summary="Authenticated user's identity")
-def header(request):
-    return {"username": request.auth.username}
-
-
 @router.get(
-    "/zones-names-per-user/",
+    "/zones",
     auth=JwtAuth(),
-    summary="Zones (id+name only) for the caller",
+    summary="Caller's zones (id + name)",
 )
-def zones_names_per_user(request):
+def list_my_zones(request):
     qs = Zone.objects.filter(user_id=request.auth.id)
     return [_zone_short(z) for z in qs]
 
 
 @router.get(
-    "/active-graph/self/{zone_id}/",
+    "/zones/{zone_id}/active-graph",
     auth=JwtAuth(),
     summary="Caller's ActiveGraph config for one zone",
 )
-def active_graph_self(request, zone_id: int):
+def get_my_active_graph(request, zone_id: int):
     try:
         ag = ActiveGraph.objects.get(user=request.auth, zone_id=zone_id)
     except ActiveGraph.DoesNotExist:
@@ -72,73 +67,8 @@ def active_graph_self(request, zone_id: int):
     return _active_graph_dict(ag)
 
 
-@router.get(
-    "/active-zones/{username}/",
-    auth=JwtAuth(),
-    summary="Admin: zones (id+name) for any user by username",
-)
-def active_zones(request, username: str):
-    guard = _require_admin(request)
-    if guard is not None:
-        return guard
-    try:
-        user = CustomUser.objects.get(username=username)
-    except CustomUser.DoesNotExist:
-        return Response({"detail": "User not found."}, status=404)
-    qs = Zone.objects.filter(user=user)
-    return [_zone_short(z) for z in qs]
-
-
-# ---------------------------------------------------------------------------
-# Legacy admin path retained for the in-flight frontend migration:
-# GET /api/active-graph/<username>/<zone_id>/ — same shape as the v2 admin
-# endpoint at /api/admin/users/<username>/zones/<zone_id>/active-graph/.
-# ---------------------------------------------------------------------------
-
-
-@router.get(
-    "/active-graph/{username}/{zone_id}/",
-    auth=JwtAuth(),
-    summary="(legacy) admin active-graph for a user+zone",
-)
-def legacy_active_graph(request, username: str, zone_id: int):
-    guard = _require_admin(request)
-    if guard is not None:
-        return guard
-    try:
-        user = CustomUser.objects.get(username=username)
-    except CustomUser.DoesNotExist:
-        return Response({"detail": "ActiveGraph not found."}, status=404)
-    ag = ActiveGraph.objects.filter(user=user, zone_id=zone_id).first()
-    if ag is None:
-        return Response({"detail": "ActiveGraph not found."}, status=404)
-    return _active_graph_dict(ag)
-
-
-@router.put(
-    "/active-graph/{username}/{zone_id}/",
-    auth=JwtAuth(),
-    summary="(legacy) admin active-graph PUT — partial update",
-)
-def legacy_active_graph_put(request, username: str, zone_id: int):
-    guard = _require_admin(request)
-    if guard is not None:
-        return guard
-    try:
-        user = CustomUser.objects.get(username=username)
-    except CustomUser.DoesNotExist:
-        return Response({"detail": "ActiveGraph not found."}, status=404)
-    ag = ActiveGraph.objects.filter(user=user, zone_id=zone_id).first()
-    if ag is None:
-        return Response({"detail": "ActiveGraph not found."}, status=404)
-    import json as _json
-
-    try:
-        body = _json.loads(request.body or b"{}")
-    except ValueError:
-        return Response({"detail": "Invalid JSON body."}, status=400)
-    for k, v in (body or {}).items():
-        if hasattr(ag, k):
-            setattr(ag, k, v)
-    ag.save()
-    return _active_graph_dict(ag)
+# Legacy URL-pattern endpoints removed in the REST-aligned rewrite. The
+# admin "view another user's zones" capability now lives at
+# /users/<username>/zones (router_admin); the legacy
+# /api/active-graph/<u>/<z>/ collapses into
+# /users/<u>/zones/<z>/active-graph (also in router_admin).

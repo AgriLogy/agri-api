@@ -52,7 +52,7 @@ def test_schema_rejects_empty_device_id() -> None:
 def test_uplink_endpoint_accepts_valid() -> None:
     client = APIClient()
     resp = client.post(
-        "/api/v1/bivocom/uplink",
+        "/ingest/bivocom",
         data={
             "device_id": "BV-001",
             "timestamp": "2026-05-28T11:00:00Z",
@@ -70,7 +70,7 @@ def test_uplink_endpoint_accepts_valid() -> None:
 def test_uplink_endpoint_rejects_invalid() -> None:
     client = APIClient()
     resp = client.post(
-        "/api/v1/bivocom/uplink",
+        "/ingest/bivocom",
         data={"device_id": "BV-001"},  # missing timestamp + tags
         format="json",
     )

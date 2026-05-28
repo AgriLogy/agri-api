@@ -132,7 +132,7 @@ class AlertAdminPatchIn(Schema):
 # ---------------------------------------------------------------------------
 
 
-@router.get("/overview/", auth=JwtAuth(), summary="Admin: dashboard KPIs")
+@router.get("/admin/overview", auth=JwtAuth(), summary="Admin: dashboard KPIs")
 def overview(request):
     guard = _require_admin(request)
     if guard is not None:
@@ -153,7 +153,7 @@ def overview(request):
 
 
 @router.get(
-    "/users/{username}/zones/",
+    "/users/{username}/zones",
     auth=JwtAuth(),
     summary="Admin: list a user's zones",
 )
@@ -168,7 +168,7 @@ def list_user_zones(request, username: str):
 
 
 @router.post(
-    "/users/{username}/zones/",
+    "/users/{username}/zones",
     auth=JwtAuth(),
     summary="Admin: create a zone for a user",
 )
@@ -198,7 +198,7 @@ def _get_user_zone(username: str, pk: int) -> tuple[Zone | None, Response | None
 
 
 @router.get(
-    "/users/{username}/zones/{pk}/",
+    "/users/{username}/zones/{pk}",
     auth=JwtAuth(),
     summary="Admin: fetch a user's zone",
 )
@@ -229,17 +229,17 @@ def _update_zone(request, username: str, pk: int, payload: ZoneWriteIn):
     return _serialize_zone(z)
 
 
-@router.put("/users/{username}/zones/{pk}/", auth=JwtAuth())
+@router.put("/users/{username}/zones/{pk}", auth=JwtAuth())
 def put_user_zone(request, username: str, pk: int, payload: ZoneWriteIn):
     return _update_zone(request, username, pk, payload)
 
 
-@router.patch("/users/{username}/zones/{pk}/", auth=JwtAuth())
+@router.patch("/users/{username}/zones/{pk}", auth=JwtAuth())
 def patch_user_zone(request, username: str, pk: int, payload: ZoneWriteIn):
     return _update_zone(request, username, pk, payload)
 
 
-@router.delete("/users/{username}/zones/{pk}/", auth=JwtAuth())
+@router.delete("/users/{username}/zones/{pk}", auth=JwtAuth())
 def delete_user_zone(request, username: str, pk: int):
     guard = _require_admin(request)
     if guard is not None:
@@ -256,7 +256,7 @@ def delete_user_zone(request, username: str, pk: int):
 # ---------------------------------------------------------------------------
 
 
-@router.get("/users/{username}/zones/{pk}/params/", auth=JwtAuth())
+@router.get("/users/{username}/zones/{pk}/params", auth=JwtAuth())
 def get_zone_params(request, username: str, pk: int):
     guard = _require_admin(request)
     if guard is not None:
@@ -288,12 +288,12 @@ def _update_zone_params(request, username: str, pk: int, payload: ZoneWriteIn):
     return _serialize_zone_params(z)
 
 
-@router.put("/users/{username}/zones/{pk}/params/", auth=JwtAuth())
+@router.put("/users/{username}/zones/{pk}/params", auth=JwtAuth())
 def put_zone_params(request, username: str, pk: int, payload: ZoneWriteIn):
     return _update_zone_params(request, username, pk, payload)
 
 
-@router.patch("/users/{username}/zones/{pk}/params/", auth=JwtAuth())
+@router.patch("/users/{username}/zones/{pk}/params", auth=JwtAuth())
 def patch_zone_params(request, username: str, pk: int, payload: ZoneWriteIn):
     return _update_zone_params(request, username, pk, payload)
 
@@ -323,7 +323,7 @@ def _get_or_create_active_graph(username: str, zone_id: int):
 
 
 @router.get(
-    "/users/{username}/zones/{zone_id}/active-graph/",
+    "/users/{username}/zones/{zone_id}/active-graph",
     auth=JwtAuth(),
 )
 def get_active_graph(request, username: str, zone_id: int):
@@ -337,7 +337,7 @@ def get_active_graph(request, username: str, zone_id: int):
 
 
 @router.patch(
-    "/users/{username}/zones/{zone_id}/active-graph/",
+    "/users/{username}/zones/{zone_id}/active-graph",
     auth=JwtAuth(),
 )
 def patch_active_graph(request, username: str, zone_id: int):
@@ -361,32 +361,8 @@ def patch_active_graph(request, username: str, zone_id: int):
     return _serialize_active_graph(ag)
 
 
-# ---------------------------------------------------------------------------
-# Legacy ActiveGraphAdminAPIView path — /api/active-graph/<u>/<z>/
-# ---------------------------------------------------------------------------
-
-
-@router.get(
-    "/legacy/active-graph/{username}/{zone_id}/",
-    auth=JwtAuth(),
-    summary="(legacy) admin active-graph GET",
-    include_in_schema=False,
-)
-def _legacy_active_graph_get(request, username: str, zone_id: int):
-    """Internal: mounted twice — once here for include_in_schema=False
-    so the OpenAPI is clean, once at the legacy URL via a dedicated
-    mount in ``agriBack.urls``.
-    """
-    guard = _require_admin(request)
-    if guard is not None:
-        return guard
-    user = _resolve_user(username)
-    if user is None:
-        return Response({"detail": "ActiveGraph not found."}, status=404)
-    ag = ActiveGraph.objects.filter(user=user, zone_id=zone_id).first()
-    if ag is None:
-        return Response({"detail": "ActiveGraph not found."}, status=404)
-    return _serialize_active_graph(ag)
+# Legacy /api/active-graph/<u>/<z>/ deprecated in the REST-aligned rewrite;
+# use /users/<u>/zones/<z>/active-graph (already defined above) instead.
 
 
 # ---------------------------------------------------------------------------
@@ -433,7 +409,7 @@ def _serialize_alert(a: Alert) -> dict[str, Any]:
     }
 
 
-@router.get("/users/{username}/alerts/", auth=JwtAuth())
+@router.get("/users/{username}/alerts", auth=JwtAuth())
 def list_user_alerts(request, username: str):
     guard = _require_admin(request)
     if guard is not None:
@@ -446,7 +422,7 @@ def list_user_alerts(request, username: str):
     ]
 
 
-@router.get("/alerts/{pk}/", auth=JwtAuth())
+@router.get("/admin/alerts/{pk}", auth=JwtAuth())
 def get_alert(request, pk: int):
     guard = _require_admin(request)
     if guard is not None:
@@ -458,7 +434,7 @@ def get_alert(request, pk: int):
     return _serialize_alert(a)
 
 
-@router.patch("/alerts/{pk}/", auth=JwtAuth())
+@router.patch("/admin/alerts/{pk}", auth=JwtAuth())
 def patch_alert(request, pk: int, payload: AlertAdminPatchIn):
     guard = _require_admin(request)
     if guard is not None:
@@ -473,7 +449,7 @@ def patch_alert(request, pk: int, payload: AlertAdminPatchIn):
     return _serialize_alert(a)
 
 
-@router.delete("/alerts/{pk}/", auth=JwtAuth())
+@router.delete("/admin/alerts/{pk}", auth=JwtAuth())
 def delete_alert(request, pk: int):
     guard = _require_admin(request)
     if guard is not None:
@@ -491,7 +467,7 @@ def delete_alert(request, pk: int):
 # ---------------------------------------------------------------------------
 
 
-@router.get("/users/{username}/activity/", auth=JwtAuth())
+@router.get("/users/{username}/activity", auth=JwtAuth())
 def user_activity(request, username: str):
     guard = _require_admin(request)
     if guard is not None:
@@ -550,7 +526,7 @@ def user_activity(request, username: str):
 # ---------------------------------------------------------------------------
 
 
-@router.get("/users/{username}/sensor-units/", auth=JwtAuth())
+@router.get("/users/{username}/sensor-units", auth=JwtAuth())
 def get_sensor_units(request, username: str):
     guard = _require_admin(request)
     if guard is not None:
@@ -566,7 +542,7 @@ def get_sensor_units(request, username: str):
     }
 
 
-@router.patch("/users/{username}/sensor-units/", auth=JwtAuth())
+@router.patch("/users/{username}/sensor-units", auth=JwtAuth())
 def patch_sensor_units(request, username: str):
     guard = _require_admin(request)
     if guard is not None:
