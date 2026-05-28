@@ -31,6 +31,7 @@ from ninja import NinjaAPI
 from agriBack.api.auth import JwtAuth
 from agriBack.api.routers.sensors import router as sensors_router
 from analytics.router_alerts import router as alerts_router
+from analytics.router_notifications import router as notifications_router
 from analytics.router_reads import router as analytics_reads_router
 from apps.bivocom.router import router as bivocom_router
 from apps.lorawan.chirpstack.router import router as chirpstack_router
@@ -62,6 +63,9 @@ api.add_router("/api", analytics_reads_router, tags=["analytics"])
 
 # /api/alert(s) — alerts CRUD + the for-graph / sensor-keys / suggest helpers.
 api.add_router("/api", alerts_router, tags=["alerts"])
+
+# /api/notifications-and-alerts/, /api/zone-notification-outbound/
+api.add_router("/api", notifications_router, tags=["notifications"])
 
 # Legacy ingest webhooks migrated in place under their original paths.
 # These webhook routes opt out of auth at the route level (gateway uses a
