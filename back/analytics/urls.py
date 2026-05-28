@@ -5,7 +5,6 @@ from .manager_affirmation import (
     ManagerAffirmationDecisionAPIView,
     ManagerAffirmationListCreateAPIView,
 )
-from .sensor_registry import generated_views
 from .views import *
 
 urlpatterns = [
@@ -30,10 +29,7 @@ urlpatterns = [
     # to django-ninja (analytics.router_notifications).
 ]
 
-urlpatterns += [
-    path(
-        f"sensors/{name.lower().replace('sensor', '').replace('_', '-')}/",
-        view.as_view(),
-    )
-    for name, view in generated_views
-]
+# The 34 dynamically-generated DRF sensor routes have migrated to
+# django-ninja (analytics.router_sensors). The `generated_views`
+# loop in sensor_registry still runs because alerts.py imports the
+# SENSOR_MODELS list, but the resulting view classes are unused.
