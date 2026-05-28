@@ -40,12 +40,15 @@ services:
 
   # ---------- agri-bridge — stateless HTTP ingest gateway -----------
   # Receives Router0X-format payloads from field devices, translates to
-  # the Bivocom v1 wire format, forwards to agri-api. No file persistence
-  # (Postgres via agri-api is source of truth).
+  # the Bivocom v1 wire format, forwards to agri-api. Sources live in
+  # the sibling AgriLogy/agri-bridge repo so the gateway can ship on
+  # its own cadence; we build from the local sibling checkout for dev
+  # velocity. Prod deploys can swap in a registry image with no
+  # service-level changes here.
   agri-bridge:
     container_name: agri-bridge
     build:
-      context: ./Devops/server
+      context: ../agri-bridge
       dockerfile: Dockerfile
     environment:
       PORT: 9090
