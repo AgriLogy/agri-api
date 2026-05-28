@@ -141,6 +141,9 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],
+    # Maps agriBack.errors.AgriError subclasses → {error:{code,message}} JSON.
+    # See agriBack.exception_handler for the mapping.
+    "EXCEPTION_HANDLER": "agriBack.exception_handler.agri_exception_handler",
 }
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(days=5),
