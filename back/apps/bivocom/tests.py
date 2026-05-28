@@ -74,6 +74,8 @@ def test_uplink_endpoint_rejects_invalid() -> None:
         data={"device_id": "BV-001"},  # missing timestamp + tags
         format="json",
     )
-    assert resp.status_code == 400
-    body = resp.json()
-    assert body["error"]["code"] == "validation_error"
+    # django-ninja returns 422 + {"detail": [...]} for pydantic
+    # ValidationError; the Bivocom gateway treats any 4xx as "stop
+    # retrying", which matches the legacy DRF 400 behavior.
+    assert resp.status_code == 422
+    assert "detail" in resp.json()
