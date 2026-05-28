@@ -36,6 +36,7 @@ from analytics.router_manager_affirmation import (
 )
 from analytics.router_notifications import router as notifications_router
 from analytics.router_reads import router as analytics_reads_router
+from analytics.router_sensors import router as sensors_auto_router
 from apps.bivocom.router import router as bivocom_router
 from apps.lorawan.chirpstack.router import router as chirpstack_router
 from apps.users.router import router as users_router
@@ -72,6 +73,10 @@ api.add_router("/api", notifications_router, tags=["notifications"])
 
 # /api/manager-affirmations/, /api/manager-affirmations/<pk>/<action>/
 api.add_router("/api", manager_affirmation_router, tags=["manager-affirmation"])
+
+# /api/sensors/<slug>/ — 34 dynamically registered read endpoints
+# (one GET + one PATCH per entry in SENSOR_MODELS).
+api.add_router("/api", sensors_auto_router, tags=["sensors-data"])
 
 # Legacy ingest webhooks migrated in place under their original paths.
 # These webhook routes opt out of auth at the route level (gateway uses a
