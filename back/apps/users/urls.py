@@ -27,5 +27,5 @@ urlpatterns = [
         name="send-notification",
     ),
     # New admin tree
-    path("admin/", include("CustomUser.admin_urls")),
+    path("admin/", include("apps.users.admin_urls")),
 ]

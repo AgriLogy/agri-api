@@ -14,7 +14,7 @@ from analytics.models import (
     WaterPressureSensor,
     WindSpeed,
 )
-from CustomUser.models import CustomUser
+from apps.users.models import CustomUser
 from django.db.models import Avg
 from django.utils import timezone
 

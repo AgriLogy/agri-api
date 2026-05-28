@@ -111,7 +111,7 @@ class SignInAPIView(APIView):
         )
 
 
-from CustomUser.models import CustomUser
+from apps.users.models import CustomUser
 from django.contrib.auth import authenticate, login
 from django.core.cache import cache
 from rest_framework import status

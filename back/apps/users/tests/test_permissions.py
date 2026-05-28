@@ -4,7 +4,7 @@ on legacy endpoints."""
 import pytest
 from django.urls import reverse
 
-from CustomUser.permissions import IsAdminOrSelf
+from apps.users.permissions import IsAdminOrSelf
 
 
 class _FakeView:

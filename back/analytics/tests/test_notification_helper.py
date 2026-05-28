@@ -14,7 +14,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.utils import timezone
 
-from CustomUser.notification_helper import (
+from apps.users.notification_helper import (
     _format_message,
     perform_calculations,
     should_notify,
@@ -128,7 +128,7 @@ class PerformCalculationsTests(TestCase):
     def test_calls_field_snapshot_and_renders(self):
         u = _u()
         with patch(
-            "CustomUser.notification_helper.field_snapshot",
+            "apps.users.notification_helper.field_snapshot",
             return_value=SAMPLE_SNAPSHOT,
         ) as m:
             body = perform_calculations(u)

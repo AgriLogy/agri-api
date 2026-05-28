@@ -58,7 +58,7 @@ INSTALLED_APPS = [
     "django_celery_beat",
     # Local apps
     "analytics",
-    "CustomUser",
+    "apps.users.apps.UsersConfig",
     # Hardware-family ingest apps (vertical-slice)
     "apps.bivocom",
     "apps.lorawan.chirpstack",

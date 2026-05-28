@@ -8,7 +8,7 @@ from django.contrib.auth import get_user_model
 from django.core.mail import get_connection, send_mail
 from django.utils.timezone import now
 
-from CustomUser.notification_helper import perform_calculations, should_notify
+from apps.users.notification_helper import perform_calculations, should_notify
 
 logger = logging.getLogger(__name__)
 

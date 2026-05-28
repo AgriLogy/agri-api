@@ -30,7 +30,7 @@ urlpatterns = [
     path("redoc/", schema_view.with_ui("redoc", cache_timeout=0), name="schema-redoc"),
     path("admin/", admin.site.urls),
     path("api/", include("analytics.urls")),
-    path("auth/", include("CustomUser.urls")),
+    path("auth/", include("apps.users.urls")),
     # Hardware-family ingest endpoints (one app per device family)
     path("api/v1/bivocom/", include("apps.bivocom.urls")),
     path("api/v1/lorawan/chirpstack/", include("apps.lorawan.chirpstack.urls")),
