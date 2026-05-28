@@ -53,7 +53,7 @@ check() {
     local name="$1" method="$2" path="$3" want_ct="${4:-}"
     local url="${BASE_URL}${path}"
     local out status ct
-    out=$(curl -sS -o /dev/null -m "$TIMEOUT" \
+    out=$(curl -sSL -o /dev/null -m "$TIMEOUT" \
         -w '%{http_code}|%{content_type}' \
         -X "$method" "$url" 2>&1) || {
         printf "${RED}✗${RESET} %-32s ${DIM}%s %s — curl failed: %s${RESET}\n" \
