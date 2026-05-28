@@ -33,3 +33,9 @@ EMAIL_HOST_PASSWORD=
 EMAIL_USE_TLS=False
 EMAIL_USE_SSL=False
 DJANGO_ENV=dev
+
+# ALLOWED_HOSTS must include the docker-compose service name `agri-api-web`
+# so the agri-bridge container can forward POSTs without DisallowedHost
+# (Django rejects Host headers not in ALLOWED_HOSTS).
+# When you copy this file to back/.env, set:
+# ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0,agri-api-web
