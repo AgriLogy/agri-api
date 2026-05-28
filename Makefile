@@ -28,7 +28,7 @@ format-check:  ## ruff format --check (CI-friendly, no writes)
 check: lint format-check  ## Composite gate used by pre-push and CI
 
 test:  ## Django test runner (locmem email backend, in-memory sqlite)
-	cd back && SECRET_KEY=ci-test DEBUG=True ALLOWED_HOSTS=* USE_POSTGRES=False \
+	cd back && DJANGO_ENV=test \
 		uv run python manage.py test --noinput
 
 # ---- Docker compose ------------------------------------------------------------

@@ -15,6 +15,9 @@
 set -euo pipefail
 
 ROLE="${1:-web}"
+
+# DJANGO_ENV picks the right settings module (settings/dev|prod|test.py).
+export DJANGO_ENV="${DJANGO_ENV:-dev}"
 shift || true
 
 # SEED_DEV_USERS is read by seed_dev_users.py; we just echo the value
