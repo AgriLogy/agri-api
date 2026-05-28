@@ -98,9 +98,40 @@ check "swagger UI"         GET /swagger/      text/html
 check "redoc UI"           GET /redoc/        text/html
 check "openapi schema"     GET /swagger.json  application/json
 
-# --- Phases ≥ 5 will append per-domain blocks here ---
-# check "bivocom uplink"      POST /api/v1/bivocom/uplink           ...
-# check "chirpstack uplink"   POST /api/v1/lorawan/chirpstack/uplink ...
+# --- Per-domain checks (Phase 5+) ---
+
+# Bivocom uplink (Phase 5a). POST minimal pydantic-valid body; expect 202.
+bivocom_payload='{"device_id":"BV-smoke","timestamp":"2026-05-28T11:00:00Z","tags":{"ta":21.5}}'
+bivocom_out=$(curl -sSL -m "$TIMEOUT" \
+    -X POST -H "Content-Type: application/json" \
+    -d "$bivocom_payload" \
+    -w '%{http_code}' -o /tmp/smoke_bivocom_body \
+    "${BASE_URL}/api/v1/bivocom/uplink" 2>&1)
+if [[ "$bivocom_out" == "202" ]]; then
+    printf "${GREEN}✓${RESET} %-32s ${DIM}POST /api/v1/bivocom/uplink — status=202${RESET}\n" "bivocom uplink (valid)"
+    pass=$((pass + 1))
+else
+    printf "${RED}✗${RESET} %-32s ${DIM}POST /api/v1/bivocom/uplink — status=%s body=%s${RESET}\n" \
+        "bivocom uplink (valid)" "$bivocom_out" "$(cat /tmp/smoke_bivocom_body 2>/dev/null | head -c 200)"
+    fail=$((fail + 1))
+fi
+
+# Bivocom pydantic rejection — bad payload should return 400
+bad_out=$(curl -sSL -m "$TIMEOUT" \
+    -X POST -H "Content-Type: application/json" \
+    -d '{"device_id":""}' \
+    -w '%{http_code}' -o /dev/null \
+    "${BASE_URL}/api/v1/bivocom/uplink" 2>&1)
+if [[ "$bad_out" == "400" ]]; then
+    printf "${GREEN}✓${RESET} %-32s ${DIM}POST /api/v1/bivocom/uplink — status=400 (pydantic-rejected)${RESET}\n" "bivocom uplink (invalid)"
+    pass=$((pass + 1))
+else
+    printf "${RED}✗${RESET} %-32s ${DIM}POST /api/v1/bivocom/uplink — status=%s (expected 400)${RESET}\n" \
+        "bivocom uplink (invalid)" "$bad_out"
+    fail=$((fail + 1))
+fi
+
+# check "chirpstack uplink"   POST /api/v1/lorawan/chirpstack/uplink (Phase 5b)
 
 printf "%s\n" "-----------------------------------"
 printf "passed=%d  failed=%d\n" "$pass" "$fail"

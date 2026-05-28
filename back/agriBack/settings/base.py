@@ -59,6 +59,8 @@ INSTALLED_APPS = [
     # Local apps
     "analytics",
     "CustomUser",
+    # Hardware-family ingest apps (vertical-slice)
+    "apps.bivocom",
 ]
 
 MIDDLEWARE = [
