@@ -31,4 +31,6 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/", include("analytics.urls")),
     path("auth/", include("CustomUser.urls")),
+    # Hardware-family ingest endpoints (one app per device family)
+    path("api/v1/bivocom/", include("apps.bivocom.urls")),
 ]
