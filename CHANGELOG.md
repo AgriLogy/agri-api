@@ -1,3 +1,10 @@
+# [1.9.0](https://github.com/AgriLogy/agrilogy-back/compare/v1.8.1...v1.9.0) (2026-05-28)
+
+
+### Features
+
+* **errors:** AgriError hierarchy + DRF exception handler ([#60](https://github.com/AgriLogy/agrilogy-back/issues/60)) ([8eec582](https://github.com/AgriLogy/agrilogy-back/commit/8eec582b0d9d736280f75bceaba115ee3edab5b5))
+
 ## [1.8.1](https://github.com/AgriLogy/agrilogy-back/compare/v1.8.0...v1.8.1) (2026-05-28)
 
 
