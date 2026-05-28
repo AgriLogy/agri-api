@@ -109,3 +109,4 @@ node_modules
 
 # Claude Code session state (CONTINUE.md and friends)
 .claude/
+celerybeat-schedule

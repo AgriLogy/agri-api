@@ -82,9 +82,9 @@ case "$ROLE" in
   web)
     wait_for_postgres
     log "Seeding dev users (idempotent; SEED_DEV_USERS=$SEED_DEV_USERS_DEFAULT)"
-    python seed_dev_users.py || log "  (user seed skipped or failed; continuing)"
+    python scripts/seed_dev_users.py || log "  (user seed skipped or failed; continuing)"
     log "Backfilling dev sensor data (idempotent; SEED_DEV_DATA=${SEED_DEV_DATA:-true})"
-    python seed_dev_data.py || log "  (data seed skipped or failed; continuing)"
+    python scripts/seed_dev_data.py || log "  (data seed skipped or failed; continuing)"
     log "Starting Django dev server on :8000"
     exec python manage.py runserver 0.0.0.0:8000
     ;;
