@@ -30,6 +30,7 @@ from ninja import NinjaAPI
 
 from agriBack.api.auth import JwtAuth
 from agriBack.api.routers.sensors import router as sensors_router
+from analytics.router_alerts import router as alerts_router
 from analytics.router_reads import router as analytics_reads_router
 from apps.bivocom.router import router as bivocom_router
 from apps.lorawan.chirpstack.router import router as chirpstack_router
@@ -58,6 +59,9 @@ api.add_router("/auth", users_router, tags=["auth"])
 # /api — analytics reads (header, zones list, active-graph config).
 # Each route is JWT-authed; admin-only endpoints apply an inline check.
 api.add_router("/api", analytics_reads_router, tags=["analytics"])
+
+# /api/alert(s) — alerts CRUD + the for-graph / sensor-keys / suggest helpers.
+api.add_router("/api", alerts_router, tags=["alerts"])
 
 # Legacy ingest webhooks migrated in place under their original paths.
 # These webhook routes opt out of auth at the route level (gateway uses a

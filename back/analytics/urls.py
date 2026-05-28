@@ -32,15 +32,8 @@ urlpatterns = [
         ManagerAffirmationDecisionAPIView.as_view(),
         name="manager-affirmation-decision",
     ),
-    path("alert/", AlertsAPIView.as_view(), name="user-alert"),
-    path("alert/<int:pk>/", AlertDetailAPIView.as_view(), name="user-alert-detail"),
-    path("alerts/for-graph/", AlertsForGraphAPIView.as_view(), name="alerts-for-graph"),
-    path(
-        "alerts/sensor-keys/",
-        AlertSensorKeysAPIView.as_view(),
-        name="alerts-sensor-keys",
-    ),
-    path("alerts/suggest/", AlertSuggestAPIView.as_view(), name="alerts-suggest"),
+    # Alerts CRUD + for-graph / sensor-keys / suggest migrated to
+    # django-ninja in analytics.router_alerts.
     path("sensors/weather/ingest/", WeatherIngestAPIView.as_view()),
     path(
         "notifications-and-alerts/",
