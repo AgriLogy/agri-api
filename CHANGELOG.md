@@ -1,3 +1,10 @@
+# [1.18.0](https://github.com/AgriLogy/agri-api/compare/v1.17.0...v1.18.0) (2026-05-28)
+
+
+### Features
+
+* **notifications:** lift the email composer into agri-core ([#92](https://github.com/AgriLogy/agri-api/issues/92)) ([9cbae44](https://github.com/AgriLogy/agri-api/commit/9cbae44e8d9d3f4fbf674b9ac3851398b2a25cce))
+
 # [1.17.0](https://github.com/AgriLogy/agri-api/compare/v1.16.0...v1.17.0) (2026-05-28)
 
 
