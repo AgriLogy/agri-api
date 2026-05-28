@@ -1,3 +1,10 @@
+## [1.12.4](https://github.com/AgriLogy/agrilogy-back/compare/v1.12.3...v1.12.4) (2026-05-28)
+
+
+### Bug Fixes
+
+* **entrypoint:** match USE_POSTGRES case-insensitively ([#70](https://github.com/AgriLogy/agrilogy-back/issues/70)) ([243d3fd](https://github.com/AgriLogy/agrilogy-back/commit/243d3fd8a11294aea15fb437a89d19fd17af5c88))
+
 ## [1.12.3](https://github.com/AgriLogy/agrilogy-back/compare/v1.12.2...v1.12.3) (2026-05-28)
 
 ## [1.12.2](https://github.com/AgriLogy/agrilogy-back/compare/v1.12.1...v1.12.2) (2026-05-28)
