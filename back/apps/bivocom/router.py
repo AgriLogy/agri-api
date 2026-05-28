@@ -20,10 +20,10 @@ log = logging.getLogger("bivocom")
 
 
 @router.post(
-    "/uplink",
+    "",
     response={202: BivocomUplinkResponse, 422: dict},
     auth=None,
-    summary="Bivocom gateway uplink webhook",
+    summary="Bivocom gateway uplink webhook (POST /ingest/bivocom)",
 )
 def bivocom_uplink(request, payload: BivocomUplink):
     log.info(

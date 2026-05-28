@@ -46,7 +46,7 @@ USER = {
 
 def _signup(client: APIClient) -> None:
     resp = client.post(
-        "/auth/signup/",
+        "/auth/signup",
         data=USER,
         format="json",
     )
@@ -57,7 +57,7 @@ def _signup(client: APIClient) -> None:
 
 def _signin(client: APIClient) -> dict:
     resp = client.post(
-        "/auth/signin/",
+        "/auth/sessions",
         data={"username": USER["username"], "password": USER["password"]},
         format="json",
     )
@@ -91,30 +91,31 @@ def test_workflow():
     ctx["access"] = access
 
     # --- 3. /auth/header equivalent — analytics /api/header/ -------------
-    resp = client.get("/api/header/", **_auth_headers(access))
+    resp = client.get("/users/me", **_auth_headers(access))
     assert resp.status_code == 200, (
         f"chapter 3 (/api/header/) expected 200 got {resp.status_code}"
     )
     assert resp.json() == {"username": USER["username"]}
 
     # --- 4. zones-names-per-user (empty for a brand-new user) ------------
-    resp = client.get("/api/zones-names-per-user/", **_auth_headers(access))
+    resp = client.get("/zones", **_auth_headers(access))
     assert resp.status_code == 200, (
         f"chapter 4 (zones-names) expected 200 got {resp.status_code}"
     )
     assert resp.json() == []
 
     # --- 5. alerts/sensor-keys (registry projection) ---------------------
-    resp = client.get("/api/alerts/sensor-keys/", **_auth_headers(access))
+    resp = client.get("/sensors", **_auth_headers(access))
     assert resp.status_code == 200
     body = resp.json()
     assert "keys" in body and len(body["keys"]) >= 30
     sample = body["keys"][0]
+    # /sensors catalog returns {key, unit, label, type}.
     assert {"key", "unit", "label"} <= sample.keys()
 
     # --- 6. alerts/suggest for a known sensor_key ------------------------
     resp = client.get(
-        "/api/alerts/suggest/?sensor_key=temperature_weather",
+        "/alerts/suggest?sensor_key=temperature_weather",
         **_auth_headers(access),
     )
     assert resp.status_code == 200, (
@@ -126,7 +127,7 @@ def test_workflow():
 
     # --- 7. alerts/suggest with unknown key → 400 ------------------------
     resp = client.get(
-        "/api/alerts/suggest/?sensor_key=nope", **_auth_headers(access)
+        "/alerts/suggest?sensor_key=nope", **_auth_headers(access)
     )
     assert resp.status_code == 400
 
@@ -141,7 +142,7 @@ def test_workflow():
         "is_active": True,
     }
     resp = client.post(
-        "/api/alert/", data=create_body, format="json", **_auth_headers(access),
+        "/alerts", data=create_body, format="json", **_auth_headers(access),
     )
     assert resp.status_code == 201, (
         f"chapter 8 (create alert) expected 201 got {resp.status_code}: "
@@ -150,13 +151,13 @@ def test_workflow():
     alert = resp.json()
     ctx["alert_id"] = alert["id"]
 
-    resp = client.get("/api/alert/", **_auth_headers(access))
+    resp = client.get("/alerts", **_auth_headers(access))
     assert resp.status_code == 200
     rows = resp.json()
     assert any(a["id"] == alert["id"] for a in rows)
 
     resp = client.patch(
-        f"/api/alert/{alert['id']}/",
+        f"/alerts/{alert['id']}",
         data={"is_active": False},
         format="json",
         **_auth_headers(access),
@@ -165,26 +166,26 @@ def test_workflow():
     assert resp.json()["is_active"] is False
 
     resp = client.delete(
-        f"/api/alert/{alert['id']}/", **_auth_headers(access),
+        f"/alerts/{alert['id']}", **_auth_headers(access),
     )
     assert resp.status_code == 204
 
     # --- 9. alerts/for-graph (now empty again) ---------------------------
     resp = client.get(
-        "/api/alerts/for-graph/?sensor_key=temperature_weather",
+        "/alerts/for-graph?sensor_key=temperature_weather",
         **_auth_headers(access),
     )
     assert resp.status_code == 200
     assert resp.json() == {"alerts": []}
 
     # --- 10. notifications-and-alerts (empty for a new user) -------------
-    resp = client.get("/api/notifications-and-alerts/", **_auth_headers(access))
+    resp = client.get("/notifications", **_auth_headers(access))
     assert resp.status_code == 200
     assert "notifications" in resp.json()
 
     # --- 11. zone-notification-outbound (noop branch) --------------------
     resp = client.post(
-        "/api/zone-notification-outbound/",
+        "/notifications/zone-outbound",
         data={"channels": {"email": False}},
         format="json",
         **_auth_headers(access),
@@ -197,7 +198,7 @@ def test_workflow():
 
     first_action = next(iter(dict(ManagerAffirmation.ACTION_CHOICES)))
     resp = client.post(
-        "/api/manager-affirmations/",
+        "/manager-affirmations",
         data={"action": first_action, "payload": {"e2e": True}},
         format="json",
         **_auth_headers(access),
@@ -209,14 +210,14 @@ def test_workflow():
     aff_id = resp.json()["id"]
 
     resp = client.get(
-        "/api/manager-affirmations/?status=pending", **_auth_headers(access),
+        "/manager-affirmations?status=pending", **_auth_headers(access),
     )
     assert resp.status_code == 200
     assert any(a["id"] == aff_id for a in resp.json())
 
     # Bogus action → 400 (validation handled by the router, not pydantic).
     resp = client.post(
-        "/api/manager-affirmations/",
+        "/manager-affirmations",
         data={"action": "BOGUS"},
         format="json",
         **_auth_headers(access),
@@ -227,7 +228,7 @@ def test_workflow():
     # The 34 dynamically-registered /api/sensors/<slug>/ routes share a
     # handler. Exercising one is enough to prove the registration path.
     resp = client.get(
-        "/api/sensors/temperatureweather/", **_auth_headers(access),
+        "/sensors/temperatureweather", **_auth_headers(access),
     )
     assert resp.status_code == 200, (
         f"chapter 13 (/api/sensors/temperatureweather/) "
@@ -239,7 +240,7 @@ def test_workflow():
 
     # Unknown slug → 404 from django-ninja's URL match miss.
     resp = client.get(
-        "/api/sensors/totally-not-a-sensor/", **_auth_headers(access),
+        "/sensors/totally-not-a-sensor", **_auth_headers(access),
     )
     assert resp.status_code == 404
 
@@ -258,7 +259,7 @@ def test_workflow():
 
     # All-None payload short-circuits to 200 with detail=all_metrics_none.
     resp = client.post(
-        "/api/sensors/weather/ingest/",
+        "/ingest/weather",
         data={"client": USER["username"]},
         format="json",
     )
@@ -273,7 +274,7 @@ def test_workflow():
         "humidity_weather": 55.0,
     }
     resp = client.post(
-        "/api/sensors/weather/ingest/", data=payload, format="json",
+        "/ingest/weather", data=payload, format="json",
     )
     assert resp.status_code == 201
     assert resp.json() == {"inserted": 2}
@@ -281,7 +282,7 @@ def test_workflow():
 
     # Missing client + metrics present → 400.
     resp = client.post(
-        "/api/sensors/weather/ingest/",
+        "/ingest/weather",
         data={"temperature_weather": 22.5},
         format="json",
     )
@@ -289,26 +290,20 @@ def test_workflow():
 
     # Unknown client → 400.
     resp = client.post(
-        "/api/sensors/weather/ingest/",
+        "/ingest/weather",
         data={"client": "nobody", "temperature_weather": 22.5},
         format="json",
     )
     assert resp.status_code == 400
 
     # --- 15. admin tree (PR 10) — non-admin path ------------------------
-    # The e2e user is NOT staff: every admin endpoint must 403, including
-    # the /auth/admin/* sub-tree, the analytics /api/admin/* tree, and
-    # the legacy /api/active-graph/<u>/<z>/.
-    resp = client.get("/auth/admin/users/", **_auth_headers(access))
+    # The e2e user is NOT staff: every admin endpoint must 403.
+    resp = client.get("/users", **_auth_headers(access))
     assert resp.status_code == 403
-    resp = client.get("/api/admin/overview/", **_auth_headers(access))
+    resp = client.get("/admin/overview", **_auth_headers(access))
     assert resp.status_code == 403
     resp = client.get(
-        "/api/admin/users/admin/zones/", **_auth_headers(access),
-    )
-    assert resp.status_code == 403
-    resp = client.get(
-        "/api/active-graph/admin/1/", **_auth_headers(access),
+        "/users/admin/zones", **_auth_headers(access),
     )
     assert resp.status_code == 403
 
@@ -320,22 +315,22 @@ def test_workflow():
     admin_tokens = _signin(client)
     admin_access = admin_tokens["access"]
 
-    # /auth/admin/users/ — at least the other seeded user shows up.
-    resp = client.get("/auth/admin/users/", **_auth_headers(admin_access))
+    # /users — at least the other seeded user shows up.
+    resp = client.get("/users", **_auth_headers(admin_access))
     assert resp.status_code == 200
     rows = resp.json()
     assert isinstance(rows, list)
 
-    # /api/admin/overview/ — KPIs payload.
-    resp = client.get("/api/admin/overview/", **_auth_headers(admin_access))
+    # /admin/overview — KPIs payload.
+    resp = client.get("/admin/overview", **_auth_headers(admin_access))
     assert resp.status_code == 200
     over = resp.json()
     for k in ("users_total", "users_active", "staff_total", "zones_total"):
         assert k in over
 
-    # /api/admin/users/<self>/zones/ — at least the one created in chapter 14.
+    # /users/<self>/zones — at least the one created in chapter 14.
     resp = client.get(
-        f"/api/admin/users/{USER['username']}/zones/",
+        f"/users/{USER['username']}/zones",
         **_auth_headers(admin_access),
     )
     assert resp.status_code == 200
@@ -345,15 +340,15 @@ def test_workflow():
 
     # GET zone params subset.
     resp = client.get(
-        f"/api/admin/users/{USER['username']}/zones/{zone_id}/params/",
+        f"/users/{USER['username']}/zones/{zone_id}/params",
         **_auth_headers(admin_access),
     )
     assert resp.status_code == 200
     assert "soil_param_TAW" in resp.json()
 
-    # PATCH the zone (idempotent re-save) — proves the validation path.
+    # PATCH the zone — proves the validation path.
     resp = client.patch(
-        f"/api/admin/users/{USER['username']}/zones/{zone_id}/",
+        f"/users/{USER['username']}/zones/{zone_id}",
         data={"critical_moisture_threshold": 20.0},
         format="json",
         **_auth_headers(admin_access),
@@ -363,21 +358,14 @@ def test_workflow():
 
     # GET active-graph for the same zone (gets-or-creates).
     resp = client.get(
-        f"/api/admin/users/{USER['username']}/zones/{zone_id}/active-graph/",
-        **_auth_headers(admin_access),
-    )
-    assert resp.status_code == 200
-
-    # Legacy active-graph admin URL — same row, same shape.
-    resp = client.get(
-        f"/api/active-graph/{USER['username']}/{zone_id}/",
+        f"/users/{USER['username']}/zones/{zone_id}/active-graph",
         **_auth_headers(admin_access),
     )
     assert resp.status_code == 200
 
     # Per-user activity timeline.
     resp = client.get(
-        f"/api/admin/users/{USER['username']}/activity/",
+        f"/users/{USER['username']}/activity",
         **_auth_headers(admin_access),
     )
     assert resp.status_code == 200
@@ -385,15 +373,15 @@ def test_workflow():
 
     # Per-user sensor-units GET (empty for a fresh user).
     resp = client.get(
-        f"/api/admin/users/{USER['username']}/sensor-units/",
+        f"/users/{USER['username']}/sensor-units",
         **_auth_headers(admin_access),
     )
     assert resp.status_code == 200
     assert resp.json() == {}
 
-    # User soft-delete via /auth/admin/users/<u>/ DELETE.
+    # User soft-delete via DELETE /users/<u>.
     resp = client.delete(
-        f"/auth/admin/users/{USER['username']}/",
+        f"/users/{USER['username']}",
         **_auth_headers(admin_access),
     )
     # Admin cannot delete their own admin account.

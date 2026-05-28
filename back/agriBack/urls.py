@@ -30,13 +30,12 @@ urlpatterns = [
         name="schema-swagger-ui",
     ),
     path("redoc/", schema_view.with_ui("redoc", cache_timeout=0), name="schema-redoc"),
-    path("admin/", admin.site.urls),
-    # django-ninja surface — mounted at root so each router can carry
-    # its full URL path (new /api/v2/* + migrated-in-place /api/v1/*
-    # and /api/* + /auth/* slots). Per memory `agri-api-fastapi-style`.
-    # Listed BEFORE the legacy DRF includes so ninja routes match first;
-    # routes that haven't migrated yet fall through to the DRF urls.
+    # django-ninja surface — mounted at root, BEFORE django admin so the
+    # ninja ``/admin/overview`` route is not shadowed by Django's
+    # ``/admin/login/`` etc. Django admin keeps working at /admin/ for any
+    # path the ninja API doesn't claim.
     path("", v2_api.urls),
+    path("admin/", admin.site.urls),
     path("api/", include("analytics.urls")),
     path("auth/", include("apps.users.urls")),
     # Hardware-family ingest endpoints migrated to django-ninja — served

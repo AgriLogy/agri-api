@@ -23,10 +23,10 @@ log = logging.getLogger("lorawan.chirpstack")
 
 
 @router.post(
-    "/uplink",
+    "",
     response={202: ChirpStackUplinkResponse, 400: dict},
     auth=None,
-    summary="ChirpStack v4 uplink webhook",
+    summary="ChirpStack v4 uplink webhook (POST /ingest/lorawan/chirpstack)",
 )
 def chirpstack_uplink(request, payload: ChirpStackUplink):
     log.info(

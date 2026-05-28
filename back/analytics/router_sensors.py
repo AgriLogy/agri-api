@@ -114,10 +114,32 @@ def _build_patch_handler(model_cls):
 
 # Register one GET + one PATCH per sensor model. The slugs match the
 # legacy `generated_views` URL derivation.
+from agri.core.alerts import SENSOR_KEY_REGISTRY
+
+
+@router.get(
+    "",
+    auth=JwtAuth(),
+    summary="Sensor-key catalog (slug + unit + label + type + model)",
+)
+def list_sensor_catalog(request):
+    return {
+        "keys": [
+            {
+                "key": key,
+                "unit": meta["unit"],
+                "label": meta["label"],
+                "type": meta.get("type"),
+            }
+            for key, meta in sorted(SENSOR_KEY_REGISTRY.items())
+        ]
+    }
+
+
 for _model in SENSOR_MODELS:
     _slug = _slug_for(_model)
     router.add_api_operation(
-        f"/sensors/{_slug}/",
+        f"/{_slug}",
         ["GET"],
         _build_list_handler(_model),
         auth=JwtAuth(),
@@ -125,7 +147,7 @@ for _model in SENSOR_MODELS:
         tags=["sensors"],
     )
     router.add_api_operation(
-        f"/sensors/{_slug}/",
+        f"/{_slug}",
         ["PATCH"],
         _build_patch_handler(_model),
         auth=JwtAuth(),

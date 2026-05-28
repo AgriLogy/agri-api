@@ -96,7 +96,7 @@ def _apply(alert: Alert, payload: AlertWriteIn) -> Alert:
 # ---------------------------------------------------------------------------
 
 
-@router.get("/alert/", auth=JwtAuth(), summary="List the caller's alerts")
+@router.get("", auth=JwtAuth(), summary="List the caller's alerts")
 def list_alerts(
     request,
     sensor_key: str | None = None,
@@ -110,7 +110,7 @@ def list_alerts(
     return [_serialize(a) for a in qs]
 
 
-@router.post("/alert/", auth=JwtAuth(), summary="Create an alert for the caller")
+@router.post("", auth=JwtAuth(), summary="Create an alert for the caller")
 def create_alert(request, payload: AlertWriteIn):
     if not payload.name or not payload.condition or payload.condition_nbr is None:
         return Response(
@@ -124,61 +124,13 @@ def create_alert(request, payload: AlertWriteIn):
 
 
 # ---------------------------------------------------------------------------
-# /api/alert/<pk>/
-# ---------------------------------------------------------------------------
-
-
-def _get_owned(request, pk: int) -> Alert | None:
-    try:
-        return Alert.objects.get(pk=pk, user=request.auth)
-    except Alert.DoesNotExist:
-        return None
-
-
-@router.get("/alert/{pk}/", auth=JwtAuth(), summary="Retrieve one of the caller's alerts")
-def get_alert(request, pk: int):
-    alert = _get_owned(request, pk)
-    if alert is None:
-        return Response({"detail": "Not found."}, status=404)
-    return _serialize(alert)
-
-
-@router.put("/alert/{pk}/", auth=JwtAuth(), summary="Replace one of the caller's alerts")
-def replace_alert(request, pk: int, payload: AlertWriteIn):
-    alert = _get_owned(request, pk)
-    if alert is None:
-        return Response({"detail": "Not found."}, status=404)
-    _apply(alert, payload)
-    alert.save()
-    return _serialize(alert)
-
-
-@router.patch("/alert/{pk}/", auth=JwtAuth(), summary="Patch one of the caller's alerts")
-def patch_alert(request, pk: int, payload: AlertWriteIn):
-    alert = _get_owned(request, pk)
-    if alert is None:
-        return Response({"detail": "Not found."}, status=404)
-    _apply(alert, payload)
-    alert.save()
-    return _serialize(alert)
-
-
-@router.delete("/alert/{pk}/", auth=JwtAuth(), summary="Delete one of the caller's alerts")
-def delete_alert(request, pk: int):
-    alert = _get_owned(request, pk)
-    if alert is None:
-        return Response({"detail": "Not found."}, status=404)
-    alert.delete()
-    return Response(None, status=204)
-
-
-# ---------------------------------------------------------------------------
-# /api/alerts/{for-graph,sensor-keys,suggest}/
+# Sub-collections under /alerts/ MUST be registered before /{pk} so the
+# dynamic path doesn't shadow them.
 # ---------------------------------------------------------------------------
 
 
 @router.get(
-    "/alerts/for-graph/",
+    "/for-graph",
     auth=JwtAuth(),
     summary="Alerts annotated for chart overlays",
 )
@@ -198,21 +150,7 @@ def alerts_for_graph(
 
 
 @router.get(
-    "/alerts/sensor-keys/",
-    auth=JwtAuth(),
-    summary="Sensor-key registry for the alert form (legacy shape)",
-)
-def alerts_sensor_keys(request):
-    return {
-        "keys": [
-            {"key": key, "unit": meta["unit"], "label": meta["label"]}
-            for key, meta in sorted(SENSOR_KEY_REGISTRY.items())
-        ]
-    }
-
-
-@router.get(
-    "/alerts/suggest/",
+    "/suggest",
     auth=JwtAuth(),
     summary="Suggested alert payload (mean-based prefill)",
 )
@@ -231,3 +169,52 @@ def alerts_suggest(
     if payload is None:
         return Response({"detail": "Unable to build suggestion."}, status=404)
     return payload
+
+
+# ---------------------------------------------------------------------------
+# /alerts/<pk>
+# ---------------------------------------------------------------------------
+
+
+def _get_owned(request, pk: int) -> Alert | None:
+    try:
+        return Alert.objects.get(pk=pk, user=request.auth)
+    except Alert.DoesNotExist:
+        return None
+
+
+@router.get("/{pk}", auth=JwtAuth(), summary="Retrieve one of the caller's alerts")
+def get_alert(request, pk: int):
+    alert = _get_owned(request, pk)
+    if alert is None:
+        return Response({"detail": "Not found."}, status=404)
+    return _serialize(alert)
+
+
+@router.put("/{pk}", auth=JwtAuth(), summary="Replace one of the caller's alerts")
+def replace_alert(request, pk: int, payload: AlertWriteIn):
+    alert = _get_owned(request, pk)
+    if alert is None:
+        return Response({"detail": "Not found."}, status=404)
+    _apply(alert, payload)
+    alert.save()
+    return _serialize(alert)
+
+
+@router.patch("/{pk}", auth=JwtAuth(), summary="Patch one of the caller's alerts")
+def patch_alert(request, pk: int, payload: AlertWriteIn):
+    alert = _get_owned(request, pk)
+    if alert is None:
+        return Response({"detail": "Not found."}, status=404)
+    _apply(alert, payload)
+    alert.save()
+    return _serialize(alert)
+
+
+@router.delete("/{pk}", auth=JwtAuth(), summary="Delete one of the caller's alerts")
+def delete_alert(request, pk: int):
+    alert = _get_owned(request, pk)
+    if alert is None:
+        return Response({"detail": "Not found."}, status=404)
+    alert.delete()
+    return Response(None, status=204)

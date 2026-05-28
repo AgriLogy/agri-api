@@ -1,35 +1,26 @@
-"""agri-api HTTP surface — single django-ninja ``NinjaAPI`` mounted at
-the URL root.
+"""agri-api HTTP surface — REST-aligned, single ``NinjaAPI`` mount.
 
-Per memory ``agri-api-fastapi-style``, new endpoints land here as
-FastAPI-style routers (function handlers + pydantic schemas + DI).
-Legacy DRF views co-exist as the fall-through under
-``agriBack/urls.py`` (they keep matching paths the ninja routes don't
-register).
+URL scheme (REST-standard, plural nouns, hierarchical):
 
-We use a **single** ``NinjaAPI`` mounted at the root so each router can
-carry its full URL path: the new endpoints live under ``/api/v2/...``,
-legacy ingest webhooks stay at their original ``/api/v1/...`` paths,
-and migrated read endpoints take over ``/api/...`` slots in place.
-That keeps the frontend contract intact during the DRF → ninja
-migration.
-
-Layout::
-
-    back/agriBack/api/
-    ├── __init__.py     # NinjaAPI instance + router includes (this file)
-    ├── auth.py         # HttpBearer JWT authenticator
-    └── routers/
-        └── sensors.py  # /api/v2/sensors/...
-
-Plus per-app routers under ``back/apps/<x>/router.py``.
+* ``/auth/*``                       authentication only (signup, sessions)
+* ``/users/me``                     caller's profile
+* ``/users/me/notifications``       POST: send-notification email
+* ``/users/...``                    admin user resources (list, CRUD, activate)
+* ``/zones/...``                    caller's zones + active-graph
+* ``/alerts/...``                   caller's alerts + sub-collections
+* ``/notifications/...``            caller's notification feed
+* ``/manager-affirmations/...``     workflow rows + approve/reject
+* ``/sensors``                      sensor-key catalog
+* ``/sensors/<slug>``               per-sensor readings + PATCH
+* ``/ingest/...``                   device webhooks (Bivocom, ChirpStack, weather)
+* ``/admin/overview``               KPIs
+* ``/admin/alerts/<pk>``            admin alerts override
 """
 from __future__ import annotations
 
 from ninja import NinjaAPI
 
 from agriBack.api.auth import JwtAuth
-from agriBack.api.routers.sensors import router as sensors_router
 from analytics.router_admin import router as analytics_admin_router
 from analytics.router_alerts import router as alerts_router
 from analytics.router_manager_affirmation import (
@@ -37,62 +28,53 @@ from analytics.router_manager_affirmation import (
 )
 from analytics.router_notifications import router as notifications_router
 from analytics.router_reads import router as analytics_reads_router
-from analytics.router_sensors import router as sensors_auto_router
+from analytics.router_sensors import router as sensors_router
 from analytics.router_weather_ingest import router as weather_ingest_router
 from apps.bivocom.router import router as bivocom_router
 from apps.lorawan.chirpstack.router import router as chirpstack_router
-from apps.users.router import router as users_router
-from apps.users.router_admin import router as users_admin_router
+from apps.users.router import router as users_auth_router
+from apps.users.router_admin import router as users_router
 
 api = NinjaAPI(
     title="Agrilogy API",
-    version="2.0.0",
+    version="3.0.0",
     description=(
-        "FastAPI-style surface for agri-api. New endpoints (django-ninja, "
-        "pydantic schemas, JWT auth default) co-exist with the legacy DRF "
-        "views; routes migrate in place per app."
+        "FastAPI-style REST surface for agri-api. Single mount at the root; "
+        "routes use plural nouns, path-param identity, action sub-resources."
     ),
     auth=JwtAuth(),
     docs_url="/api/docs",
 )
 
-# v2 new endpoints — JWT auth applies by default.
-api.add_router("/api/v2/sensors", sensors_router, tags=["sensors"])
+# Authentication only — no JWT on these routes (they issue tokens).
+api.add_router("/auth", users_auth_router, tags=["auth"])
 
-# /auth — signup/signin/admin-signup, modify-user, send-notification.
-# Each route declares its own auth (mostly auth=None for public auth flows;
-# admin ops apply JwtAuth + an inline IsAdminUser check).
-api.add_router("/auth", users_router, tags=["auth"])
+# User resources (admin + self) — mounted at /users.
+api.add_router("/users", users_router, tags=["users"])
 
-# /api — analytics reads (header, zones list, active-graph config).
-# Each route is JWT-authed; admin-only endpoints apply an inline check.
-api.add_router("/api", analytics_reads_router, tags=["analytics"])
+# Self-scoped reads (/users/me, /zones, /zones/{id}/active-graph) +
+# the empty stub at root for any future top-level reads.
+api.add_router("", analytics_reads_router, tags=["self"])
 
-# /api/alert(s) — alerts CRUD + the for-graph / sensor-keys / suggest helpers.
-api.add_router("/api", alerts_router, tags=["alerts"])
+# Alerts CRUD + sub-collections (/alerts, /alerts/for-graph, /alerts/suggest).
+api.add_router("/alerts", alerts_router, tags=["alerts"])
 
-# /api/notifications-and-alerts/, /api/zone-notification-outbound/
-api.add_router("/api", notifications_router, tags=["notifications"])
+# Notification feed + outbound trigger.
+api.add_router("/notifications", notifications_router, tags=["notifications"])
 
-# /api/manager-affirmations/, /api/manager-affirmations/<pk>/<action>/
-api.add_router("/api", manager_affirmation_router, tags=["manager-affirmation"])
+# Manager-affirmation workflow.
+api.add_router(
+    "/manager-affirmations", manager_affirmation_router, tags=["manager-affirmation"],
+)
 
-# /api/sensors/<slug>/ — 34 dynamically registered read endpoints
-# (one GET + one PATCH per entry in SENSOR_MODELS).
-api.add_router("/api", sensors_auto_router, tags=["sensors-data"])
+# Sensor-key catalog (GET /sensors) + per-sensor readings (GET, PATCH /sensors/<slug>).
+api.add_router("/sensors", sensors_router, tags=["sensors"])
 
-# /api/sensors/weather/ingest/ — multi-sensor write webhook from the bridge.
-api.add_router("/api", weather_ingest_router, tags=["weather-ingest"])
+# Device-ingest webhooks. Each declares ``auth=None`` per-route because the
+# gateway authenticates with a shared-secret header (TODO).
+api.add_router("/ingest/bivocom", bivocom_router, tags=["ingest"])
+api.add_router("/ingest/lorawan/chirpstack", chirpstack_router, tags=["ingest"])
+api.add_router("/ingest", weather_ingest_router, tags=["ingest"])
 
-# Admin tree (PR 10):
-#   /auth/admin/users/...   user CRUD + activate + reset-password
-#   /api/admin/...           overview + zones + active-graph + alerts +
-#                            activity + sensor-units
-api.add_router("/auth/admin", users_admin_router, tags=["admin-users"])
-api.add_router("/api/admin", analytics_admin_router, tags=["admin-analytics"])
-
-# Legacy ingest webhooks migrated in place under their original paths.
-# These webhook routes opt out of auth at the route level (gateway uses a
-# shared-secret header today; TODO: enforce in a follow-up).
-api.add_router("/api/v1/bivocom", bivocom_router, tags=["bivocom"])
-api.add_router("/api/v1/lorawan/chirpstack", chirpstack_router, tags=["lorawan"])
+# Admin tree (KPIs, per-user resources, admin alert override).
+api.add_router("", analytics_admin_router, tags=["admin"])

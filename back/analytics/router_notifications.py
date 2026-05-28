@@ -58,7 +58,7 @@ def _serialize_notification(n: Notification) -> dict[str, Any]:
 
 
 @router.get(
-    "/notifications-and-alerts/",
+    "",
     auth=JwtAuth(),
     summary="Recent server-stored notifications for the caller",
 )
@@ -90,7 +90,7 @@ class ZoneNotificationOutboundIn(Schema):
 
 
 @router.post(
-    "/zone-notification-outbound/",
+    "/zone-outbound",
     auth=JwtAuth(),
     summary="One-shot zone-config confirmation email",
 )
