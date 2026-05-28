@@ -33,4 +33,5 @@ urlpatterns = [
     path("auth/", include("CustomUser.urls")),
     # Hardware-family ingest endpoints (one app per device family)
     path("api/v1/bivocom/", include("apps.bivocom.urls")),
+    path("api/v1/lorawan/chirpstack/", include("apps.lorawan.chirpstack.urls")),
 ]
