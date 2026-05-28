@@ -61,6 +61,7 @@ INSTALLED_APPS = [
     "CustomUser",
     # Hardware-family ingest apps (vertical-slice)
     "apps.bivocom",
+    "apps.lorawan.chirpstack",
 ]
 
 MIDDLEWARE = [

@@ -131,7 +131,36 @@ else
     fail=$((fail + 1))
 fi
 
-# check "chirpstack uplink"   POST /api/v1/lorawan/chirpstack/uplink (Phase 5b)
+# ChirpStack uplink (Phase 5b). POST a minimal valid v4 uplink event; expect 202.
+chirpstack_payload='{"deviceInfo":{"devEui":"0011223344556677","deviceName":"smoke"},"rxInfo":[{"rssi":-85.2,"snr":7.5}],"object":{"airTemperature":{"value":22.5,"unit":"C"}}}'
+cs_out=$(curl -sSL -m "$TIMEOUT" \
+    -X POST -H "Content-Type: application/json" \
+    -d "$chirpstack_payload" \
+    -w '%{http_code}' -o /dev/null \
+    "${BASE_URL}/api/v1/lorawan/chirpstack/uplink" 2>&1)
+if [[ "$cs_out" == "202" ]]; then
+    printf "${GREEN}✓${RESET} %-32s ${DIM}POST /api/v1/lorawan/chirpstack/uplink — status=202${RESET}\n" "chirpstack uplink (valid)"
+    pass=$((pass + 1))
+else
+    printf "${RED}✗${RESET} %-32s ${DIM}POST /api/v1/lorawan/chirpstack/uplink — status=%s${RESET}\n" \
+        "chirpstack uplink (valid)" "$cs_out"
+    fail=$((fail + 1))
+fi
+
+# ChirpStack rejection — short DevEUI must 400
+cs_bad=$(curl -sSL -m "$TIMEOUT" \
+    -X POST -H "Content-Type: application/json" \
+    -d '{"deviceInfo":{"devEui":"SHORT"}}' \
+    -w '%{http_code}' -o /dev/null \
+    "${BASE_URL}/api/v1/lorawan/chirpstack/uplink" 2>&1)
+if [[ "$cs_bad" == "400" ]]; then
+    printf "${GREEN}✓${RESET} %-32s ${DIM}POST /api/v1/lorawan/chirpstack/uplink — status=400 (pydantic-rejected)${RESET}\n" "chirpstack uplink (invalid)"
+    pass=$((pass + 1))
+else
+    printf "${RED}✗${RESET} %-32s ${DIM}POST /api/v1/lorawan/chirpstack/uplink — status=%s (expected 400)${RESET}\n" \
+        "chirpstack uplink (invalid)" "$cs_bad"
+    fail=$((fail + 1))
+fi
 
 printf "%s\n" "-----------------------------------"
 printf "passed=%d  failed=%d\n" "$pass" "$fail"
