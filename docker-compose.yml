@@ -38,16 +38,25 @@ services:
     restart: unless-stopped
     networks: [agro]
 
-  # ---------- Optional Node bridge (writes shared_data/requests.json) -
+  # ---------- agri-bridge — stateless HTTP ingest gateway -----------
+  # Receives Router0X-format payloads from field devices, translates to
+  # the Bivocom v1 wire format, forwards to agri-api. No file persistence
+  # (Postgres via agri-api is source of truth).
   agri-bridge:
     container_name: agri-bridge
     build:
       context: ./Devops/server
       dockerfile: Dockerfile
+    environment:
+      PORT: 9090
+      BACKEND_URL: http://agri-api-web:8000
+      BACKEND_PATH: /api/v1/bivocom/uplink
+      LOG_LEVEL: info
     ports:
       - "9090:9090"
-    volumes:
-      - ./shared_data:/shared_data:rw
+    depends_on:
+      agri-api-web:
+        condition: service_healthy
     restart: unless-stopped
     networks: [agro]
 
