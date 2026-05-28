@@ -1,0 +1,40 @@
+.git
+.github
+.githooks
+.venv
+.ruff_cache
+.pytest_cache
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+
+# Local-only artifacts (gitignored too, but belt-and-braces for build cache)
+*.sqlite3
+celerybeat-schedule
+.env
+.env.*
+!.env.example
+*.log
+
+# Editor / OS
+.DS_Store
+.vscode
+.idea
+
+# Test / coverage
+.coverage
+htmlcov/
+
+# Claude / Cursor / tooling
+.claude/
+.mcp.json
+
+# Docs not needed in the image
+CHANGELOG.md
+docs/
+README.md
+readme.md
+
+# Runtime bind-mount target (compose mounts shared_data:/shared at runtime)
+shared_data/
