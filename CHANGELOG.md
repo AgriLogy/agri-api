@@ -1,3 +1,10 @@
+# [1.12.0](https://github.com/AgriLogy/agrilogy-back/compare/v1.11.0...v1.12.0) (2026-05-28)
+
+
+### Features
+
+* **bridge:** professionalize the 9090 ingest gateway ([#66](https://github.com/AgriLogy/agrilogy-back/issues/66)) ([6673403](https://github.com/AgriLogy/agrilogy-back/commit/6673403f6b17bc2fde158f0dccfb9773193422ee))
+
 # [1.11.0](https://github.com/AgriLogy/agrilogy-back/compare/v1.10.0...v1.11.0) (2026-05-28)
 
 
