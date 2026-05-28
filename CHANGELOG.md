@@ -1,3 +1,10 @@
+# [1.26.0](https://github.com/AgriLogy/agri-api/compare/v1.25.0...v1.26.0) (2026-05-28)
+
+
+### Features
+
+* **api:** migrate manager-affirmation endpoints to django-ninja ([#108](https://github.com/AgriLogy/agri-api/issues/108)) ([2d709bc](https://github.com/AgriLogy/agri-api/commit/2d709bc290523c2ae42788d1bd08c77047d2b43e))
+
 # [1.25.0](https://github.com/AgriLogy/agri-api/compare/v1.24.0...v1.25.0) (2026-05-28)
 
 
