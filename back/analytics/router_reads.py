@@ -87,3 +87,58 @@ def active_zones(request, username: str):
         return Response({"detail": "User not found."}, status=404)
     qs = Zone.objects.filter(user=user)
     return [_zone_short(z) for z in qs]
+
+
+# ---------------------------------------------------------------------------
+# Legacy admin path retained for the in-flight frontend migration:
+# GET /api/active-graph/<username>/<zone_id>/ — same shape as the v2 admin
+# endpoint at /api/admin/users/<username>/zones/<zone_id>/active-graph/.
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/active-graph/{username}/{zone_id}/",
+    auth=JwtAuth(),
+    summary="(legacy) admin active-graph for a user+zone",
+)
+def legacy_active_graph(request, username: str, zone_id: int):
+    guard = _require_admin(request)
+    if guard is not None:
+        return guard
+    try:
+        user = CustomUser.objects.get(username=username)
+    except CustomUser.DoesNotExist:
+        return Response({"detail": "ActiveGraph not found."}, status=404)
+    ag = ActiveGraph.objects.filter(user=user, zone_id=zone_id).first()
+    if ag is None:
+        return Response({"detail": "ActiveGraph not found."}, status=404)
+    return _active_graph_dict(ag)
+
+
+@router.put(
+    "/active-graph/{username}/{zone_id}/",
+    auth=JwtAuth(),
+    summary="(legacy) admin active-graph PUT — partial update",
+)
+def legacy_active_graph_put(request, username: str, zone_id: int):
+    guard = _require_admin(request)
+    if guard is not None:
+        return guard
+    try:
+        user = CustomUser.objects.get(username=username)
+    except CustomUser.DoesNotExist:
+        return Response({"detail": "ActiveGraph not found."}, status=404)
+    ag = ActiveGraph.objects.filter(user=user, zone_id=zone_id).first()
+    if ag is None:
+        return Response({"detail": "ActiveGraph not found."}, status=404)
+    import json as _json
+
+    try:
+        body = _json.loads(request.body or b"{}")
+    except ValueError:
+        return Response({"detail": "Invalid JSON body."}, status=400)
+    for k, v in (body or {}).items():
+        if hasattr(ag, k):
+            setattr(ag, k, v)
+    ag.save()
+    return _active_graph_dict(ag)

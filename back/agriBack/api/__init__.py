@@ -30,6 +30,7 @@ from ninja import NinjaAPI
 
 from agriBack.api.auth import JwtAuth
 from agriBack.api.routers.sensors import router as sensors_router
+from analytics.router_admin import router as analytics_admin_router
 from analytics.router_alerts import router as alerts_router
 from analytics.router_manager_affirmation import (
     router as manager_affirmation_router,
@@ -41,6 +42,7 @@ from analytics.router_weather_ingest import router as weather_ingest_router
 from apps.bivocom.router import router as bivocom_router
 from apps.lorawan.chirpstack.router import router as chirpstack_router
 from apps.users.router import router as users_router
+from apps.users.router_admin import router as users_admin_router
 
 api = NinjaAPI(
     title="Agrilogy API",
@@ -81,6 +83,13 @@ api.add_router("/api", sensors_auto_router, tags=["sensors-data"])
 
 # /api/sensors/weather/ingest/ — multi-sensor write webhook from the bridge.
 api.add_router("/api", weather_ingest_router, tags=["weather-ingest"])
+
+# Admin tree (PR 10):
+#   /auth/admin/users/...   user CRUD + activate + reset-password
+#   /api/admin/...           overview + zones + active-graph + alerts +
+#                            activity + sensor-units
+api.add_router("/auth/admin", users_admin_router, tags=["admin-users"])
+api.add_router("/api/admin", analytics_admin_router, tags=["admin-analytics"])
 
 # Legacy ingest webhooks migrated in place under their original paths.
 # These webhook routes opt out of auth at the route level (gateway uses a
