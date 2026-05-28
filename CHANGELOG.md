@@ -1,3 +1,10 @@
+# [1.23.0](https://github.com/AgriLogy/agri-api/compare/v1.22.0...v1.23.0) (2026-05-28)
+
+
+### Features
+
+* **api:** migrate analytics read endpoints to django-ninja ([#102](https://github.com/AgriLogy/agri-api/issues/102)) ([bd2aec0](https://github.com/AgriLogy/agri-api/commit/bd2aec074994f2a0ad78959eb23d54634118a62a))
+
 # [1.22.0](https://github.com/AgriLogy/agri-api/compare/v1.21.0...v1.22.0) (2026-05-28)
 
 
