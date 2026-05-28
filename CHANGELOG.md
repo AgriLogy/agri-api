@@ -1,3 +1,10 @@
+# [1.24.0](https://github.com/AgriLogy/agri-api/compare/v1.23.0...v1.24.0) (2026-05-28)
+
+
+### Features
+
+* **api:** migrate alerts CRUD to django-ninja ([#104](https://github.com/AgriLogy/agri-api/issues/104)) ([ee1d152](https://github.com/AgriLogy/agri-api/commit/ee1d152453d2df271b3590e4f72ece5ea263ffda))
+
 # [1.23.0](https://github.com/AgriLogy/agri-api/compare/v1.22.0...v1.23.0) (2026-05-28)
 
 
