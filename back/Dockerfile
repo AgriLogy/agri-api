@@ -29,12 +29,9 @@ RUN uv sync --frozen --no-install-project --no-dev \
 COPY . /code/
 
 # Entrypoint scripts. docker-entrypoint.sh dispatches by role
-# (web/worker/beat). run.sh is kept for backwards compatibility with the
-# old `bash /run.sh` CMD.
 COPY docker-entrypoint.sh /code/docker-entrypoint.sh
-COPY run.sh /run.sh
 COPY env-example /.env
-RUN chmod +x /code/docker-entrypoint.sh /run.sh
+RUN chmod +x /code/docker-entrypoint.sh
 
 RUN mkdir -m 777 /shared
 
