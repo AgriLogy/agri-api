@@ -1,0 +1,121 @@
+{
+  "info": {
+    "name": "agri-api",
+    "description": "Postman collection for the agri-api service (was agrilogy-back). Used as a per-phase smoke test of the senior-dev refactor plan.\n\n**Environment variables** (set in Postman environment):\n- `baseUrl` — default `http://localhost:8000`\n- `bearerToken` — JWT access token (obtain via `/auth/login/`); leave empty for smoke tests\n\n**Phase 0 smoke (this commit):** public endpoints only — admin login page, swagger, redoc. Each request has a test asserting `status < 500`.\n\nLater phases add per-domain folders: bivocom (Phase 5a), lorawan/chirpstack (Phase 5b), sensors (Phase 5d), irrigation (Phase 5e), alerts (Phase 5f).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_postman_id": "agri-api-phase-0"
+  },
+  "variable": [
+    {"key": "baseUrl", "value": "http://localhost:8000"},
+    {"key": "bearerToken", "value": ""}
+  ],
+  "item": [
+    {
+      "name": "0 — Smoke",
+      "description": "Public-endpoint smoke tests. Every phase merge must keep these green.",
+      "item": [
+        {
+          "name": "GET /admin/login/",
+          "request": {
+            "method": "GET",
+            "url": {"raw": "{{baseUrl}}/admin/login/", "host": ["{{baseUrl}}"], "path": ["admin", "login", ""]}
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('admin login responds < 500', () => {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});",
+                  "pm.test('admin login is HTML', () => {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/html');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /swagger/",
+          "request": {
+            "method": "GET",
+            "url": {"raw": "{{baseUrl}}/swagger/", "host": ["{{baseUrl}}"], "path": ["swagger", ""]}
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('swagger responds < 500', () => {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /redoc/",
+          "request": {
+            "method": "GET",
+            "url": {"raw": "{{baseUrl}}/redoc/", "host": ["{{baseUrl}}"], "path": ["redoc", ""]}
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('redoc responds < 500', () => {",
+                  "    pm.expect(pm.response.code).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /swagger.json",
+          "request": {
+            "method": "GET",
+            "url": {"raw": "{{baseUrl}}/swagger.json", "host": ["{{baseUrl}}"], "path": ["swagger.json"]}
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('openapi schema responds 200', () => {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('openapi schema is JSON', () => {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('json');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "auth — (filled in later phases)",
+      "description": "POST /auth/login/, refresh, etc. Skipped at Phase 0 — no creds in smoke tests.",
+      "item": []
+    },
+    {
+      "name": "bivocom — (Phase 5a)",
+      "description": "POST /api/v1/bivocom/uplink, etc.",
+      "item": []
+    },
+    {
+      "name": "lorawan — (Phase 5b)",
+      "description": "POST /api/v1/lorawan/chirpstack/uplink (placeholder until hardware lands).",
+      "item": []
+    }
+  ]
+}
