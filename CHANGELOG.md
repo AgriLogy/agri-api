@@ -1,3 +1,10 @@
+# [1.27.0](https://github.com/AgriLogy/agri-api/compare/v1.26.0...v1.27.0) (2026-05-28)
+
+
+### Features
+
+* **api:** migrate auto-generated sensor routes to django-ninja + bootstrap e2e workflow test ([#110](https://github.com/AgriLogy/agri-api/issues/110)) ([bc8a6fb](https://github.com/AgriLogy/agri-api/commit/bc8a6fbd7f25379c6ec1db9f70c2405046a5e340))
+
 # [1.26.0](https://github.com/AgriLogy/agri-api/compare/v1.25.0...v1.26.0) (2026-05-28)
 
 
