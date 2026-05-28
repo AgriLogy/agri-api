@@ -1,3 +1,10 @@
+# [1.25.0](https://github.com/AgriLogy/agri-api/compare/v1.24.0...v1.25.0) (2026-05-28)
+
+
+### Features
+
+* **api:** migrate notifications endpoints to django-ninja ([#106](https://github.com/AgriLogy/agri-api/issues/106)) ([8f03c22](https://github.com/AgriLogy/agri-api/commit/8f03c22127ba825abef156b4951285cdc8ca6326))
+
 # [1.24.0](https://github.com/AgriLogy/agri-api/compare/v1.23.0...v1.24.0) (2026-05-28)
 
 
