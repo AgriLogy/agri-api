@@ -1,25 +1,11 @@
 from django.contrib.auth import get_user_model
-from django.db.models import Q
 from rest_framework import status
-from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
+from rest_framework.permissions import IsAdminUser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import *
 from .serializers import *
-
-User = get_user_model()
-
-
-class AdminHeaderAPIView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminUser]
-
-    def get(self, request):
-        user = request.user
-        return Response({"username": user.username}, status=status.HTTP_200_OK)
-
-
-# Admin Part
 
 CustomUser = get_user_model()
 
