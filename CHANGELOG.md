@@ -1,3 +1,10 @@
+# [1.10.0](https://github.com/AgriLogy/agrilogy-back/compare/v1.9.0...v1.10.0) (2026-05-28)
+
+
+### Features
+
+* **bivocom:** apps/bivocom/ Django app with pydantic-typed ingest ([#62](https://github.com/AgriLogy/agrilogy-back/issues/62)) ([e3efb2a](https://github.com/AgriLogy/agrilogy-back/commit/e3efb2a90fa193f88afc1c9c9d30f67ecd719fa0))
+
 # [1.9.0](https://github.com/AgriLogy/agrilogy-back/compare/v1.8.1...v1.9.0) (2026-05-28)
 
 
