@@ -30,6 +30,7 @@ from ninja import NinjaAPI
 
 from agriBack.api.auth import JwtAuth
 from agriBack.api.routers.sensors import router as sensors_router
+from apps.bivocom.router import router as bivocom_router
 from apps.lorawan.chirpstack.router import router as chirpstack_router
 
 api = NinjaAPI(
@@ -50,4 +51,5 @@ api.add_router("/api/v2/sensors", sensors_router, tags=["sensors"])
 # Legacy ingest webhooks migrated in place under their original paths.
 # These webhook routes opt out of auth at the route level (gateway uses a
 # shared-secret header today; TODO: enforce in a follow-up).
+api.add_router("/api/v1/bivocom", bivocom_router, tags=["bivocom"])
 api.add_router("/api/v1/lorawan/chirpstack", chirpstack_router, tags=["lorawan"])

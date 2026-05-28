@@ -39,8 +39,8 @@ urlpatterns = [
     path("", v2_api.urls),
     path("api/", include("analytics.urls")),
     path("auth/", include("apps.users.urls")),
-    # Hardware-family ingest endpoints (one app per device family)
-    path("api/v1/bivocom/", include("apps.bivocom.urls")),
-    # apps.lorawan.chirpstack migrated to django-ninja — served from
-    # `v2_api.urls` under `/api/v1/lorawan/chirpstack/uplink`.
+    # Hardware-family ingest endpoints migrated to django-ninja — served
+    # from `v2_api.urls` (mounted at root above) at:
+    #   POST /api/v1/bivocom/uplink
+    #   POST /api/v1/lorawan/chirpstack/uplink
 ]
