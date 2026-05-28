@@ -1,3 +1,10 @@
+# [1.17.0](https://github.com/AgriLogy/agri-api/compare/v1.16.0...v1.17.0) (2026-05-28)
+
+
+### Features
+
+* **alerts:** lift the alert evaluator into agri-core ([#90](https://github.com/AgriLogy/agri-api/issues/90)) ([cd9eddb](https://github.com/AgriLogy/agri-api/commit/cd9eddbdd85ef66a13ea23551f66351bf3eadb3f))
+
 # [1.16.0](https://github.com/AgriLogy/agri-api/compare/v1.15.1...v1.16.0) (2026-05-28)
 
 
