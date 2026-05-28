@@ -55,7 +55,7 @@ jobs:
       # pytest-django picks up legacy `django.test.TestCase`-based tests
       # too, so this is a superset of `manage.py test`.
       - name: Backend tests (pytest)
-        run: uv run pytest CustomUser/ analytics/ -v
+        run: uv run pytest apps/users/ analytics/ -v
         env:
           DJANGO_SETTINGS_MODULE: agriBack.settings
           SECRET_KEY: ci-placeholder-secret-key
