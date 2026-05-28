@@ -1,3 +1,10 @@
+# [1.28.0](https://github.com/AgriLogy/agri-api/compare/v1.27.0...v1.28.0) (2026-05-28)
+
+
+### Features
+
+* **api:** migrate weather ingest webhook to django-ninja ([#112](https://github.com/AgriLogy/agri-api/issues/112)) ([82396ac](https://github.com/AgriLogy/agri-api/commit/82396ac06bf701f52ad8e8f0ca047c5193a537a1))
+
 # [1.27.0](https://github.com/AgriLogy/agri-api/compare/v1.26.0...v1.27.0) (2026-05-28)
 
 
