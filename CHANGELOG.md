@@ -1,3 +1,10 @@
+## [1.12.2](https://github.com/AgriLogy/agrilogy-back/compare/v1.12.1...v1.12.2) (2026-05-28)
+
+
+### Bug Fixes
+
+* **compose:** stop overriding EMAIL_HOST/EMAIL_PORT from env_file ([#47](https://github.com/AgriLogy/agrilogy-back/issues/47)) ([f30dc84](https://github.com/AgriLogy/agrilogy-back/commit/f30dc84af14602ade1da219162598c73d2d9ce67)), closes [#46](https://github.com/AgriLogy/agrilogy-back/issues/46)
+
 ## [1.12.1](https://github.com/AgriLogy/agrilogy-back/compare/v1.12.0...v1.12.1) (2026-05-28)
 
 # [1.12.0](https://github.com/AgriLogy/agrilogy-back/compare/v1.11.0...v1.12.0) (2026-05-28)
