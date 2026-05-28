@@ -7,7 +7,7 @@ Celery jobs. Last verified 2026-05-20.
 ## TL;DR
 
 ```
-Device (Router0X)  →  agryserver:9090 (Node)  →  agrybackend:8000 (Django)  →  Postgres
+Device (Router0X)  →  agri-bridge:9090 (Node)  →  agri-api-web:8000 (Django)  →  Postgres
                               │                              │
                               │ archive                       │ periodic
                               ▼                              ▼
@@ -38,8 +38,8 @@ graph LR
 
   subgraph Droplet["Production droplet 157.245.43.196"]
     NGINX[nginx :80/:443<br/>web traffic only]
-    AGRY[":9090<br/>agryserver Node"]
-    DJANGO[":8000<br/>agrybackend Django"]
+    AGRY[":9090<br/>agri-bridge Node"]
+    DJANGO[":8000<br/>agri-api-web Django"]
     REDIS[Redis<br/>broker]
     BEAT[celery-beat<br/>scheduler]
     WORK[celery-worker<br/>executor]
@@ -66,9 +66,9 @@ graph LR
 sequenceDiagram
   autonumber
   participant Dev as Device (Router02)
-  participant Node as agryserver :9090<br/>Devops/server/server.js
+  participant Node as agri-bridge :9090<br/>Devops/server/server.js
   participant FS as shared volume<br/>requests.json + .logs
-  participant Dj as agrybackend :8000<br/>WeatherIngestAPIView
+  participant Dj as agri-api-web :8000<br/>WeatherIngestAPIView
   participant PG as Postgres
 
   Dev->>Node: POST / (plain HTTP, no auth)<br/>{"client": "Router02", "wind_speed": …}
@@ -101,7 +101,7 @@ sequenceDiagram
 
 - Production gateway today is **Router02** (weather sensors only, ~3 sensor
   readings per minute). Router01 (soil sensors) has been silent since
-  before the agryserver container restart on 2026-05-20.
+  before the agri-bridge container restart on 2026-05-20.
 - The device sends one JSON **object** (not an array) per reading, by
   POST to `http://157.245.43.196:9090/`.
 - Payload shape currently in production:
@@ -141,7 +141,7 @@ sequenceDiagram
     `server.js:100-101`.
   - If the payload is an object (not an array), forwards it via plain
     HTTP to `${PY_HOST}:${PY_PORT}${PY_PATH}` — defaults to
-    `agrybackend:8000/api/sensors/weather/ingest/` — `server.js:9-11, 88`.
+    `agri-api-web:8000/api/sensors/weather/ingest/` — `server.js:9-11, 88`.
   - Forward timeout: **8 seconds**, no retry — `server.js:27`.
 - **The device always gets 200** with body `"Data Received Successfully !!"`,
   even if the forward to Django failed (timeout, 4xx, 5xx) —
@@ -258,10 +258,10 @@ All weather/soil sensor rows share the same shape:
 
 | Service        | Image                | Port(s)               | Volumes                          |
 |----------------|----------------------|-----------------------|----------------------------------|
-| `agryserver`   | local Node           | `9090:9090`           | `./shared_data:/shared_data:rw`  |
-| `agrybackend`  | local Django         | `8000:8000`           | `./back:/code`, `./shared_data:/shared:rw` |
-| `celery-worker`| same Django image    | —                     | same as agrybackend              |
-| `celery-beat`  | same Django image    | —                     | same as agrybackend              |
+| `agri-bridge`   | local Node           | `9090:9090`           | `./shared_data:/shared_data:rw`  |
+| `agri-api-web`  | local Django         | `8000:8000`           | `./back:/code`, `./shared_data:/shared:rw` |
+| `celery-worker`| same Django image    | —                     | same as agri-api-web              |
+| `celery-beat`  | same Django image    | —                     | same as agri-api-web              |
 | `redis`        | `redis:7-alpine`     | `6379:6379`           | —                                |
 | `mailpit`      | `axllent/mailpit`    | `1025:1025`, `8025:8025` | —                             |
 
@@ -280,8 +280,8 @@ All services share the `agro` bridge network.
   per-line `.logs` does have timestamps but is local to the container
   and is wiped on container restart. Backfilling lost data later is hard
   (see incident notes in repo).
-- **Mount-path mismatch.** `agryserver` mounts the volume at
-  `/shared_data`; `agrybackend` and Celery mount the same host directory
+- **Mount-path mismatch.** `agri-bridge` mounts the volume at
+  `/shared_data`; `agri-api-web` and Celery mount the same host directory
   at `/shared`. No code references that path on the Django side today,
   so it is a latent footgun rather than a live bug.
 - **Silent forward failure.** A Django 5xx or timeout returns 200 to the

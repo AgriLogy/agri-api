@@ -25,7 +25,7 @@ DEBUG = os.getenv("DEBUG", "True").lower() in ("1", "true", "yes")
 
 ALLOWED_HOSTS = _csv_env(
     "ALLOWED_HOSTS",
-    "localhost,127.0.0.1,0.0.0.0,agrybackend,157.245.43.196,agrogo-datafarm.com,www.agrogo-datafarm.com",
+    "localhost,127.0.0.1,0.0.0.0,agri-api-web,157.245.43.196,agrogo-datafarm.com,www.agrogo-datafarm.com",
 )
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")

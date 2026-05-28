@@ -55,7 +55,7 @@ graph LR
     Chart[Sensor chart<br/>recharts]
   end
 
-  subgraph "Django (agrybackend)"
+  subgraph "Django (agri-api-web)"
     A_LC[AlertsAPIView<br/>GET / POST /api/alert/]
     A_DT[AlertDetailAPIView<br/>GET/PATCH/DELETE /api/alert/&lt;pk&gt;/]
     A_FG[AlertsForGraphAPIView<br/>GET /api/alerts/for-graph/]
