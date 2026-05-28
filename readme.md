@@ -56,12 +56,12 @@ Useful overrides: `PORT=8001 make dev`, `SKIP_SYNC=1 make dev`, `SKIP_MIGRATE=1 
 
 #### Full stack (Supabase Postgres + local Redis + Mailpit)
 
-Postgres is hosted on **Supabase** (see [agrilogy-db](../agrilogy-db)). The
+Postgres is hosted on **Supabase** (see [agri-db](../agri-db)). The
 local Docker stack no longer ships a Postgres container.
 
 ```bash
 # 1) Make sure the Supabase project's schema is up to date
-( cd ../agrilogy-db && make upgrade-dev )
+( cd ../agri-db && make upgrade-dev )
 
 # 2) Fill in back/.env with the Session pooler URI from Supabase Studio
 cp back/env-example back/.env   # then paste POSTGRES_* values, set USE_POSTGRES=True
@@ -73,9 +73,9 @@ make up                         # docker compose: redis + mailpit + django + cel
 Django on `:8000`, **Mailpit web UI on `:8025`** (SMTP `:1025`). Browse
 Postgres via Supabase Studio.
 
-> **Schema changes go through [agrilogy-db](../agrilogy-db), not Django.**
+> **Schema changes go through [agri-db](../agri-db), not Django.**
 > Django no longer runs `migrate` on container boot. Adding a Django model
-> field requires a parallel Alembic migration in agrilogy-db. This is a
+> field requires a parallel Alembic migration in agri-db. This is a
 > deliberate split so the (planned) FastAPI rewrite inherits the same
 > migration history.
 

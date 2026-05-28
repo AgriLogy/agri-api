@@ -78,9 +78,9 @@ PY
 }
 
 # --- Migrations -------------------------------------------------------------
-# Schema is owned by the agrilogy-db repo (Alembic). Django no longer runs
-# `migrate` on container boot — see /Users/mks/agrilogy/agrilogy-db.
-# To bootstrap a fresh Supabase project: `make upgrade-dev` in agrilogy-db
+# Schema is owned by the agri-db repo (Alembic). Django no longer runs
+# `migrate` on container boot — see ../agri-db.
+# To bootstrap a fresh Supabase project: `make upgrade-dev` in agri-db
 # BEFORE bringing this stack up.
 
 # --- Roles ------------------------------------------------------------------
