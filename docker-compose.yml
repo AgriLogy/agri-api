@@ -39,8 +39,8 @@ services:
     networks: [agro]
 
   # ---------- Optional Node bridge (writes shared_data/requests.json) -
-  agryserver:
-    container_name: agryserver
+  agri-bridge:
+    container_name: agri-bridge
     build:
       context: ./Devops/server
       dockerfile: Dockerfile
@@ -52,9 +52,9 @@ services:
     networks: [agro]
 
   # ---------- Django (web) --------------------------------------------
-  agrybackend:
-    container_name: agrybackend
-    image: agriback:latest
+  agri-api-web:
+    container_name: agri-api-web
+    image: agri-api:latest
     build:
       context: ./back
       dockerfile: Dockerfile
@@ -87,9 +87,9 @@ services:
     networks: [agro]
 
   # ---------- Celery worker -------------------------------------------
-  celery-worker:
-    container_name: celery-worker
-    image: agriback:latest
+  agri-api-worker:
+    container_name: agri-api-worker
+    image: agri-api:latest
     build:
       context: ./back
       dockerfile: Dockerfile
@@ -106,7 +106,7 @@ services:
       - ./back:/code:delegated
       - ./shared_data:/shared:rw
     depends_on:
-      agrybackend:
+      agri-api-web:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -114,9 +114,9 @@ services:
     networks: [agro]
 
   # ---------- Celery beat ---------------------------------------------
-  celery-beat:
-    container_name: celery-beat
-    image: agriback:latest
+  agri-api-beat:
+    container_name: agri-api-beat
+    image: agri-api:latest
     build:
       context: ./back
       dockerfile: Dockerfile
@@ -133,7 +133,7 @@ services:
       - ./back:/code:delegated
       - ./shared_data:/shared:rw
     depends_on:
-      agrybackend:
+      agri-api-web:
         condition: service_healthy
       redis:
         condition: service_healthy

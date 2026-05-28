@@ -6,7 +6,7 @@ const sharedDir = '/shared_data';
 const jsonFilePath = path.join(sharedDir, 'requests.json');
 const logFilePath = path.join(__dirname, '.logs');
 
-const PY_HOST = process.env.PY_HOST || "agrybackend";
+const PY_HOST = process.env.PY_HOST || "agri-api-web";
 const PY_PORT = Number(process.env.PY_PORT || 8000);
 const PY_PATH = process.env.PY_PATH || "/api/sensors/weather/ingest/";
 
