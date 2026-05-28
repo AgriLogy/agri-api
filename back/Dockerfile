@@ -9,12 +9,14 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /code
 
-# System packages: cron at runtime; build tooling for psycopg2 wheel fallbacks.
+# System packages: cron at runtime; build tooling for psycopg2 wheel fallbacks;
+# git so uv can resolve `agri-core @ git+https://...` and other VCS deps.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         cron \
         build-essential \
         libpq-dev \
+        git \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv (pinned for reproducibility).

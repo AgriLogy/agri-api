@@ -55,6 +55,10 @@ dependencies = [
     "sqlparse==0.5.1",
     "swagger-spec-validator==3.0.4",
     "typing_extensions==4.12.2",
+    # Shared framework-agnostic library (handlers + business logic). Pinned
+    # to main while the API surface is still settling; switch to a versioned
+    # tag once agri-core ships its first real release.
+    "agri-core @ git+https://github.com/AgriLogy/agri-core.git@main",
 ]
 
 [dependency-groups]
