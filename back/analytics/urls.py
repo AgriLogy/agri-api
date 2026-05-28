@@ -9,21 +9,15 @@ from .sensor_registry import generated_views
 from .views import *
 
 urlpatterns = [
-    path("header/", HeaderAPIView.as_view(), name="header"),
-    path("zones-names-per-user/", ZonesNames.as_view(), name="zones-names-per-user"),
-    path(
-        "active-graph/self/<int:zone_id>/",
-        ActiveGraphSelfAPIView.as_view(),
-        name="active-graph-self",
-    ),
-    # Legacy admin endpoints (kept for the in-flight frontend migration)
+    # header/, zones-names-per-user/, active-graph/self/<zone_id>/, and
+    # active-zones/<username>/ have migrated to django-ninja
+    # (analytics.router_reads). They keep their URL paths via the
+    # NinjaAPI mounted at root in agriBack.urls.
+    # Legacy admin endpoint (kept for the in-flight frontend migration)
     path(
         "active-graph/<str:username>/<int:zone_id>/",
         ActiveGraphAdminAPIView.as_view(),
         name="active-graph-admin",
-    ),
-    path(
-        "active-zones/<str:username>/", ActiveZonesView.as_view(), name="active-zones"
     ),
     # New admin tree
     path("admin/", include("analytics.admin_urls")),
