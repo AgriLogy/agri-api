@@ -1,3 +1,10 @@
+# [1.8.0](https://github.com/AgriLogy/agrilogy-back/compare/v1.7.4...v1.8.0) (2026-05-28)
+
+
+### Features
+
+* **settings:** split monolithic settings.py into base/dev/prod/test ([#56](https://github.com/AgriLogy/agrilogy-back/issues/56)) ([6a3c764](https://github.com/AgriLogy/agrilogy-back/commit/6a3c764f870683c63cece6f8584b1fbb14136b25))
+
 ## [1.7.4](https://github.com/AgriLogy/agrilogy-back/compare/v1.7.3...v1.7.4) (2026-05-28)
 
 
