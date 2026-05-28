@@ -21,17 +21,8 @@ urlpatterns = [
     ),
     # New admin tree
     path("admin/", include("analytics.admin_urls")),
-    # Manager affirmations
-    path(
-        "manager-affirmations/",
-        ManagerAffirmationListCreateAPIView.as_view(),
-        name="manager-affirmations",
-    ),
-    path(
-        "manager-affirmations/<int:pk>/<str:action>/",
-        ManagerAffirmationDecisionAPIView.as_view(),
-        name="manager-affirmation-decision",
-    ),
+    # Manager affirmations migrated to django-ninja
+    # (analytics.router_manager_affirmation).
     # Alerts CRUD + for-graph / sensor-keys / suggest migrated to
     # django-ninja in analytics.router_alerts.
     path("sensors/weather/ingest/", WeatherIngestAPIView.as_view()),
