@@ -1,3 +1,10 @@
+# [1.29.0](https://github.com/AgriLogy/agri-api/compare/v1.28.0...v1.29.0) (2026-05-28)
+
+
+### Features
+
+* **api:** migrate the admin tree to django-ninja (PR 10/10) ([#114](https://github.com/AgriLogy/agri-api/issues/114)) ([45308e4](https://github.com/AgriLogy/agri-api/commit/45308e418dc83e2f59430165e38432ff6de6ddea))
+
 # [1.28.0](https://github.com/AgriLogy/agri-api/compare/v1.27.0...v1.28.0) (2026-05-28)
 
 
