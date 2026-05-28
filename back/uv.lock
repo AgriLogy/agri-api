@@ -3,7 +3,7 @@ requires-python = ">=3.12"
 
 [[package]]
 name = "agri-api"
-version = "1.14.1"
+version = "1.15.1"
 source = { virtual = "." }
 dependencies = [
     { name = "agri-core" },
@@ -132,8 +132,8 @@ dev = [
 
 [[package]]
 name = "agri-core"
-version = "0.1.0"
-source = { git = "https://github.com/AgriLogy/agri-core.git?rev=main#88e761f85e83d3f674b0c9085e7ee022784b7581" }
+version = "0.2.0"
+source = { git = "https://github.com/AgriLogy/agri-core.git?rev=main#867cb00a91543978331c693bd29e731e8b03a644" }
 dependencies = [
     { name = "pydantic" },
 ]
