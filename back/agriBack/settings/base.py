@@ -62,6 +62,8 @@ INSTALLED_APPS = [
     # Hardware-family ingest apps (vertical-slice)
     "apps.bivocom",
     "apps.lorawan.chirpstack",
+    # Domain apps extracted from the analytics god-app
+    "apps.sensors.apps.SensorsConfig",
 ]
 
 MIDDLEWARE = [
