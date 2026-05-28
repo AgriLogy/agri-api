@@ -1,3 +1,10 @@
+# [1.20.0](https://github.com/AgriLogy/agri-api/compare/v1.19.0...v1.20.0) (2026-05-28)
+
+
+### Features
+
+* **api:** migrate ChirpStack uplink webhook to django-ninja ([#96](https://github.com/AgriLogy/agri-api/issues/96)) ([76b8b74](https://github.com/AgriLogy/agri-api/commit/76b8b740698a72ee532d4e6a58cf1bef8ab185d7))
+
 # [1.19.0](https://github.com/AgriLogy/agri-api/compare/v1.18.0...v1.19.0) (2026-05-28)
 
 
