@@ -31,12 +31,16 @@ urlpatterns = [
     ),
     path("redoc/", schema_view.with_ui("redoc", cache_timeout=0), name="schema-redoc"),
     path("admin/", admin.site.urls),
-    # v2 surface — django-ninja, per memory `agri-api-fastapi-style`.
-    # Legacy DRF routes below stay until each endpoint is migrated.
-    path("api/v2/", v2_api.urls),
+    # django-ninja surface — mounted at root so each router can carry
+    # its full URL path (new /api/v2/* + migrated-in-place /api/v1/*
+    # and /api/* + /auth/* slots). Per memory `agri-api-fastapi-style`.
+    # Listed BEFORE the legacy DRF includes so ninja routes match first;
+    # routes that haven't migrated yet fall through to the DRF urls.
+    path("", v2_api.urls),
     path("api/", include("analytics.urls")),
     path("auth/", include("apps.users.urls")),
     # Hardware-family ingest endpoints (one app per device family)
     path("api/v1/bivocom/", include("apps.bivocom.urls")),
-    path("api/v1/lorawan/chirpstack/", include("apps.lorawan.chirpstack.urls")),
+    # apps.lorawan.chirpstack migrated to django-ninja — served from
+    # `v2_api.urls` under `/api/v1/lorawan/chirpstack/uplink`.
 ]

@@ -74,5 +74,7 @@ def test_uplink_endpoint_rejects_invalid() -> None:
         data={"deviceInfo": {"devEui": "TOO_SHORT"}},
         format="json",
     )
-    assert resp.status_code == 400
-    assert resp.json()["error"]["code"] == "validation_error"
+    # django-ninja returns 422 for pydantic ValidationError with a
+    # `{"detail": [{"loc": ..., "msg": ..., "type": ...}]}` envelope.
+    assert resp.status_code == 422
+    assert "detail" in resp.json()
