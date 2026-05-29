@@ -20,7 +20,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv (pinned for reproducibility).
-COPY --from=ghcr.io/astral-sh/uv:0.5.7 /uv /uvx /usr/local/bin/
+COPY --from=ghcr.io/astral-sh/uv:0.11.6 /uv /uvx /usr/local/bin/
 
 # Install dependencies first so layer caching survives source edits.
 # agri-core transitively pulls the PRIVATE agri-db. Mount AGRI_DB_RO_TOKEN as

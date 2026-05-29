@@ -58,15 +58,14 @@ dependencies = [
     "six==1.17.0",
     "sqlparse==0.5.1",
     "swagger-spec-validator==3.0.4",
-    "typing_extensions==4.12.2",
+    # Relaxed from ==4.12.2: agri-db pulls pydantic>=2.13.4, which needs
+    # typing-extensions>=4.14.1. Newer typing-extensions is back-compatible.
+    "typing_extensions>=4.14.1",
     # Shared framework-agnostic library (handlers + business logic). Full
     # Revly: pinned by git tag (not @main). agri-core transitively pulls the
     # PRIVATE agri-db, so CI/Docker need AGRI_DB_RO_TOKEN as a git credential
     # for `uv sync` to resolve it.
-    # TODO(draft): bump to agri-core's actual first release tag once it ships
-    #   (this 0.1.0 is a placeholder — confirm against `gh release list
-    #   -R AgriLogy/agri-core`), then run `uv lock` to refresh uv.lock.
-    "agri-core @ git+https://github.com/AgriLogy/agri-core.git@0.1.0",
+    "agri-core @ git+https://github.com/AgriLogy/agri-core.git@0.6.0",
 ]
 
 [dependency-groups]
