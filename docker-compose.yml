@@ -70,6 +70,8 @@ services:
     build:
       context: ./back
       dockerfile: Dockerfile
+      secrets:
+        - agri_db_token
     env_file: ./back/.env
     environment:
       # Postgres connection comes from back/.env (Supabase pooler).
@@ -102,6 +104,8 @@ services:
     build:
       context: ./back
       dockerfile: Dockerfile
+      secrets:
+        - agri_db_token
     env_file: ./back/.env
     environment:
       # Postgres connection comes from back/.env (Supabase pooler).
@@ -128,6 +132,8 @@ services:
     build:
       context: ./back
       dockerfile: Dockerfile
+      secrets:
+        - agri_db_token
     env_file: ./back/.env
     environment:
       # Postgres connection comes from back/.env (Supabase pooler).
@@ -149,3 +155,11 @@ services:
 
 networks:
   agro:
+
+# Build-time secret: read-only PAT for the PRIVATE agri-db, which agri-core
+# transitively pulls. Sourced from the AGRI_DB_RO_TOKEN env var on the build
+# host (set it in the droplet's shell/.env before `docker compose up --build`).
+# The Dockerfile only uses it if non-empty, so builds without it still work.
+secrets:
+  agri_db_token:
+    environment: AGRI_DB_RO_TOKEN

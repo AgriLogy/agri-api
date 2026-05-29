@@ -18,10 +18,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # agri-core (public) transitively pulls the PRIVATE agri-db. Configure
+      # the read-only PAT as a git credential so `uv sync` can fetch it.
+      - name: Authenticate git for the private agri-db transitive dependency
+        run: |
+          git config --global \
+            url."https://x-access-token:${{ secrets.AGRI_DB_RO_TOKEN }}@github.com/".insteadOf \
+            "https://github.com/"
+
       - name: Install uv
         uses: astral-sh/setup-uv@v3
         with:
-          version: "0.5.7"
+          # Match the uv that writes uv.lock (revision 3); 0.5.7 can't parse it.
+          version: "0.11.6"
           enable-cache: true
           cache-dependency-glob: back/uv.lock
 

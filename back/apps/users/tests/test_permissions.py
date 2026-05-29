@@ -1,10 +1,12 @@
-"""Tests for the IsAdminOrSelf permission and the IsAdminUser gate
-on legacy endpoints."""
+"""Tests for the IsAdminOrSelf permission and the admin-gate on the
+django-ninja user endpoints (JWT bearer auth)."""
 
 import pytest
-from django.urls import reverse
 
 from apps.users.permissions import IsAdminOrSelf
+
+# Admin user list/CRUD lives at /users (django-ninja, is_staff-gated inline).
+USERS_URL = "/users"
 
 
 class _FakeView:
@@ -14,6 +16,11 @@ class _FakeView:
 
 @pytest.mark.django_db
 class TestIsAdminOrSelf:
+    """Unit-level coverage of the shared IsAdminOrSelf permission class.
+
+    Still used by self-scoped admin helpers; admin → any user, normal
+    user → self only, anonymous → denied."""
+
     def test_anonymous_denied(self, anon_client, normal_user):
         perm = IsAdminOrSelf()
         request = type(
@@ -42,21 +49,19 @@ class TestIsAdminOrSelf:
 
 
 @pytest.mark.django_db
-class TestLegacyUserListGated:
-    """The old /auth/users/ endpoint used to be AllowAny — verify
-    the regression fix sticks."""
+class TestUserListGated:
+    """The user-list endpoint must stay admin-only: anonymous is
+    rejected by JWT auth (401) and non-staff users by the inline
+    is_staff gate (403)."""
 
     def test_anonymous_is_401(self, anon_client):
-        url = reverse("user-list")
-        resp = anon_client.get(url)
+        resp = anon_client.get(USERS_URL)
         assert resp.status_code == 401
 
-    def test_normal_user_is_403(self, user_client):
-        url = reverse("user-list")
-        resp = user_client.get(url)
+    def test_normal_user_is_403(self, user_bearer):
+        resp = user_bearer.get(USERS_URL)
         assert resp.status_code == 403
 
-    def test_admin_succeeds(self, admin_client):
-        url = reverse("user-list")
-        resp = admin_client.get(url)
+    def test_admin_succeeds(self, admin_bearer):
+        resp = admin_bearer.get(USERS_URL)
         assert resp.status_code == 200
