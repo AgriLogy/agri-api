@@ -23,9 +23,21 @@ RUN apt-get update \
 COPY --from=ghcr.io/astral-sh/uv:0.5.7 /uv /uvx /usr/local/bin/
 
 # Install dependencies first so layer caching survives source edits.
+# agri-core transitively pulls the PRIVATE agri-db. Mount AGRI_DB_RO_TOKEN as
+# a BuildKit secret and configure it as a git credential so `uv sync` can
+# fetch agri-db. The `if -f` guard keeps the build working when no token is
+# supplied (e.g. before agri-core pins agri-db).
+# Build with: docker build --secret id=agri_db_token,env=AGRI_DB_RO_TOKEN ...
+# (docker-compose passes it via the build `secrets:` block).
 COPY pyproject.toml uv.lock* /code/
-RUN uv sync --frozen --no-install-project --no-dev \
-    || uv sync --no-install-project --no-dev
+RUN --mount=type=secret,id=agri_db_token \
+    if [ -s /run/secrets/agri_db_token ]; then \
+        git config --global \
+            url."https://x-access-token:$(cat /run/secrets/agri_db_token)@github.com/".insteadOf \
+            "https://github.com/"; \
+    fi \
+    && (uv sync --frozen --no-install-project --no-dev \
+        || uv sync --no-install-project --no-dev)
 
 # Project source.
 COPY . /code/
