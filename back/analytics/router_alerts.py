@@ -22,7 +22,7 @@ from ninja.responses import Response
 from agri.core.alerts import SENSOR_KEY_REGISTRY
 from agriBack.api.auth import JwtAuth
 from analytics.alerts import recent_triggers_for_user, suggest_alert
-from analytics.models import Alert
+from analytics.models import Alert, Zone
 
 router = Router()
 
@@ -86,9 +86,33 @@ def _serialize(alert: Alert) -> dict[str, Any]:
 
 def _apply(alert: Alert, payload: AlertWriteIn) -> Alert:
     data = payload.model_dump(exclude_unset=True)
+    # `zone` arrives as an FK id; assign it to the *_id column rather than the
+    # relation attribute (which would require a Zone instance).
+    if "zone" in data:
+        alert.zone_id = data.pop("zone")
     for k, v in data.items():
         setattr(alert, k, v)
     return alert
+
+
+def _validate_write(request, payload: AlertWriteIn) -> Response | None:
+    """Reject a write referencing an unknown sensor_key or a zone the caller
+    doesn't own. Returns a 400 ``Response`` on failure, else ``None``.
+
+    (Restores the validation the legacy DRF serializer enforced; the initial
+    ninja migration dropped it.)
+    """
+    if payload.sensor_key is not None and payload.sensor_key not in SENSOR_KEY_REGISTRY:
+        return Response(
+            {"detail": f"Unknown sensor_key '{payload.sensor_key}'."}, status=400
+        )
+    if payload.zone is not None and not Zone.objects.filter(
+        id=payload.zone, user=request.auth
+    ).exists():
+        return Response(
+            {"detail": "zone not found or not owned by the caller."}, status=400
+        )
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -117,6 +141,9 @@ def create_alert(request, payload: AlertWriteIn):
             {"detail": "name, condition, and condition_nbr are required."},
             status=400,
         )
+    err = _validate_write(request, payload)
+    if err is not None:
+        return err
     alert = Alert(user=request.auth)
     _apply(alert, payload)
     alert.save()
@@ -196,6 +223,9 @@ def replace_alert(request, pk: int, payload: AlertWriteIn):
     alert = _get_owned(request, pk)
     if alert is None:
         return Response({"detail": "Not found."}, status=404)
+    err = _validate_write(request, payload)
+    if err is not None:
+        return err
     _apply(alert, payload)
     alert.save()
     return _serialize(alert)
@@ -206,6 +236,9 @@ def patch_alert(request, pk: int, payload: AlertWriteIn):
     alert = _get_owned(request, pk)
     if alert is None:
         return Response({"detail": "Not found."}, status=404)
+    err = _validate_write(request, payload)
+    if err is not None:
+        return err
     _apply(alert, payload)
     alert.save()
     return _serialize(alert)

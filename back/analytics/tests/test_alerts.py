@@ -275,11 +275,6 @@ class AlertCRUDTests(TestCase):
         self.client = _authed_client(self.user)
 
     def _create_payload(self, **extra):
-        # NOTE: the ninja create endpoint assigns body fields straight onto
-        # the model, so ``zone`` (an FK) can't be set from a bare int the way
-        # the legacy DRF serializer accepted. Alerts are created zone-less
-        # here (matching the e2e workflow); zone scoping is exercised via the
-        # dispatch / for-graph paths instead.
         body = {
             "name": "Dry soil",
             "type": "Humidity",
@@ -287,6 +282,7 @@ class AlertCRUDTests(TestCase):
             "condition": "<",
             "condition_nbr": 20,
             "sensor_key": "soil_moisture_medium",
+            "zone": self.zone.id,
             "is_active": True,
         }
         body.update(extra)
@@ -303,12 +299,10 @@ class AlertCRUDTests(TestCase):
         alert = Alert.objects.get(pk=r.json()["id"])
         self.assertEqual(alert.user_id, self.user.id)
         self.assertEqual(alert.sensor_key, "soil_moisture_medium")
+        self.assertEqual(alert.zone_id, self.zone.id)
 
     def test_create_missing_required_fields_rejected(self):
-        # The ninja create endpoint enforces name + condition + condition_nbr
-        # at the router level (returns 400). Sensor-key validity is no longer
-        # checked on create — see test_unknown_key_returns_400 on /for-graph
-        # for the surviving registry-validation coverage.
+        # name + condition + condition_nbr are required (router-level 400).
         r = self.client.post(
             "/alerts",
             {"sensor_key": "soil_moisture_medium", "zone": self.zone.id},
@@ -316,16 +310,20 @@ class AlertCRUDTests(TestCase):
         )
         self.assertEqual(r.status_code, 400)
 
-    def test_create_accepts_arbitrary_sensor_key(self):
-        # Create no longer rejects unknown sensor keys; it persists whatever
-        # the caller sends. Registry validation now lives on the read paths
-        # (/alerts/for-graph) instead.
+    def test_create_rejects_unknown_sensor_key(self):
+        # create_alert validates sensor_key against SENSOR_KEY_REGISTRY.
         r = self.client.post(
             "/alerts", self._create_payload(sensor_key="bogus"), format="json"
         )
-        self.assertEqual(r.status_code, 201, r.content)
-        alert = Alert.objects.get(pk=r.json()["id"])
-        self.assertEqual(alert.sensor_key, "bogus")
+        self.assertEqual(r.status_code, 400)
+
+    def test_create_rejects_zone_owned_by_someone_else(self):
+        # A caller cannot attach an alert to a zone they don't own.
+        other_zone = _zone(self.other, name="theirs")
+        r = self.client.post(
+            "/alerts", self._create_payload(zone=other_zone.id), format="json"
+        )
+        self.assertEqual(r.status_code, 400)
 
     def test_list_only_returns_callers_alerts(self):
         _alert(self.user, zone=self.zone, name="mine")
