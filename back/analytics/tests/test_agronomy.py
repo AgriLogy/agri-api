@@ -7,11 +7,22 @@ Cover both the pure math (no DB) and the high-level entry points
 
 import datetime as dt
 from datetime import timedelta
-from unittest import mock
+from unittest import mock, skipUnless
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, TransactionTestCase
 from django.utils import timezone
+
+# The field_snapshot adapter now delegates to agri-core's DB-backed handler,
+# which reads via its own SQLAlchemy connection (AGRI_DB_URL). Those tests
+# therefore need a real Postgres both ORMs share, and must commit (hence
+# TransactionTestCase) so the separate connection sees the data. Gate on the
+# configured DB engine (not an env var, which back/.env can leak).
+_REQUIRES_PG = skipUnless(
+    settings.DATABASES["default"]["ENGINE"].endswith("postgresql"),
+    "dual-ORM field_snapshot requires Postgres",
+)
 
 from agriBack.agronomy import (
     CLOUD_FACTOR_MIN,
@@ -332,7 +343,8 @@ class ComputeEt0ForZoneTests(TestCase):
 # ---------------------------------------------------------------------------
 
 
-class FieldSnapshotTests(TestCase):
+@_REQUIRES_PG
+class FieldSnapshotTests(TransactionTestCase):
     def setUp(self):
         self.user = _user()
         # Freeze "now" to a stable mid-day. field_snapshot derives the local
@@ -630,7 +642,8 @@ class IrrigationDecisionDrTests(TestCase):
 # ---------------------------------------------------------------------------
 
 
-class FieldSnapshotDrIntegrationTests(TestCase):
+@_REQUIRES_PG
+class FieldSnapshotDrIntegrationTests(TransactionTestCase):
     def setUp(self):
         self.user = _user()
         self.zone = _zone(self.user)

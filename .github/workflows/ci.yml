@@ -12,6 +12,23 @@ jobs:
   lint:
     name: ruff
     runs-on: ubuntu-latest
+    # Postgres so the dual-ORM handler tests run: Django (agri-api) and
+    # SQLAlchemy (agri-core via AGRI_DB_URL) share one database. Without it
+    # those tests skip (see analytics/tests/test_agronomy.py::_REQUIRES_PG).
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     defaults:
       run:
         working-directory: back
@@ -70,5 +87,12 @@ jobs:
           SECRET_KEY: ci-placeholder-secret-key
           DEBUG: "True"
           ALLOWED_HOSTS: "*"
-          USE_POSTGRES: "False"
+          # Postgres (the service above) so the dual-ORM tests run, not skip.
+          # conftest.py binds AGRI_DB_URL to Django's test DB.
+          USE_POSTGRES: "True"
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: "5432"
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
           EMAIL_BACKEND: "django.core.mail.backends.locmem.EmailBackend"

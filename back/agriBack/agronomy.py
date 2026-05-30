@@ -156,18 +156,20 @@ def compute_et0_for_zone(zone, *, end: datetime | None = None) -> ZoneEt0 | None
     end = (end or timezone.now()).replace(minute=0, second=0, microsecond=0)
     start = end - timedelta(hours=1)
 
-    return compute_zone_et0(Et0Inputs(
-        zone_id=zone.id,
-        user_id=zone.user_id,
-        timestamp=end,
-        temp_c=_avg(TemperatureWeather, zone=zone, start=start, end=end),
-        rh_pct=_avg(HumidityWeather, zone=zone, start=start, end=end),
-        wind_ms=_avg(WindSpeed, zone=zone, start=start, end=end),
-        rs_wm2=_avg(SolarRadiation, zone=zone, start=start, end=end),
-        pressure_hpa=_avg(PressureWeather, zone=zone, start=start, end=end),
-        latitude=getattr(zone.user, "latitude", None),
-        longitude=getattr(zone.user, "longitude", None),
-    ))
+    return compute_zone_et0(
+        Et0Inputs(
+            zone_id=zone.id,
+            user_id=zone.user_id,
+            timestamp=end,
+            temp_c=_avg(TemperatureWeather, zone=zone, start=start, end=end),
+            rh_pct=_avg(HumidityWeather, zone=zone, start=start, end=end),
+            wind_ms=_avg(WindSpeed, zone=zone, start=start, end=end),
+            rs_wm2=_avg(SolarRadiation, zone=zone, start=start, end=end),
+            pressure_hpa=_avg(PressureWeather, zone=zone, start=start, end=end),
+            latitude=getattr(zone.user, "latitude", None),
+            longitude=getattr(zone.user, "longitude", None),
+        )
+    )
 
 
 def field_snapshot(
@@ -176,103 +178,21 @@ def field_snapshot(
     dr_today_mm: float | None = None,
     precipitation_forecast_mm: float = 0.0,
 ) -> dict[str, Any]:
-    """Thin Django-side adapter around ``agri.core.agronomy.field_snapshot``.
+    """Thin adapter: delegate to agri-core's DB-backed ``field_snapshot_for_user``.
 
-    Fetches the user's zone + recent sensor aggregates via the Django ORM,
-    packs them into the framework-agnostic ``FieldInputs`` DTO, and calls
-    the agri-core handler. The returned dict shape is unchanged from the
-    pre-lift contract (see ``agri.core.agronomy.field_snapshot``'s
-    docstring for the full key list).
+    Opens an ``agri.core.database`` SQLAlchemy session (its own engine on the
+    same Postgres, via ``AGRI_DB_URL``) and lets agri-core do the fetch +
+    compute. The Django-ORM fetch that used to live here now lives in
+    agri-core; the returned dict shape is unchanged.
     """
-    from analytics.models import (
-        EcSalinitySensor,
-        Et0Calculated,
-        HumidityWeather,
-        NpkSensor,
-        PhSoil,
-        SoilMoistureMedium,
-        SoilSalinitySensor,
-        SoilTemperatureMedium,
-        TemperatureWeather,
-        WaterFlowSensor,
-        Zone,
-    )
+    from agri.core.agronomy import field_snapshot_for_user
+    from agri.core.database import session_scope
 
-    now = timezone.now()
-    today_start, today_end = _day_bounds_local(now)
-    yesterday_start = today_start - timedelta(days=1)
-
-    # TODO(expert): pick the right zone (or iterate) when a user manages
-    # multiple. v1 takes the lowest-id zone, mirroring the dashboard default.
-    zone = Zone.objects.filter(user=user).order_by("id").first()
-    if zone is None:
-        return _core_field_snapshot(FieldInputs(
-            date_today=now.date(),
-            zone=None,
-            sensors=None,
+    with session_scope() as session:
+        return field_snapshot_for_user(
+            session,
+            user.id,
+            now=timezone.now(),
             dr_today_mm=dr_today_mm,
             precipitation_forecast_mm=precipitation_forecast_mm,
-        ))
-
-    et0_today_rows = Et0Calculated.objects.filter(
-        zone=zone, timestamp__gte=today_start, timestamp__lt=today_end
-    ).values_list("value", flat=True)
-    et0_today_mm = sum(et0_today_rows) if et0_today_rows else None
-
-    sm_row = _latest(SoilMoistureMedium, zone=zone)
-    st_row = _latest(SoilTemperatureMedium, zone=zone)
-    ph_row = _latest(PhSoil, zone=zone)
-    ec_row = _latest(EcSalinitySensor, zone=zone)
-    sal_row = _latest(SoilSalinitySensor, zone=zone)
-    npk_row = _latest(NpkSensor, zone=zone)
-    last_flow = (
-        WaterFlowSensor.objects.filter(zone=zone, value__gt=0)
-        .order_by("-timestamp")
-        .first()
-    )
-
-    sensors = SensorAggregates(
-        yesterday_temp_c=_avg(
-            TemperatureWeather, zone=zone, start=yesterday_start, end=today_start,
-        ),
-        today_temp_c=_avg(
-            TemperatureWeather, zone=zone, start=today_start, end=today_end,
-        ),
-        yesterday_humidity_pct=_avg(
-            HumidityWeather, zone=zone, start=yesterday_start, end=today_start,
-        ),
-        today_humidity_pct=_avg(
-            HumidityWeather, zone=zone, start=today_start, end=today_end,
-        ),
-        et0_today_mm=et0_today_mm,
-        soil_moisture_pct=sm_row.value if sm_row else None,
-        soil_temperature_c=st_row.value if st_row else None,
-        soil_ph=ph_row.value if ph_row else None,
-        soil_ec=ec_row.value if ec_row else None,
-        soil_salinity=sal_row.value if sal_row else None,
-        npk_n=getattr(npk_row, "nitrogen_value", None),
-        npk_p=getattr(npk_row, "phosphorus_value", None),
-        npk_k=getattr(npk_row, "potassium_value", None),
-        last_irrigation_at=last_flow.timestamp if last_flow else None,
-        last_irrigation_l=(
-            float(last_flow.value) * 1000.0 if last_flow else None
-        ),
-    )
-
-    zone_params = ZoneParams(
-        name=zone.name,
-        area_m2=zone.space,
-        raw_mm=getattr(zone, "soil_param_RAW", None),
-        taw_mm=getattr(zone, "soil_param_TAW", None),
-        pomp_flow_rate_l_per_s=getattr(zone, "pomp_flow_rate", None),
-        irrigation_water_quantity_l=getattr(zone, "irrigation_water_quantity", None),
-        critical_moisture_pct=getattr(zone, "critical_moisture_threshold", None),
-    )
-
-    return _core_field_snapshot(FieldInputs(
-        date_today=now.date(),
-        zone=zone_params,
-        sensors=sensors,
-        dr_today_mm=dr_today_mm,
-        precipitation_forecast_mm=precipitation_forecast_mm,
-    ))
+        )

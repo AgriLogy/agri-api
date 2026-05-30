@@ -16,11 +16,22 @@ from datetime import time, timedelta
 from decimal import Decimal
 
 import pytest
+from django.conf import settings
 from django.core import mail
 from django.utils import timezone
 
 from agriBack.tasks import send_periodic_notifications
 from analytics.models import Notification
+
+# The send-notification flow composes via field_snapshot, which now delegates
+# to agri-core's DB-backed handler (own SQLAlchemy connection, AGRI_DB_URL).
+# Those tests need a shared Postgres + a committed transaction so the separate
+# connection sees the data. They skip on sqlite (fast local dev); CI runs them
+# on Postgres.
+_requires_pg = pytest.mark.skipif(
+    not settings.DATABASES["default"]["ENGINE"].endswith("postgresql"),
+    reason="dual-ORM field_snapshot requires Postgres",
+)
 
 SEND_NOTIFICATION_URL = "/users/me/notifications"
 ZONE_OUTBOUND_URL = "/notifications/zone-outbound"
@@ -52,6 +63,8 @@ def _seed_notification(user, **overrides):
 
 @pytest.mark.django_db
 class TestSendNotificationEmail:
+    @_requires_pg
+    @pytest.mark.django_db(transaction=True)
     def test_sends_to_caller_email(self, user_bearer, normal_user):
         r = user_bearer.post(SEND_NOTIFICATION_URL)
         assert r.status_code == 200
@@ -59,6 +72,8 @@ class TestSendNotificationEmail:
         assert len(mail.outbox) == 1
         assert mail.outbox[0].to == [normal_user.email]
 
+    @_requires_pg
+    @pytest.mark.django_db(transaction=True)
     def test_bumps_last_notified(self, user_bearer, normal_user):
         assert normal_user.last_notified is None
         before = timezone.now()
@@ -93,9 +108,7 @@ class TestZoneNotificationOutbound:
         return payload
 
     def test_sends_email_when_channel_enabled(self, user_bearer, normal_user):
-        r = user_bearer.post(
-            ZONE_OUTBOUND_URL, self._payload(), format="json"
-        )
+        r = user_bearer.post(ZONE_OUTBOUND_URL, self._payload(), format="json")
         assert r.status_code == 200
         assert r.json() == {"status": "sent"}
         assert len(mail.outbox) == 1
@@ -123,16 +136,12 @@ class TestZoneNotificationOutbound:
 
     def test_400_when_recipient_missing(self, user_bearer, normal_user):
         type(normal_user).objects.filter(pk=normal_user.pk).update(email="")
-        r = user_bearer.post(
-            ZONE_OUTBOUND_URL, self._payload(), format="json"
-        )
+        r = user_bearer.post(ZONE_OUTBOUND_URL, self._payload(), format="json")
         assert r.status_code == 400
         assert len(mail.outbox) == 0
 
     def test_unauthenticated_returns_401(self, anon_client):
-        r = anon_client.post(
-            ZONE_OUTBOUND_URL, self._payload(), format="json"
-        )
+        r = anon_client.post(ZONE_OUTBOUND_URL, self._payload(), format="json")
         assert r.status_code == 401
 
 
@@ -173,7 +182,8 @@ class TestNotificationsAndAlerts:
         assert r.json() == {"notifications": []}
 
 
-@pytest.mark.django_db
+@_requires_pg
+@pytest.mark.django_db(transaction=True)
 class TestSendPeriodicNotificationsTask:
     def _make_user(self, username, email="x@example.com", **extra):
         from django.contrib.auth import get_user_model
