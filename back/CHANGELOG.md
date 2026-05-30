@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v1.31.0 (2026-05-30)
+
+### Features
+
+- Wire alerts + notification adapters to agri-core (dual-ORM)
+  ([#128](https://github.com/AgriLogy/agri-api/pull/128),
+  [`c7f0de9`](https://github.com/AgriLogy/agri-api/commit/c7f0de91b6448f010f2652d010f36c394f401baf))
+
+Completes the dual-ORM activation. Closes #127.
+
+
 ## v1.30.0 (2026-05-30)
 
 ### Features
