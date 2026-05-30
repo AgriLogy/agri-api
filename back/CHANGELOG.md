@@ -1,6 +1,18 @@
 # CHANGELOG
 
 
+## v1.29.4 (2026-05-30)
+
+### Bug Fixes
+
+- **deps**: Pin agri-core@0.6.1 + pre-push gate + deflake field_snapshot test
+  ([#124](https://github.com/AgriLogy/agri-api/pull/124),
+  [`8a25b94`](https://github.com/AgriLogy/agri-api/commit/8a25b94319ffe49045c79326d9c547cef631033c))
+
+Completes the pydantic cleanup cascade; adds pre-push gate; deflakes the date-sensitive
+  field_snapshot et0 test. Closes #123.
+
+
 ## v1.29.3 (2026-05-29)
 
 ### Bug Fixes

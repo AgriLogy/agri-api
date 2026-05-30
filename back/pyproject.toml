@@ -1,6 +1,6 @@
 [project]
 name = "agri-api"
-version = "1.29.3"
+version = "1.29.4"
 description = "Agrilogy Django backend"
 requires-python = ">=3.12"
 dependencies = [
