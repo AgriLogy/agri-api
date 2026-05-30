@@ -6,6 +6,7 @@ the legacy DRF views accept. Attaches the resolved Django user to the
 request so handlers can read ``request.auth`` for the authenticated
 user.
 """
+
 from __future__ import annotations
 
 from django.contrib.auth import get_user_model

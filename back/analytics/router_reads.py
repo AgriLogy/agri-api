@@ -11,6 +11,7 @@ DRF for now (defined in ``analytics/adminviews.py``); it's covered by
 PR 10. All routes preserve their URL + response shape so the
 dashboard's existing parsing stays valid.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -19,7 +20,7 @@ from django.forms.models import model_to_dict
 from ninja import Router
 from ninja.responses import Response
 
-from agriBack.api.auth import JwtAuth
+from agriapi.api.auth import JwtAuth
 from analytics.models import ActiveGraph, Zone
 from apps.users.models import CustomUser
 

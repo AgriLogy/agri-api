@@ -11,6 +11,7 @@ Schemas are loose (``dict`` returns) where the legacy DRF serializer
 already produces a stable shape the dashboard parses; we'd lose more
 typing energy than we'd gain by enumerating every Alert field.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -20,7 +21,7 @@ from ninja import Router, Schema
 from ninja.responses import Response
 
 from agri.core.alerts import SENSOR_KEY_REGISTRY
-from agriBack.api.auth import JwtAuth
+from agriapi.api.auth import JwtAuth
 from analytics.alerts import recent_triggers_for_user, suggest_alert
 from analytics.models import Alert, Zone
 
@@ -106,9 +107,10 @@ def _validate_write(request, payload: AlertWriteIn) -> Response | None:
         return Response(
             {"detail": f"Unknown sensor_key '{payload.sensor_key}'."}, status=400
         )
-    if payload.zone is not None and not Zone.objects.filter(
-        id=payload.zone, user=request.auth
-    ).exists():
+    if (
+        payload.zone is not None
+        and not Zone.objects.filter(id=payload.zone, user=request.auth).exists()
+    ):
         return Response(
             {"detail": "zone not found or not owned by the caller."}, status=400
         )
@@ -168,10 +170,13 @@ def alerts_for_graph(
 ):
     if sensor_key and sensor_key not in SENSOR_KEY_REGISTRY:
         return Response(
-            {"detail": f"Unknown sensor_key '{sensor_key}'."}, status=400,
+            {"detail": f"Unknown sensor_key '{sensor_key}'."},
+            status=400,
         )
     rows = recent_triggers_for_user(
-        request.auth, sensor_key=sensor_key, zone_id=zone_id,
+        request.auth,
+        sensor_key=sensor_key,
+        zone_id=zone_id,
     )
     return {"alerts": rows}
 
@@ -190,7 +195,8 @@ def alerts_suggest(
         return Response({"detail": "sensor_key is required."}, status=400)
     if sensor_key not in SENSOR_KEY_REGISTRY:
         return Response(
-            {"detail": f"Unknown sensor_key '{sensor_key}'."}, status=400,
+            {"detail": f"Unknown sensor_key '{sensor_key}'."},
+            status=400,
         )
     payload = suggest_alert(request.auth, sensor_key=sensor_key, zone_id=zone_id)
     if payload is None:

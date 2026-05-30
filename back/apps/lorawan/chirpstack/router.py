@@ -1,12 +1,13 @@
 """ChirpStack webhook router (django-ninja).
 
 ``POST /api/v1/lorawan/chirpstack/uplink`` — mounted from
-``agriBack.api`` so the URL stays identical to the legacy DRF route.
+``agriapi.api`` so the URL stays identical to the legacy DRF route.
 
 Auth: ``auth=None`` because the gateway calls in via a shared secret
 header (TODO: enforce in a follow-up); the v2 NinjaAPI's default JWT
 auth is opted out per-route.
 """
+
 from __future__ import annotations
 
 import logging

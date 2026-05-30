@@ -17,6 +17,7 @@ from ``analytics/adminviews.py`` (the in-flight migration path).
 
 All routes require JWT + ``is_staff`` (checked inline).
 """
+
 from __future__ import annotations
 
 import logging
@@ -28,7 +29,7 @@ from django.utils import timezone
 from ninja import Router, Schema
 from ninja.responses import Response
 
-from agriBack.api.auth import JwtAuth
+from agriapi.api.auth import JwtAuth
 from analytics.models import ActiveGraph, Alert, Zone
 
 router = Router()
@@ -89,9 +90,7 @@ def _validate_zone(payload: dict[str, Any]) -> dict | None:
         return {"space": "Space must be strictly positive."}
     cmt = payload.get("critical_moisture_threshold")
     if cmt is not None and (cmt < 0 or cmt > 100):
-        return {
-            "critical_moisture_threshold": "Threshold must be between 0 and 100."
-        }
+        return {"critical_moisture_threshold": "Threshold must be between 0 and 100."}
     pfr = payload.get("pomp_flow_rate")
     if pfr is not None and pfr < 0:
         return {"pomp_flow_rate": "Flow rate must be non-negative."}
@@ -313,7 +312,8 @@ def _get_or_create_active_graph(username: str, zone_id: int):
     user = _resolve_user(username)
     if user is None:
         return None, Response(
-            {"detail": f"User '{username}' not found."}, status=404,
+            {"detail": f"User '{username}' not found."},
+            status=404,
         )
     z = Zone.objects.filter(pk=zone_id, user=user).first()
     if z is None:
@@ -566,10 +566,13 @@ def patch_sensor_units(request, username: str):
     for sensor_key, unit in body.items():
         if not isinstance(sensor_key, str) or not isinstance(unit, str):
             return Response(
-                {"detail": "All keys and values must be strings."}, status=400,
+                {"detail": "All keys and values must be strings."},
+                status=400,
             )
         UserSensorUnitPreference.objects.update_or_create(
-            user=user, sensor_key=sensor_key, defaults={"unit": unit},
+            user=user,
+            sensor_key=sensor_key,
+            defaults={"unit": unit},
         )
     return {
         row.sensor_key: row.unit

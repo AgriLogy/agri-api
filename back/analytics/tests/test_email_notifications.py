@@ -20,7 +20,7 @@ from django.conf import settings
 from django.core import mail
 from django.utils import timezone
 
-from agriBack.tasks import send_periodic_notifications
+from agriapi.tasks import send_periodic_notifications
 from analytics.models import Notification
 
 # The send-notification flow composes via field_snapshot, which now delegates

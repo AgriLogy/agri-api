@@ -16,7 +16,7 @@ import sys
 
 import django
 
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "agriBack.settings")
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "agriapi.settings")
 django.setup()
 
 from django.contrib.auth import get_user_model  # noqa: E402

@@ -97,7 +97,7 @@ make dev
 Trigger any of:
 - `GET /auth/send-notification/` (auth required) — sends to `request.user.email`
 - `POST /api/zone-notification-outbound/` with `channels.email: true` — confirmation email when a zone config is saved
-- Celery beat fires `agriBack.tasks.send_periodic_notifications` on its schedule (`CELERY_SCHEDULE_MODE=test` runs it every 4 minutes)
+- Celery beat fires `agriapi.tasks.send_periodic_notifications` on its schedule (`CELERY_SCHEDULE_MODE=test` runs it every 4 minutes)
 
 …and watch the message land in `http://localhost:8025`.
 

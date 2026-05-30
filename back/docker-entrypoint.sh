@@ -98,13 +98,13 @@ case "$ROLE" in
     wait_for_postgres
     wait_for_redis
     log "Starting Celery worker"
-    exec celery -A agriBack worker --loglevel=info --concurrency=1
+    exec celery -A agriapi worker --loglevel=info --concurrency=1
     ;;
   beat)
     wait_for_postgres
     wait_for_redis
     log "Starting Celery beat"
-    exec celery -A agriBack beat --loglevel=info \
+    exec celery -A agriapi beat --loglevel=info \
       --scheduler django_celery_beat.schedulers:DatabaseScheduler
     ;;
   shell)

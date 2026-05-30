@@ -2,7 +2,7 @@ import os
 
 import django
 
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "agriBack.settings")
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "agriapi.settings")
 django.setup()
 
 from datetime import datetime, timedelta

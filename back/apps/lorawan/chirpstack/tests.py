@@ -1,4 +1,5 @@
 """Tests for the ChirpStack webhook."""
+
 from __future__ import annotations
 
 import pytest

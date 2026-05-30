@@ -86,12 +86,16 @@ class TestAdminUserCreate:
         assert "password" not in body  # never echoed back
 
     def test_duplicate_username_is_400(self, admin_bearer, normal_user):
-        resp = admin_bearer.post(URL, self._payload(username=normal_user.username), format="json")
+        resp = admin_bearer.post(
+            URL, self._payload(username=normal_user.username), format="json"
+        )
         assert resp.status_code == 400
         assert "username" in resp.json()
 
     def test_duplicate_email_is_400(self, admin_bearer, normal_user):
-        resp = admin_bearer.post(URL, self._payload(email=normal_user.email), format="json")
+        resp = admin_bearer.post(
+            URL, self._payload(email=normal_user.email), format="json"
+        )
         assert resp.status_code == 400
         assert "email" in resp.json()
 

@@ -62,9 +62,7 @@ class TestManagerAffirmationCreate:
         assert len(rows) == 2
 
     def test_unknown_action_rejected(self, user_bearer):
-        resp = user_bearer.post(
-            LIST_URL, {"action": "demolish_db"}, format="json"
-        )
+        resp = user_bearer.post(LIST_URL, {"action": "demolish_db"}, format="json")
         assert resp.status_code == 400
 
 
@@ -77,9 +75,7 @@ class TestManagerAffirmationDecision:
 
     def test_admin_approves(self, admin_bearer, normal_user):
         aff = self._make(normal_user)
-        resp = admin_bearer.post(
-            _approve_url(aff.pk), {"note": "OK"}, format="json"
-        )
+        resp = admin_bearer.post(_approve_url(aff.pk), {"note": "OK"}, format="json")
         assert resp.status_code == 200
         aff.refresh_from_db()
         assert aff.status == "approved"
@@ -88,9 +84,7 @@ class TestManagerAffirmationDecision:
 
     def test_admin_rejects(self, admin_bearer, normal_user):
         aff = self._make(normal_user)
-        resp = admin_bearer.post(
-            _reject_url(aff.pk), {"note": "nope"}, format="json"
-        )
+        resp = admin_bearer.post(_reject_url(aff.pk), {"note": "nope"}, format="json")
         assert resp.status_code == 200
         aff.refresh_from_db()
         assert aff.status == "rejected"
@@ -109,14 +103,10 @@ class TestManagerAffirmationDecision:
     def test_already_decided_is_400(self, admin_bearer, normal_user):
         aff = self._make(normal_user)
         admin_bearer.post(_approve_url(aff.pk), {}, format="json")
-        resp = admin_bearer.post(
-            _approve_url(aff.pk), {}, format="json"
-        )
+        resp = admin_bearer.post(_approve_url(aff.pk), {}, format="json")
         assert resp.status_code == 400
 
     def test_user_cannot_decide(self, user_bearer, normal_user):
         aff = self._make(normal_user)
-        resp = user_bearer.post(
-            _approve_url(aff.pk), {}, format="json"
-        )
+        resp = user_bearer.post(_approve_url(aff.pk), {}, format="json")
         assert resp.status_code == 403

@@ -22,7 +22,7 @@ Engineering notes:
 - All temperatures are °C, humidity is % RH, pressure is kPa unless
   otherwise noted in the parameter name.
 - ``compute_et0_for_zone`` is PURE (no writes). The Celery task in
-  ``agriBack.tasks`` is responsible for persisting Et0Calculated /
+  ``agriapi.tasks`` is responsible for persisting Et0Calculated /
   VPDWeather rows.
 """
 
@@ -37,7 +37,7 @@ from django.utils import timezone
 # Dr/RAW irrigation decision, and both handlers live in
 # `agri.core.agronomy` (per memory `project_agri_core_architecture`).
 # Re-exported here so legacy imports like
-# `from agriBack.agronomy import irrigation_decision_dr` keep working
+# `from agriapi.agronomy import irrigation_decision_dr` keep working
 # until a Phase 6 follow-up migrates each callsite.
 from agri.core.agronomy import (
     ALBEDO_SHORT_CROP,
@@ -119,7 +119,7 @@ def compute_et0_for_zone(zone, *, end: datetime | None = None) -> ZoneEt0 | None
     Django-ORM fetch that used to live here now lives in agri-core. Returns
     ``None`` when a required input is missing for the slot. The persistence
     layer (writing Et0Calculated / VPDWeather rows) still lives in
-    ``agriBack.tasks``.
+    ``agriapi.tasks``.
     """
     from agri.core.agronomy import compute_et0_for_zone as _core_compute_et0
     from agri.core.database import session_scope

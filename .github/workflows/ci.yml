@@ -68,7 +68,7 @@ jobs:
       - name: Django system check
         run: uv run python manage.py check
         env:
-          DJANGO_SETTINGS_MODULE: agriBack.settings
+          DJANGO_SETTINGS_MODULE: agriapi.settings
           SECRET_KEY: ci-placeholder-secret-key
           DEBUG: "False"
           ALLOWED_HOSTS: "*"
@@ -83,7 +83,7 @@ jobs:
       - name: Backend tests (pytest)
         run: uv run pytest apps/users/ analytics/ -v
         env:
-          DJANGO_SETTINGS_MODULE: agriBack.settings
+          DJANGO_SETTINGS_MODULE: agriapi.settings
           SECRET_KEY: ci-placeholder-secret-key
           DEBUG: "True"
           ALLOWED_HOSTS: "*"

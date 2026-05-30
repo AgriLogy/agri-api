@@ -190,7 +190,7 @@ rather than editing the view. `npk` is the one intentional exclusion
 
 ### 5. Celery — what runs and when
 
-`back/agriBack/settings.py:195-238` defines two schedule profiles
+`back/agriapi/settings.py:195-238` defines two schedule profiles
 selected by the `SCHEDULE_MODE` env var:
 
 | Mode  | Task                              | Cron        | Owner file              |
@@ -205,7 +205,7 @@ selected by the `SCHEDULE_MODE` env var:
 Broker + result backend: Redis at `redis://redis:6379/0`
 — `settings.py:201-202`.
 
-### 6. `compute_et0_vpd_hourly` — `back/agriBack/tasks.py:80-121`
+### 6. `compute_et0_vpd_hourly` — `back/agriapi/tasks.py:80-121`
 
 ```mermaid
 sequenceDiagram
@@ -233,7 +233,7 @@ sequenceDiagram
 ```
 
 `compute_et0_for_zone` is **pure** — no DB writes — and lives in
-`back/agriBack/agronomy.py:373-434`. It is the single source of truth
+`back/agriapi/agronomy.py:373-434`. It is the single source of truth
 for the FAO-56 Penman-Monteith math and is the function the agronomy
 expert is expected to evolve. See `docs/flows/notifications.md` for how
 the same module also drives the email body.
@@ -301,8 +301,8 @@ All services share the `agro` bridge network.
 - `back/analytics/views.py`
 - `back/analytics/models.py`
 - `back/analytics/sensor_registry.py`
-- `back/agriBack/agronomy.py`
-- `back/agriBack/tasks.py`
-- `back/agriBack/settings.py`
+- `back/agriapi/agronomy.py`
+- `back/agriapi/tasks.py`
+- `back/agriapi/settings.py`
 - `back/docker-entrypoint.sh`
 - `docker-compose.yml`

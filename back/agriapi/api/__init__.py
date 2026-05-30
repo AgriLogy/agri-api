@@ -16,11 +16,12 @@ URL scheme (REST-standard, plural nouns, hierarchical):
 * ``/admin/overview``               KPIs
 * ``/admin/alerts/<pk>``            admin alerts override
 """
+
 from __future__ import annotations
 
 from ninja import NinjaAPI
 
-from agriBack.api.auth import JwtAuth
+from agriapi.api.auth import JwtAuth
 from analytics.router_admin import router as analytics_admin_router
 from analytics.router_alerts import router as alerts_router
 from analytics.router_manager_affirmation import (
@@ -64,7 +65,9 @@ api.add_router("/notifications", notifications_router, tags=["notifications"])
 
 # Manager-affirmation workflow.
 api.add_router(
-    "/manager-affirmations", manager_affirmation_router, tags=["manager-affirmation"],
+    "/manager-affirmations",
+    manager_affirmation_router,
+    tags=["manager-affirmation"],
 )
 
 # Sensor-key catalog (GET /sensors) + per-sensor readings (GET, PATCH /sensors/<slug>).

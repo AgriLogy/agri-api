@@ -14,6 +14,7 @@ For every model M in ``SENSOR_MODELS`` we register a ninja route at::
 .replace('_', '-')`` derivation, so existing dashboard fetches keep
 matching.
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -24,7 +25,7 @@ from django.utils.dateparse import parse_date
 from ninja import Router, Schema
 from ninja.responses import Response
 
-from agriBack.api.auth import JwtAuth
+from agriapi.api.auth import JwtAuth
 from analytics.sensor_registry import SENSOR_MODELS
 
 router = Router()

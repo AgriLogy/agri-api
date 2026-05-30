@@ -134,20 +134,20 @@ def send_alert_email(*, alert_id: int, value: float, timestamp_iso: str) -> dict
 
 
 ######################################################################################################
-######################   ET0 / VPD persistence (math lives in agriBack.agronomy)   ###################
+######################   ET0 / VPD persistence (math lives in agriapi.agronomy)   ###################
 ######################################################################################################
 
 from analytics.models import Et0Calculated, VPDWeather, Zone
 from celery import shared_task
 from django.db import transaction
 
-from agriBack.agronomy import compute_et0_for_zone
+from agriapi.agronomy import compute_et0_for_zone
 
 
 @shared_task
 def compute_et0_vpd_hourly():
     """
-    For each Zone, ask agriBack.agronomy for one hour of ET0 + VPD and
+    For each Zone, ask agriapi.agronomy for one hour of ET0 + VPD and
     persist the result. All physics lives in that module.
     """
     zones = Zone.objects.all().select_related("user")

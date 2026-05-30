@@ -9,6 +9,7 @@ moves; the Django app registry stays unchanged.
 FKs to ``Zone`` use the string form ``"analytics.Zone"`` to avoid a
 circular import (analytics/models.py re-exports these classes).
 """
+
 from typing import List
 
 from django.conf import settings
@@ -25,7 +26,9 @@ class _SensorBase(models.Model):
 
 class Et0Calculated(_SensorBase):
     zone = models.ForeignKey(
-        "analytics.Zone", on_delete=models.CASCADE, related_name="et0_calculated_weather"
+        "analytics.Zone",
+        on_delete=models.CASCADE,
+        related_name="et0_calculated_weather",
     )
     user = models.ForeignKey(
         User, on_delete=models.CASCADE, related_name="et0_calculated_weather_per_user"
@@ -57,7 +60,9 @@ class Et0Calculated(_SensorBase):
 # which surfaced the bug. If a real signal handler is needed here in the
 # future, define a function below this class and decorate that.
 class Et0Weather(_SensorBase):
-    zone = models.ForeignKey("analytics.Zone", on_delete=models.CASCADE, related_name="et0_weather")
+    zone = models.ForeignKey(
+        "analytics.Zone", on_delete=models.CASCADE, related_name="et0_weather"
+    )
     user = models.ForeignKey(
         User, on_delete=models.CASCADE, related_name="et0_weather_per_user"
     )
@@ -128,7 +133,9 @@ class HumidityWeather(_SensorBase):
 
 
 class WindSpeed(_SensorBase):
-    zone = models.ForeignKey("analytics.Zone", on_delete=models.CASCADE, related_name="wind_speeds")
+    zone = models.ForeignKey(
+        "analytics.Zone", on_delete=models.CASCADE, related_name="wind_speeds"
+    )
     user = models.ForeignKey(
         User, on_delete=models.CASCADE, related_name="wind_speeds_per_user"
     )
@@ -275,7 +282,9 @@ class ECSoilHigh(_SensorBase):
 
 
 class ECSoilLow(_SensorBase):
-    zone = models.ForeignKey("analytics.Zone", on_delete=models.CASCADE, related_name="ec_soil_low")
+    zone = models.ForeignKey(
+        "analytics.Zone", on_delete=models.CASCADE, related_name="ec_soil_low"
+    )
     user = models.ForeignKey(
         User, on_delete=models.CASCADE, related_name="ec_soil_low_per_user"
     )
@@ -359,7 +368,9 @@ class SoilMoistureLow(_SensorBase):
 
 
 class PhSoil(_SensorBase):
-    zone = models.ForeignKey("analytics.Zone", on_delete=models.CASCADE, related_name="ph_soil")
+    zone = models.ForeignKey(
+        "analytics.Zone", on_delete=models.CASCADE, related_name="ph_soil"
+    )
     user = models.ForeignKey(
         User, on_delete=models.CASCADE, related_name="ph_soil_per_user"
     )
@@ -398,7 +409,9 @@ class SoilTemperatureLow(_SensorBase):
 
 class SoilTemperatureMedium(_SensorBase):
     zone = models.ForeignKey(
-        "analytics.Zone", on_delete=models.CASCADE, related_name="soil_temperature_medium"
+        "analytics.Zone",
+        on_delete=models.CASCADE,
+        related_name="soil_temperature_medium",
     )
     user = models.ForeignKey(
         User, on_delete=models.CASCADE, related_name="soil_temperature_medium_per_user"
@@ -463,7 +476,9 @@ class WaterFlowSensor(_SensorBase):
 
 class WaterPressureSensor(_SensorBase):
     zone = models.ForeignKey(
-        "analytics.Zone", on_delete=models.CASCADE, related_name="water_pressure_sensors"
+        "analytics.Zone",
+        on_delete=models.CASCADE,
+        related_name="water_pressure_sensors",
     )
     user = models.ForeignKey(
         User, on_delete=models.CASCADE, related_name="water_pressure_sensors_per_user"
@@ -526,7 +541,9 @@ class PhWaterSensor(_SensorBase):
 
 class ElectricityConsumptionSensor(_SensorBase):
     zone = models.ForeignKey(
-        "analytics.Zone", on_delete=models.CASCADE, related_name="electricity_consumption_sensors"
+        "analytics.Zone",
+        on_delete=models.CASCADE,
+        related_name="electricity_consumption_sensors",
     )
     user = models.ForeignKey(
         User,
@@ -570,7 +587,9 @@ class LeafMoistureSensor(_SensorBase):
 
 class LeafTemperatureSensor(_SensorBase):
     zone = models.ForeignKey(
-        "analytics.Zone", on_delete=models.CASCADE, related_name="leaf_tempeartue_sensors"
+        "analytics.Zone",
+        on_delete=models.CASCADE,
+        related_name="leaf_tempeartue_sensors",
     )
     user = models.ForeignKey(
         User, on_delete=models.CASCADE, related_name="leaf_tempeartue_sensors_per_user"
@@ -591,7 +610,9 @@ class LeafTemperatureSensor(_SensorBase):
 
 class MultiDepthSoilMoistureSensor(_SensorBase):
     zone = models.ForeignKey(
-        "analytics.Zone", on_delete=models.CASCADE, related_name="multi_depth_soil_moisture_sensors"
+        "analytics.Zone",
+        on_delete=models.CASCADE,
+        related_name="multi_depth_soil_moisture_sensors",
     )
     user = models.ForeignKey(
         User,
@@ -614,7 +635,9 @@ class MultiDepthSoilMoistureSensor(_SensorBase):
 
 class LargeFruitDiameterSensor(_SensorBase):
     zone = models.ForeignKey(
-        "analytics.Zone", on_delete=models.CASCADE, related_name="large_fruit_diameter_sensors"
+        "analytics.Zone",
+        on_delete=models.CASCADE,
+        related_name="large_fruit_diameter_sensors",
     )
     user = models.ForeignKey(
         User,
@@ -680,7 +703,9 @@ class SoilSalinitySensor(_SensorBase):
 
 class SoilConductivitySensor(_SensorBase):
     zone = models.ForeignKey(
-        "analytics.Zone", on_delete=models.CASCADE, related_name="soil_conductivity_sensors"
+        "analytics.Zone",
+        on_delete=models.CASCADE,
+        related_name="soil_conductivity_sensors",
     )
     user = models.ForeignKey(
         User,
@@ -705,7 +730,9 @@ class SoilConductivitySensor(_SensorBase):
 
 
 class NpkSensor(_SensorBase):
-    zone = models.ForeignKey("analytics.Zone", on_delete=models.CASCADE, related_name="npk_sensors")
+    zone = models.ForeignKey(
+        "analytics.Zone", on_delete=models.CASCADE, related_name="npk_sensors"
+    )
     user = models.ForeignKey(
         User, on_delete=models.CASCADE, related_name="npk_sensors_per_user"
     )
@@ -927,7 +954,9 @@ class SensorLocation(_SensorBase):
 
 
 class VPDWeather(_SensorBase):
-    zone = models.ForeignKey("analytics.Zone", on_delete=models.CASCADE, related_name="vpd_weather")
+    zone = models.ForeignKey(
+        "analytics.Zone", on_delete=models.CASCADE, related_name="vpd_weather"
+    )
     user = models.ForeignKey(
         User, on_delete=models.CASCADE, related_name="vpd_weather_per_user"
     )
@@ -972,5 +1001,3 @@ class UserSensorUnitPreference(_SensorBase):
 
     def __str__(self):
         return f"{self.user_id}:{self.sensor_key}={self.unit}"
-
-

@@ -1,11 +1,12 @@
 """Bivocom ingest router (django-ninja).
 
-``POST /api/v1/bivocom/uplink`` — mounted from ``agriBack.api`` so the
+``POST /api/v1/bivocom/uplink`` — mounted from ``agriapi.api`` so the
 URL stays identical to the legacy DRF route.
 
 Auth: ``auth=None`` because the gateway calls in via a shared secret
 header (TODO: enforce in a follow-up).
 """
+
 from __future__ import annotations
 
 import logging

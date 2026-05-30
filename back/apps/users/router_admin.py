@@ -9,6 +9,7 @@ Mounted at ``/auth/admin``. Endpoints:
 
 All routes require JWT + ``is_staff`` (checked inline).
 """
+
 from __future__ import annotations
 
 import logging
@@ -21,7 +22,7 @@ from django.db.models import Count, Q
 from ninja import Router, Schema
 from ninja.responses import Response
 
-from agriBack.api.auth import JwtAuth
+from agriapi.api.auth import JwtAuth
 from apps.users.models import CustomUser
 
 router = Router()
@@ -184,7 +185,8 @@ def create_user(request, payload: AdminUserCreateIn):
         return guard
     if CustomUser.objects.filter(username__iexact=payload.username).exists():
         return Response(
-            {"username": "This username is already in use."}, status=400,
+            {"username": "This username is already in use."},
+            status=400,
         )
     if CustomUser.objects.filter(email__iexact=payload.email).exists():
         return Response({"email": "This email is already in use."}, status=400)
@@ -274,7 +276,8 @@ def delete_user(request, username: str):
         return Response({"detail": "User not found."}, status=404)
     if user.pk == request.auth.pk:
         return Response(
-            {"detail": "You cannot delete your own admin account."}, status=400,
+            {"detail": "You cannot delete your own admin account."},
+            status=400,
         )
     user.is_active = False
     user.save(update_fields=["is_active"])

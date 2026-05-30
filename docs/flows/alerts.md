@@ -318,7 +318,7 @@ sequenceDiagram
 #### Grace period (`ALERT_GRACE_PERIODS` in settings)
 
 Per-sensor cool-down between consecutive emails for the same alert row.
-Configured in `back/agriBack/settings.py` (`ALERT_GRACE_PERIODS` dict +
+Configured in `back/agriapi/settings.py` (`ALERT_GRACE_PERIODS` dict +
 `DEFAULT_ALERT_GRACE_PERIOD` fallback). Defaults at the time of writing:
 
 | Sensor family            | Default grace |
@@ -358,7 +358,7 @@ freshly-bumped cursor and drops silently.
 #### The Celery task
 
 `send_alert_email(alert_id, value, timestamp_iso)` in
-`back/agriBack/tasks.py`. The task is intentionally simple: it reloads
+`back/agriapi/tasks.py`. The task is intentionally simple: it reloads
 the alert, bails out on `alert_missing` / `alert_inactive` /
 `no_recipient` / `smtp_error`, and otherwise sends a French plaintext
 email to `alert.user.email`. The grace gate has already been won

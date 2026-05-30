@@ -9,14 +9,13 @@ The submodule is imported via `from .<env> import *` so all
 Django-required globals (DATABASES, SECRET_KEY, ALLOWED_HOSTS, ...)
 end up on this package.
 """
+
 from __future__ import annotations
 
 import os
 
 env = (
-    os.environ.get("DJANGO_ENV")
-    or os.environ.get("DJANGO_SETTINGS_VARIANT")
-    or "dev"
+    os.environ.get("DJANGO_ENV") or os.environ.get("DJANGO_SETTINGS_VARIANT") or "dev"
 ).lower()
 
 if env == "prod":
@@ -26,6 +25,4 @@ elif env == "test":
 elif env == "dev":
     from .dev import *  # noqa: F401, F403
 else:
-    raise RuntimeError(
-        f"Unknown DJANGO_ENV={env!r}. Use one of: dev, prod, test."
-    )
+    raise RuntimeError(f"Unknown DJANGO_ENV={env!r}. Use one of: dev, prod, test.")

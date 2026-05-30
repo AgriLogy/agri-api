@@ -194,7 +194,7 @@ def dispatch_alerts_for_reading(
         if not won:
             continue
 
-        from agriBack.tasks import send_alert_email
+        from agriapi.tasks import send_alert_email
 
         send_alert_email.delay(
             alert_id=alert.pk,

@@ -9,6 +9,7 @@ The actual mapping ``tag_name`` → ``SensorKind`` lives in the
 ``BivocomAdapter`` in ``agri-core`` (Phase 6.5). This module only
 covers the HTTP wire format.
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -33,9 +34,15 @@ class BivocomUplink(BaseModel):
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    device_id: str = Field(min_length=1, max_length=64, description="Bivocom device identifier")
-    timestamp: datetime = Field(description="Reading timestamp (ISO-8601, tz-aware preferred)")
-    rssi: float | None = Field(default=None, description="Signal strength in dBm, if reported")
+    device_id: str = Field(
+        min_length=1, max_length=64, description="Bivocom device identifier"
+    )
+    timestamp: datetime = Field(
+        description="Reading timestamp (ISO-8601, tz-aware preferred)"
+    )
+    rssi: float | None = Field(
+        default=None, description="Signal strength in dBm, if reported"
+    )
     tags: dict[str, float] = Field(
         description="Modbus-tag → value map (e.g. ta=air temp °C, ms=soil moisture m³/m³)",
         min_length=1,
