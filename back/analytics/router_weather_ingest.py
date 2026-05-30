@@ -15,6 +15,7 @@ Auth: ``auth=None`` because the bridge POSTs to this endpoint without
 JWT today (it identifies the user via the ``client`` field in the
 payload).
 """
+
 from __future__ import annotations
 
 import logging
@@ -60,9 +61,7 @@ def weather_ingest(request):
     metrics = {
         key: payload[key]
         for key in SENSOR_KEY_REGISTRY
-        if key in payload
-        and payload[key] is not None
-        and key not in _INGEST_SKIP_KEYS
+        if key in payload and payload[key] is not None and key not in _INGEST_SKIP_KEYS
     }
 
     if not metrics:
@@ -79,7 +78,8 @@ def weather_ingest(request):
     user = CustomUser.objects.filter(username=client).first()
     if not user:
         return Response(
-            {"error": f"User not found for client '{client}'"}, status=400,
+            {"error": f"User not found for client '{client}'"},
+            status=400,
         )
 
     zone = Zone.objects.filter(user=user).first()
@@ -96,7 +96,10 @@ def weather_ingest(request):
     for sensor_key, value in metrics.items():
         model_cls = get_sensor_model(sensor_key)
         model_cls.objects.create(
-            user=user, zone=zone, value=value, timestamp=now,
+            user=user,
+            zone=zone,
+            value=value,
+            timestamp=now,
         )
         inserted += 1
         # Alert dispatch must never abort the ingest loop: the sensor row

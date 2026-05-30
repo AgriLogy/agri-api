@@ -13,6 +13,7 @@ at this layer (just ``dict[str, Any]``) — the per-channel mapping to
 ``SensorKind`` lives in ``agri.core.devices.lorawan.chirpstack.ChirpStackAdapter``
 (Phase 6.5), not here.
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -26,7 +27,9 @@ class ChirpStackDeviceInfo(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    devEui: str = Field(min_length=16, max_length=16, description="64-bit DevEUI as 16 hex chars")
+    devEui: str = Field(
+        min_length=16, max_length=16, description="64-bit DevEUI as 16 hex chars"
+    )
     deviceName: str | None = None
     applicationName: str | None = None
     tenantName: str | None = None

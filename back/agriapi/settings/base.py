@@ -31,7 +31,7 @@ from dotenv import load_dotenv
 # -----------------------------------------------------------------------------
 # Paths & .env
 # -----------------------------------------------------------------------------
-# back/agriBack/settings/base.py → back/
+# back/agriapi/settings/base.py → back/
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 load_dotenv(BASE_DIR / ".env")  # loads back/.env
 
@@ -102,7 +102,7 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-ROOT_URLCONF = "agriBack.urls"
+ROOT_URLCONF = "agriapi.urls"
 
 TEMPLATES = [
     {
@@ -120,7 +120,7 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = "agriBack.wsgi.application"
+WSGI_APPLICATION = "agriapi.wsgi.application"
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
@@ -170,9 +170,9 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],
-    # Maps agriBack.errors.AgriError subclasses → {error:{code,message}} JSON.
-    # See agriBack.exception_handler for the mapping.
-    "EXCEPTION_HANDLER": "agriBack.exception_handler.agri_exception_handler",
+    # Maps agriapi.errors.AgriError subclasses → {error:{code,message}} JSON.
+    # See agriapi.exception_handler for the mapping.
+    "EXCEPTION_HANDLER": "agriapi.exception_handler.agri_exception_handler",
 }
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(days=5),
@@ -197,7 +197,7 @@ CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
 CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", CELERY_BROKER_URL)
 
 # Ensure Celery imports project-level tasks
-CELERY_IMPORTS = ("agriBack.tasks",)
+CELERY_IMPORTS = ("agriapi.tasks",)
 
 SCHEDULE_MODE = os.getenv("CELERY_SCHEDULE_MODE", "test").lower()
 
@@ -225,17 +225,17 @@ else:
 
 CELERY_BEAT_SCHEDULE = {
     "compute_et0": {
-        "task": "agriBack.tasks.compute_et0_vpd_hourly",
+        "task": "agriapi.tasks.compute_et0_vpd_hourly",
         "schedule": _et0_schedule,
     },
     "email_ping": {
-        "task": "agriBack.tasks.send_periodic_notifications",
+        "task": "agriapi.tasks.send_periodic_notifications",
         "schedule": _email_schedule,
     },
 }
 if ENABLE_SENSOR_SIMULATOR:
     CELERY_BEAT_SCHEDULE["simulate_sensors"] = {
-        "task": "agriBack.tasks.simulate_sensor_ingest",
+        "task": "agriapi.tasks.simulate_sensor_ingest",
         "schedule": _sim_schedule,
     }
 

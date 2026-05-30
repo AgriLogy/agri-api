@@ -18,7 +18,7 @@ from __future__ import annotations
 from django.utils.timezone import now
 
 from agri.core.notifications import compose_notification_email
-from agriBack.agronomy import field_snapshot
+from agriapi.agronomy import field_snapshot
 
 
 def should_notify(user) -> bool:

@@ -31,7 +31,8 @@ class TestAdminUserDetail:
     def test_admin_can_patch_email(self, admin_bearer, normal_user):
         resp = admin_bearer.patch(
             _url(normal_user.username),
-            {"email": "newmail@example.com"}, format="json",
+            {"email": "newmail@example.com"},
+            format="json",
         )
         assert resp.status_code == 200
         assert resp.json()["email"] == "newmail@example.com"
@@ -43,7 +44,8 @@ class TestAdminUserDetail:
     ):
         resp = admin_bearer.patch(
             _url(normal_user.username),
-            {"email": other_user.email}, format="json",
+            {"email": other_user.email},
+            format="json",
         )
         assert resp.status_code == 400
         assert "email" in resp.json()
@@ -53,7 +55,8 @@ class TestAdminUserDetail:
         # PATCH succeeds and the username stays unchanged.
         resp = admin_bearer.patch(
             _url(normal_user.username),
-            {"username": "renamed"}, format="json",
+            {"username": "renamed"},
+            format="json",
         )
         assert resp.status_code == 200
         normal_user.refresh_from_db()
@@ -62,7 +65,8 @@ class TestAdminUserDetail:
     def test_invalid_latitude_is_400(self, admin_bearer, normal_user):
         resp = admin_bearer.patch(
             _url(normal_user.username),
-            {"latitude": -200}, format="json",
+            {"latitude": -200},
+            format="json",
         )
         assert resp.status_code == 400
 

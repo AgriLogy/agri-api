@@ -1,6 +1,6 @@
 """Auth + user-management router (django-ninja).
 
-Mounted from ``agriBack.api`` at ``/auth``. Each endpoint matches the
+Mounted from ``agriapi.api`` at ``/auth``. Each endpoint matches the
 URL the legacy DRF ``apps.users.urls`` exposed so the frontend keeps
 working without changes.
 
@@ -16,6 +16,7 @@ Migration notes:
   * Rate-limited login retains its 5-attempt / 5-minute lock-out via the
     Django cache key ``login_attempts_<username>``.
 """
+
 from __future__ import annotations
 
 import logging
@@ -33,7 +34,7 @@ from ninja import Router, Schema
 from ninja.responses import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from agriBack.api.auth import JwtAuth
+from agriapi.api.auth import JwtAuth
 from apps.users.models import CustomUser
 from apps.users.notification_helper import perform_calculations
 
@@ -158,7 +159,8 @@ def signup(request, payload: SignUpIn):
 def _signin_core(payload: SignInIn) -> Response:
     if not payload.username or not payload.password:
         return Response(
-            {"error": "Username and password are required."}, status=400,
+            {"error": "Username and password are required."},
+            status=400,
         )
 
     cache_key = f"{_LOGIN_LOCKOUT_CACHE_PREFIX}{payload.username}"
@@ -196,7 +198,9 @@ def signin(request, payload: SignInIn):
     return response
 
 
-@router.post("/admin-sessions", auth=None, summary="Admin-only sign-in (response omits is_staff)")
+@router.post(
+    "/admin-sessions", auth=None, summary="Admin-only sign-in (response omits is_staff)"
+)
 def admin_signin(request, payload: SignInIn):
     """Same flow as ``/signin/`` but the response omits ``is_staff``. Matches
     the legacy ``AdminSignInAPIView`` shape so the admin login page keeps
@@ -206,6 +210,7 @@ def admin_signin(request, payload: SignInIn):
         body = response.content
         # Strip is_staff out for the admin endpoint's response shape.
         import json as _json
+
         decoded = _json.loads(body)
         decoded.pop("is_staff", None)
         return Response(decoded, status=200)

@@ -461,7 +461,7 @@ class DispatchAlertsForReadingTests(TestCase):
         self.now = timezone.now()
 
     def _dispatch(self, value):
-        with patch("agriBack.tasks.send_alert_email.delay") as send:
+        with patch("agriapi.tasks.send_alert_email.delay") as send:
             count = dispatch_alerts_for_reading(
                 sensor_key="wind_speed",
                 zone=self.zone,
@@ -513,7 +513,7 @@ class DispatchAlertsForReadingTests(TestCase):
 
     def test_zone_scoped_alert_ignores_other_zone(self):
         other_zone = _zone(self.user, name="z-other")
-        with patch("agriBack.tasks.send_alert_email.delay") as send:
+        with patch("agriapi.tasks.send_alert_email.delay") as send:
             dispatch_alerts_for_reading(
                 sensor_key="wind_speed",
                 zone=other_zone,
@@ -526,7 +526,7 @@ class DispatchAlertsForReadingTests(TestCase):
     def test_user_wide_alert_fires_for_any_zone(self):
         Alert.objects.filter(pk=self.alert.pk).update(zone=None)
         other_zone = _zone(self.user, name="z-other")
-        with patch("agriBack.tasks.send_alert_email.delay") as send:
+        with patch("agriapi.tasks.send_alert_email.delay") as send:
             dispatch_alerts_for_reading(
                 sensor_key="wind_speed",
                 zone=other_zone,
@@ -537,7 +537,7 @@ class DispatchAlertsForReadingTests(TestCase):
         send.assert_called_once()
 
     def test_unknown_sensor_key_is_silent(self):
-        with patch("agriBack.tasks.send_alert_email.delay") as send:
+        with patch("agriapi.tasks.send_alert_email.delay") as send:
             n = dispatch_alerts_for_reading(
                 sensor_key="not_a_real_sensor",
                 zone=self.zone,
@@ -549,7 +549,7 @@ class DispatchAlertsForReadingTests(TestCase):
         send.assert_not_called()
 
     def test_value_none_is_silent(self):
-        with patch("agriBack.tasks.send_alert_email.delay") as send:
+        with patch("agriapi.tasks.send_alert_email.delay") as send:
             n = dispatch_alerts_for_reading(
                 sensor_key="wind_speed",
                 zone=self.zone,
@@ -608,7 +608,7 @@ class IngestViewAlertDispatchTests(TestCase):
             "wind_speed": 25.0,
             "pressure_weather": 1010.0,
         }
-        with patch("agriBack.tasks.send_alert_email.delay") as send:
+        with patch("agriapi.tasks.send_alert_email.delay") as send:
             r = self.client.post("/ingest/weather", payload, format="json")
         self.assertEqual(r.status_code, 201)
         self.assertEqual(r.json()["inserted"], 2)
@@ -624,7 +624,7 @@ class IngestViewAlertDispatchTests(TestCase):
             name="High wind",
         )
         payload = {"client": "Router02", "wind_speed": 5.0}
-        with patch("agriBack.tasks.send_alert_email.delay") as send:
+        with patch("agriapi.tasks.send_alert_email.delay") as send:
             r = self.client.post("/ingest/weather", payload, format="json")
         self.assertEqual(r.status_code, 201)
         send.assert_not_called()
@@ -649,7 +649,7 @@ class IngestViewAlertDispatchTests(TestCase):
             "wind_speed": 25.0,
             "temperature_weather": 40.0,
         }
-        with patch("agriBack.tasks.send_alert_email.delay") as send:
+        with patch("agriapi.tasks.send_alert_email.delay") as send:
             r = self.client.post("/ingest/weather", payload, format="json")
         self.assertEqual(r.status_code, 201)
         self.assertEqual(send.call_count, 2)
@@ -742,7 +742,7 @@ class IngestViewFullCatalogueTests(TestCase):
             condition="<",
             name="Soil too dry",
         )
-        with patch("agriBack.tasks.send_alert_email.delay") as send:
+        with patch("agriapi.tasks.send_alert_email.delay") as send:
             r = self._post(soil_moisture_low=12.0)
         self.assertEqual(r.status_code, 201)
         send.assert_called_once()
@@ -767,7 +767,7 @@ class SendAlertEmailTaskTests(TestCase):
         )
 
     def _call(self, alert_id=None):
-        from agriBack.tasks import send_alert_email
+        from agriapi.tasks import send_alert_email
 
         return send_alert_email.apply(
             kwargs=dict(

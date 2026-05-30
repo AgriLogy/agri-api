@@ -8,6 +8,7 @@ Migrated from ``analytics.manager_affirmation``:
 User can list their own / create new; admin sees all. Admin-only for
 the decision endpoint.
 """
+
 from __future__ import annotations
 
 import logging
@@ -17,7 +18,7 @@ from django.utils import timezone
 from ninja import Router, Schema
 from ninja.responses import Response
 
-from agriBack.api.auth import JwtAuth
+from agriapi.api.auth import JwtAuth
 from analytics.models import ManagerAffirmation
 
 router = Router()
@@ -102,9 +103,7 @@ def create_affirmation(request, payload: ManagerAffirmationIn):
     if payload.action not in allowed:
         return Response(
             {
-                "action": (
-                    f"Unknown action. Allowed: {sorted(allowed.keys())}."
-                ),
+                "action": (f"Unknown action. Allowed: {sorted(allowed.keys())}."),
             },
             status=400,
         )
@@ -131,7 +130,8 @@ def _decide(request, pk: int, action: str, payload):
         return Response({"detail": "Affirmation not found."}, status=404)
     if a.status != ManagerAffirmation.STATUS_PENDING:
         return Response(
-            {"detail": f"Already decided ({a.status})."}, status=400,
+            {"detail": f"Already decided ({a.status})."},
+            status=400,
         )
 
     a.status = (

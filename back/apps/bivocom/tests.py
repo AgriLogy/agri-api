@@ -1,4 +1,5 @@
 """Tests for the Bivocom ingest endpoint."""
+
 from __future__ import annotations
 
 import pytest

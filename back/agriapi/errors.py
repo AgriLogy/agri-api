@@ -1,7 +1,7 @@
 """Agrilogy error taxonomy.
 
 Business code raises subclasses of ``AgriError``; the DRF exception
-handler in ``agriBack.exception_handler`` maps them to consistent
+handler in ``agriapi.exception_handler`` maps them to consistent
 JSON responses of shape::
 
     {"error": {"code": "<machine-readable>", "message": "<human-readable>"}}
@@ -17,6 +17,7 @@ Why a hierarchy?
 
 Pattern adapted from ``revly-core``'s error hierarchy.
 """
+
 from __future__ import annotations
 
 

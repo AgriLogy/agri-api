@@ -2,13 +2,14 @@
 
 Run with::
 
-    DJANGO_ENV=test uv run pytest back/agriBack/tests_errors.py
+    DJANGO_ENV=test uv run pytest back/agriapi/tests_errors.py
 """
+
 from __future__ import annotations
 
 from rest_framework.test import APIRequestFactory
 
-from agriBack.errors import (
+from agriapi.errors import (
     AgriConflictError,
     AgriError,
     AgriForbiddenError,
@@ -16,7 +17,7 @@ from agriBack.errors import (
     AgriUnavailableError,
     AgriValidationError,
 )
-from agriBack.exception_handler import agri_exception_handler
+from agriapi.exception_handler import agri_exception_handler
 
 
 def _context() -> dict:
@@ -33,9 +34,7 @@ def test_agri_error_base_maps_to_500() -> None:
 
 
 def test_not_found_maps_to_404() -> None:
-    resp = agri_exception_handler(
-        AgriNotFoundError("sensor 42 not found"), _context()
-    )
+    resp = agri_exception_handler(AgriNotFoundError("sensor 42 not found"), _context())
     assert resp is not None
     assert resp.status_code == 404
     assert resp.data == {
@@ -44,9 +43,7 @@ def test_not_found_maps_to_404() -> None:
 
 
 def test_validation_maps_to_400() -> None:
-    resp = agri_exception_handler(
-        AgriValidationError("hours must be > 0"), _context()
-    )
+    resp = agri_exception_handler(AgriValidationError("hours must be > 0"), _context())
     assert resp is not None
     assert resp.status_code == 400
     assert resp.data["error"]["code"] == "validation_error"
@@ -67,9 +64,7 @@ def test_conflict_maps_to_409() -> None:
 
 
 def test_unavailable_maps_to_503() -> None:
-    resp = agri_exception_handler(
-        AgriUnavailableError("supabase down"), _context()
-    )
+    resp = agri_exception_handler(AgriUnavailableError("supabase down"), _context())
     assert resp is not None
     assert resp.status_code == 503
     assert resp.data["error"]["code"] == "service_unavailable"
@@ -97,9 +92,7 @@ def test_subclass_inherits_http_status_and_code() -> None:
     class SensorNotFoundError(AgriNotFoundError):
         code = "sensor_not_found"
 
-    resp = agri_exception_handler(
-        SensorNotFoundError("sensor 1 not found"), _context()
-    )
+    resp = agri_exception_handler(SensorNotFoundError("sensor 1 not found"), _context())
     assert resp is not None
     assert resp.status_code == 404  # inherited
     assert resp.data["error"]["code"] == "sensor_not_found"  # overridden

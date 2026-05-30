@@ -6,7 +6,7 @@ Runs once on web-container boot from docker-entrypoint.sh, gated by
 SEED_DEV_DATA (default: true). Safe to re-run — skips zones that
 already have meaningful history.
 
-Reuses the season-aware synth helpers from agriBack.tasks
+Reuses the season-aware synth helpers from agriapi.tasks
 (simulate_sensor_ingest) so the values are bounded the same way the
 live simulator produces them. Time-step is 15 minutes which matches
 the production cadence and keeps record counts reasonable
@@ -22,13 +22,13 @@ from zoneinfo import ZoneInfo
 
 import django
 
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "agriBack.settings")
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "agriapi.settings")
 django.setup()
 
 from django.db import transaction  # noqa: E402
 from django.utils import timezone as djtz  # noqa: E402
 
-from agriBack.tasks import (  # noqa: E402
+from agriapi.tasks import (  # noqa: E402
     LOCAL_TZ,
     clamp,
     day_bounds,

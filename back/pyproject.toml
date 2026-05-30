@@ -105,14 +105,14 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["agriBack", "CustomUser", "analytics"]
+known-first-party = ["agriapi", "CustomUser", "analytics"]
 
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
 
 [tool.pytest.ini_options]
-DJANGO_SETTINGS_MODULE = "agriBack.settings"
+DJANGO_SETTINGS_MODULE = "agriapi.settings"
 python_files = ["test_*.py", "*_test.py", "tests.py"]
 
 # ---------------------------------------------------------------------------

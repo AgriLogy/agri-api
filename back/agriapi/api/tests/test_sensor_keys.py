@@ -4,6 +4,7 @@ Locks in the django-ninja + JWT auth wiring + the response shape.
 The exhaustive registry-content tests live in agri-core's
 ``tests/test_alerts.py``; this file only verifies the HTTP surface.
 """
+
 from __future__ import annotations
 
 from django.contrib.auth import get_user_model
@@ -17,7 +18,9 @@ class SensorCatalogEndpointTests(TestCase):
 
     def setUp(self):
         self.user = get_user_model().objects.create_user(
-            username="v2-tester", password="pw", email="v2@example.test",
+            username="v2-tester",
+            password="pw",
+            email="v2@example.test",
         )
         self.client = Client()
 
@@ -36,7 +39,8 @@ class SensorCatalogEndpointTests(TestCase):
 
     def test_returns_full_registry_when_authenticated(self):
         resp = self.client.get(
-            self.URL, HTTP_AUTHORIZATION=f"Bearer {self._token()}",
+            self.URL,
+            HTTP_AUTHORIZATION=f"Bearer {self._token()}",
         )
         self.assertEqual(resp.status_code, 200)
         body = resp.json()

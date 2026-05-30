@@ -4,6 +4,7 @@ Migrated from ``analytics.views``:
   * GET  /api/notifications-and-alerts/   — paged feed of stored notifications
   * POST /api/zone-notification-outbound/ — one-shot zone-config email
 """
+
 from __future__ import annotations
 
 import logging
@@ -14,7 +15,7 @@ from django.core.mail import send_mail
 from ninja import Router, Schema
 from ninja.responses import Response
 
-from agriBack.api.auth import JwtAuth
+from agriapi.api.auth import JwtAuth
 from analytics.models import Notification
 
 router = Router()
@@ -95,7 +96,9 @@ class ZoneNotificationOutboundIn(Schema):
     summary="One-shot zone-config confirmation email",
 )
 def zone_notification_outbound(request, payload: ZoneNotificationOutboundIn):
-    channels = payload.channels.model_dump(exclude_unset=True) if payload.channels else {}
+    channels = (
+        payload.channels.model_dump(exclude_unset=True) if payload.channels else {}
+    )
     if not channels.get("email"):
         return Response({"status": "noop"}, status=202)
 

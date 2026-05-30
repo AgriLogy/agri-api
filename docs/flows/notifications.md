@@ -124,7 +124,7 @@ sequenceDiagram
 
 ## Components in detail
 
-### 1. The Celery task — `back/agriBack/tasks.py:16-66`
+### 1. The Celery task — `back/agriapi/tasks.py:16-66`
 
 - `@shared_task def send_periodic_notifications()` —
   `tasks.py:16-66`.
@@ -157,7 +157,7 @@ def should_notify(user) -> bool:
   plaintext French string — `notification_helper.py:86-89`.
 - `_format_message` builds the email inline; no `.html` or `.txt`
   template file. Edits must happen in Python — `notification_helper.py:41-83`.
-- Snapshot keys consumed (per `back/agriBack/agronomy.py:743+`):
+- Snapshot keys consumed (per `back/agriapi/agronomy.py:743+`):
   - Air: `yesterday_temp_c`, `today_temp_c`, `yesterday_humidity_pct`,
     `today_humidity_pct`.
   - Water budget: `et0_today_mm`, `kc_used`.
@@ -168,7 +168,7 @@ def should_notify(user) -> bool:
 - Only the user’s **first zone** (lowest id) is rendered —
   `agronomy.py:790`. Multi-zone tenants will receive a partial email.
 
-### 4. The email backend — `back/agriBack/settings.py:246-261`
+### 4. The email backend — `back/agriapi/settings.py:246-261`
 
 - `DEBUG=True` → console backend (prints to stdout); `mailpit` is also
   available on `:1025` SMTP and `:8025` web UI for local dev.
@@ -281,9 +281,9 @@ signal handler today.
 
 ## Source files cited
 
-- `back/agriBack/tasks.py`
-- `back/agriBack/settings.py`
-- `back/agriBack/agronomy.py`
+- `back/agriapi/tasks.py`
+- `back/agriapi/settings.py`
+- `back/agriapi/agronomy.py`
 - `back/CustomUser/notification_helper.py`
 - `back/CustomUser/views.py`
 - `back/analytics/urls.py`

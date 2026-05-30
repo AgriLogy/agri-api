@@ -1,11 +1,11 @@
 """DRF exception handler that maps ``AgriError`` subclasses to a
 consistent JSON shape.
 
-Wired in ``agriBack.settings.base`` via::
+Wired in ``agriapi.settings.base`` via::
 
     REST_FRAMEWORK = {
         ...
-        "EXCEPTION_HANDLER": "agriBack.exception_handler.agri_exception_handler",
+        "EXCEPTION_HANDLER": "agriapi.exception_handler.agri_exception_handler",
     }
 
 Behaviour:
@@ -15,6 +15,7 @@ Behaviour:
   * Otherwise fall through to DRF's default handler so existing
     ValidationError/PermissionDenied/etc. responses are preserved.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -22,7 +23,7 @@ from typing import Any
 from rest_framework.response import Response
 from rest_framework.views import exception_handler as drf_default_exception_handler
 
-from agriBack.errors import AgriError
+from agriapi.errors import AgriError
 
 
 def agri_exception_handler(exc: Exception, context: dict[str, Any]) -> Response | None:

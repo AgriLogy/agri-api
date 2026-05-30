@@ -48,7 +48,5 @@ class TestAdminSensorUnits:
         assert UserSensorUnitPreference.objects.filter(user=normal_user).count() == 1
 
     def test_patch_rejects_non_object(self, admin_bearer, normal_user):
-        resp = admin_bearer.patch(
-            _url(normal_user.username), ["bad"], format="json"
-        )
+        resp = admin_bearer.patch(_url(normal_user.username), ["bad"], format="json")
         assert resp.status_code == 400

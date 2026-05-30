@@ -4,6 +4,7 @@ First router lands ``GET /api/v2/sensors/keys`` returning the canonical
 sensor-key registry from ``agri.core.alerts``. Proves the django-ninja
 + agri-core handler shape end to end.
 """
+
 from __future__ import annotations
 
 from ninja import Router, Schema

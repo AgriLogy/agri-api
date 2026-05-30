@@ -1,5 +1,5 @@
 """
-Tests for agriBack.agronomy.
+Tests for agriapi.agronomy.
 
 Cover both the pure math (no DB) and the high-level entry points
 (field_snapshot, compute_et0_for_zone) against synthetic sensor rows.
@@ -24,7 +24,7 @@ _REQUIRES_PG = skipUnless(
     "dual-ORM field_snapshot requires Postgres",
 )
 
-from agriBack.agronomy import (
+from agriapi.agronomy import (
     CLOUD_FACTOR_MIN,
     CLOUD_RATIO_MAX,
     CLOUD_RATIO_MIN,

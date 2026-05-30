@@ -359,9 +359,7 @@ class WeatherIngestAPIView(APIView):
         inserted = 0
         for sensor_key, value in metrics.items():
             model_cls = get_sensor_model(sensor_key)
-            model_cls.objects.create(
-                user=user, zone=zone, value=value, timestamp=now
-            )
+            model_cls.objects.create(user=user, zone=zone, value=value, timestamp=now)
             inserted += 1
             # Alert dispatch must never abort the ingest loop: the sensor row
             # is already persisted, and a downstream alerts bug (schema drift,
