@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v1.31.1 (2026-05-30)
+
+### Bug Fixes
+
+- **scheduler**: Make the sensor simulator opt-in so servers use real data
+  ([#130](https://github.com/AgriLogy/agri-api/pull/130),
+  [`2668aa7`](https://github.com/AgriLogy/agri-api/commit/2668aa74c179458f26a2b848e9671b81a852d6c0))
+
+Closes #129.
+
+
 ## v1.31.0 (2026-05-30)
 
 ### Features
