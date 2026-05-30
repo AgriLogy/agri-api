@@ -18,6 +18,7 @@ module re-exports them and keeps the Django-coupled bits:
 ``evaluate_alert(alert, value)`` is a 1-line wrapper that packs an
 ``AlertSpec`` from the Django row before delegating.
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timedelta
@@ -91,50 +92,22 @@ def latest_value_for(alert) -> LatestReading:
 def recent_triggers_for_user(
     user, *, sensor_key: str | None = None, zone_id: int | None = None
 ) -> list[dict[str, Any]]:
-    """Return every active alert for ``user`` (optionally filtered to one
-    sensor/zone) annotated with its latest value, whether it's currently
-    triggered, and the canonical threshold for chart overlays.
+    """Thin adapter: delegate to agri-core's DB-backed fan-out.
+
+    Opens an ``agri.core.database`` session (commit=True so the core handler's
+    ``last_triggered_at`` stamps persist) and lets agri-core fetch + evaluate.
     """
-    from analytics.models import Alert
+    from agri.core.alerts import recent_triggers_for_user as _core_recent_triggers
+    from agri.core.database import session_scope
 
-    qs = Alert.objects.filter(user=user, is_active=True)
-    if sensor_key:
-        qs = qs.filter(sensor_key=sensor_key)
-    if zone_id:
-        qs = qs.filter(zone_id=zone_id)
-
-    out: list[dict[str, Any]] = []
-    now = timezone.now()
-    for alert in qs.order_by("id"):
-        latest = latest_value_for(alert)
-        triggered = evaluate_alert(alert, latest.value)
-        if triggered and not alert.last_triggered_at:
-            alert.last_triggered_at = now
-            alert.save(update_fields=["last_triggered_at"])
-        out.append(
-            {
-                "id": alert.id,
-                "name": alert.name,
-                "sensor_key": alert.sensor_key,
-                "zone_id": alert.zone_id,
-                "condition": alert.condition,
-                "threshold": float(alert.condition_nbr),
-                "unit": SENSOR_KEY_REGISTRY.get(alert.sensor_key, {}).get("unit"),
-                "label": SENSOR_KEY_REGISTRY.get(alert.sensor_key, {}).get("label"),
-                "is_active": alert.is_active,
-                "latest_value": latest.value,
-                "latest_timestamp": latest.timestamp.isoformat()
-                if latest.timestamp
-                else None,
-                "is_triggered": triggered,
-                "last_triggered_at": (
-                    alert.last_triggered_at.isoformat()
-                    if alert.last_triggered_at
-                    else None
-                ),
-            }
+    with session_scope(commit=True) as session:
+        return _core_recent_triggers(
+            session,
+            user.id,
+            sensor_key=sensor_key,
+            zone_id=zone_id,
+            now=timezone.now(),
         )
-    return out
 
 
 def assert_keys_resolve(keys: Iterable[str]) -> None:
@@ -213,9 +186,11 @@ def dispatch_alerts_for_reading(
 
         from django.db.models import Q
 
-        won = Alert.objects.filter(pk=alert.pk).filter(
-            Q(last_emailed_at__isnull=True) | Q(last_emailed_at__lt=cutoff)
-        ).update(last_emailed_at=now_ts, last_triggered_at=now_ts)
+        won = (
+            Alert.objects.filter(pk=alert.pk)
+            .filter(Q(last_emailed_at__isnull=True) | Q(last_emailed_at__lt=cutoff))
+            .update(last_emailed_at=now_ts, last_triggered_at=now_ts)
+        )
         if not won:
             continue
 
@@ -244,21 +219,13 @@ def suggest_alert(
     ``agri.core.alerts.suggested_alert_payload``. Returns ``None`` when
     the sensor key is unknown.
     """
-    if sensor_key not in SENSOR_KEY_REGISTRY:
-        return None
+    from agri.core.alerts import suggest_alert_for
+    from agri.core.database import session_scope
 
-    model = get_sensor_model(sensor_key)
-    qs = model.objects.all()
-    if user is not None:
-        qs = qs.filter(user=user)
-    if zone_id:
-        qs = qs.filter(zone_id=zone_id)
-
-    recent = list(
-        qs.order_by("-timestamp").values_list("value", flat=True)[:sample_size]
-    )
-    recent_values = [float(v) for v in recent if v is not None]
-    return suggested_alert_payload(sensor_key, recent_values)
+    with session_scope() as session:
+        return suggest_alert_for(
+            session, user.id, sensor_key, zone_id=zone_id, limit=sample_size
+        )
 
 
 # Backward-compat re-exports for callers that referenced these as module-level
