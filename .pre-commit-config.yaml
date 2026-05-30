@@ -25,3 +25,27 @@ repos:
       - id: conventional-pre-commit
         stages: [commit-msg]
         args: [--strict]
+
+  # Pre-push gate — catch lint / test / release-config breakage locally
+  # before it reaches CI. The project lives in back/, so each hook cd's in.
+  # Enable with: pre-commit install --hook-type pre-push
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: bash -c 'cd back && uv run ruff check .'
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+      - id: pytest
+        name: pytest (apps/users + analytics)
+        entry: bash -c 'cd back && DJANGO_SETTINGS_MODULE=agriBack.settings SECRET_KEY=ci DEBUG=True ALLOWED_HOSTS="*" USE_POSTGRES=False EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend" uv run pytest apps/users/ analytics/ -q'
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+      - id: semantic-release-config
+        name: validate semantic-release config (no-op version --print)
+        entry: bash -c 'cd back && uvx --from python-semantic-release semantic-release -c pyproject.toml version --print'
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
