@@ -80,8 +80,13 @@ jobs:
       # admin_client, zone_factory, …) declared in `conftest.py`.
       # pytest-django picks up legacy `django.test.TestCase`-based tests
       # too, so this is a superset of `manage.py test`.
+      #
+      # Run the whole src/ tree so the device-ingest tests (bivocom,
+      # lorawan/chirpstack) and the agriapi end-to-end workflow test gate
+      # merges too — not just apps/users + analytics. Postgres (service above)
+      # lets the dual-ORM handler tests run instead of skipping.
       - name: Backend tests (pytest)
-        run: uv run pytest src/apps/users/ src/analytics/ -v
+        run: uv run pytest src/ -v
         env:
           DJANGO_SETTINGS_MODULE: agriapi.settings
           SECRET_KEY: ci-placeholder-secret-key
