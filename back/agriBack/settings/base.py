@@ -74,14 +74,20 @@ INSTALLED_APPS = [
     "rest_framework",
     "django_extensions",
     "django_celery_beat",
-    # Local apps
+    # Local apps. "analytics" stays installed as the app_label anchor: every
+    # extracted model keeps Meta.app_label = "analytics", so this app owns the
+    # analytics_* tables + migration history while its models.py is now just a
+    # compatibility re-export surface.
     "analytics",
     "apps.users.apps.UsersConfig",
     # Hardware-family ingest apps (vertical-slice)
     "apps.bivocom",
     "apps.lorawan.chirpstack",
-    # Domain apps extracted from the analytics god-app
+    # Domain apps extracted from the analytics god-app (models tagged
+    # app_label="analytics"; AppConfig labels stay distinct).
     "apps.sensors.apps.SensorsConfig",
+    "apps.irrigation.apps.IrrigationConfig",
+    "apps.alerts.apps.AlertsConfig",
 ]
 
 MIDDLEWARE = [
