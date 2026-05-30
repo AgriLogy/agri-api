@@ -1,4 +1,5 @@
 """Production settings — hard-fails on missing secrets, secure cookies, SSL redirect."""
+
 from __future__ import annotations
 
 import os
@@ -23,9 +24,7 @@ def _required(name: str) -> str:
 # -----------------------------------------------------------------------------
 DEBUG = False
 SECRET_KEY = _required("SECRET_KEY")
-ALLOWED_HOSTS = [
-    h.strip() for h in _required("ALLOWED_HOSTS").split(",") if h.strip()
-]
+ALLOWED_HOSTS = [h.strip() for h in _required("ALLOWED_HOSTS").split(",") if h.strip()]
 
 # -----------------------------------------------------------------------------
 # Database — Supabase Postgres (loud on missing creds)
@@ -42,10 +41,17 @@ DATABASES = {
     }
 }
 
+# Let agri-core's DB-backed handlers reach the same Supabase Postgres.
+export_agri_db_url(DATABASES)
+
 # -----------------------------------------------------------------------------
 # Security
 # -----------------------------------------------------------------------------
-SECURE_SSL_REDIRECT = os.getenv("SECURE_SSL_REDIRECT", "True").lower() in ("1", "true", "yes")
+SECURE_SSL_REDIRECT = os.getenv("SECURE_SSL_REDIRECT", "True").lower() in (
+    "1",
+    "true",
+    "yes",
+)
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True
 SECURE_HSTS_SECONDS = int(os.getenv("SECURE_HSTS_SECONDS", "31536000"))  # 1 year
@@ -75,4 +81,6 @@ EMAIL_HOST_PASSWORD = _required("EMAIL_HOST_PASSWORD")
 EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587") or 587)
 EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True").lower() in ("1", "true", "yes")
 EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "False").lower() in ("1", "true", "yes")
-DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "Agrilogy <noreply@agrogo-datafarm.com>")
+DEFAULT_FROM_EMAIL = os.getenv(
+    "DEFAULT_FROM_EMAIL", "Agrilogy <noreply@agrogo-datafarm.com>"
+)

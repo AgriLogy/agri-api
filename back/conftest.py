@@ -7,10 +7,35 @@ auth. So tests must send ``Authorization: Bearer <access>`` instead of
 matching user fixture (``admin_user`` / ``normal_user`` / ``other_user``,
 provided by the per-app conftests) and attach it to every request.
 """
+
 from __future__ import annotations
+
+import os
 
 import pytest
 from rest_framework.test import APIClient
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _bind_agri_core_db(django_db_setup):
+    """Point agri.core.database (``AGRI_DB_URL``) at Django's *test* database
+    so the SQLAlchemy handlers and the Django ORM share one Postgres.
+
+    No-op on sqlite — the dual-ORM handler tests skip without Postgres. Runs
+    after ``django_db_setup`` so the connection's NAME is the test DB.
+    """
+    from django.db import connection
+
+    sd = connection.settings_dict
+    if sd["ENGINE"].endswith("postgresql"):
+        os.environ["AGRI_DB_URL"] = (
+            "postgresql+psycopg://"
+            f"{sd['USER']}:{sd['PASSWORD']}@{sd['HOST']}:{sd['PORT']}/{sd['NAME']}"
+        )
+        from agri.core import database as agri_db
+
+        agri_db.dispose_engine()
+    yield
 
 
 def _bearer_client(user) -> APIClient:

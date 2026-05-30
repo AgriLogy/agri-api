@@ -17,6 +17,7 @@ Things that LIVE in dev/prod/test instead:
   - EMAIL_BACKEND + EMAIL_*
   - Production-only security flags (SECURE_SSL_REDIRECT, etc.)
 """
+
 from __future__ import annotations
 
 import os
@@ -38,6 +39,23 @@ load_dotenv(BASE_DIR / ".env")  # loads back/.env
 def _csv_env(name: str, default: str = "") -> list[str]:
     raw = os.getenv(name, default) or ""
     return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def export_agri_db_url(databases: dict) -> None:
+    """Point ``agri.core.database`` (AGRI_DB_URL) at the same Postgres Django
+    uses, so the DB-backed agri-core handlers connect without separate config.
+
+    Called from dev/prod after ``DATABASES`` is built. No-op when AGRI_DB_URL
+    is already set (CI/tests bind it explicitly) or the DB is not Postgres.
+    """
+    if os.getenv("AGRI_DB_URL"):
+        return
+    cfg = databases.get("default", {})
+    if cfg.get("ENGINE", "").endswith("postgresql"):
+        os.environ["AGRI_DB_URL"] = (
+            "postgresql+psycopg://"
+            f"{cfg['USER']}:{cfg['PASSWORD']}@{cfg['HOST']}:{cfg['PORT']}/{cfg['NAME']}"
+        )
 
 
 # -----------------------------------------------------------------------------
@@ -219,50 +237,50 @@ DEFAULT_ALERT_GRACE_PERIOD = 1800  # 30 minutes
 
 ALERT_GRACE_PERIODS: dict[str, int] = {
     # Water — high-stakes, fast-changing
-    "water_flow":                 5 * 60,
-    "water_level":                5 * 60,
-    "water_pressure":             5 * 60,
-    "water_ec":                   5 * 60,
-    "ph_water":                   5 * 60,
+    "water_flow": 5 * 60,
+    "water_level": 5 * 60,
+    "water_pressure": 5 * 60,
+    "water_ec": 5 * 60,
+    "ph_water": 5 * 60,
     # Wind — volatile but worth knowing quickly
-    "wind_speed":                15 * 60,
-    "wind_direction":            15 * 60,
+    "wind_speed": 15 * 60,
+    "wind_direction": 15 * 60,
     # Weather — moderate cadence
-    "temperature_weather":      30 * 60,
-    "humidity_weather":         30 * 60,
-    "pressure_weather":         30 * 60,
-    "solar_radiation":          30 * 60,
-    "precipitation_rate":       30 * 60,
+    "temperature_weather": 30 * 60,
+    "humidity_weather": 30 * 60,
+    "pressure_weather": 30 * 60,
+    "solar_radiation": 30 * 60,
+    "precipitation_rate": 30 * 60,
     # ET0 — derived hourly anyway
-    "et0_weather":              60 * 60,
-    "et0_calculated":           60 * 60,
+    "et0_weather": 60 * 60,
+    "et0_calculated": 60 * 60,
     # Soil moisture — slow-changing series
-    "soil_moisture_low":        60 * 60,
-    "soil_moisture_medium":     60 * 60,
-    "soil_moisture_high":       60 * 60,
+    "soil_moisture_low": 60 * 60,
+    "soil_moisture_medium": 60 * 60,
+    "soil_moisture_high": 60 * 60,
     "multi_depth_soil_moisture_sensor": 60 * 60,
     # Soil temperature
-    "soil_temperature_low":   2 * 60 * 60,
-    "soil_temperature_medium":2 * 60 * 60,
-    "soil_temperature_high":  2 * 60 * 60,
+    "soil_temperature_low": 2 * 60 * 60,
+    "soil_temperature_medium": 2 * 60 * 60,
+    "soil_temperature_high": 2 * 60 * 60,
     # Soil chemistry — drift on the hour scale
-    "ec_soil_low":            2 * 60 * 60,
-    "ec_soil_medium":         2 * 60 * 60,
-    "ec_soil_high":           2 * 60 * 60,
-    "ph_soil":                2 * 60 * 60,
-    "soil_conductivity":      2 * 60 * 60,
-    "soil_salinity":          2 * 60 * 60,
-    "ec_salinity":            2 * 60 * 60,
+    "ec_soil_low": 2 * 60 * 60,
+    "ec_soil_medium": 2 * 60 * 60,
+    "ec_soil_high": 2 * 60 * 60,
+    "ph_soil": 2 * 60 * 60,
+    "soil_conductivity": 2 * 60 * 60,
+    "soil_salinity": 2 * 60 * 60,
+    "ec_salinity": 2 * 60 * 60,
     # NPK — very slow
-    "npk":                    4 * 60 * 60,
+    "npk": 4 * 60 * 60,
     # Leaf
-    "leaf_moisture":             30 * 60,
-    "leaf_temperature":          30 * 60,
+    "leaf_moisture": 30 * 60,
+    "leaf_temperature": 30 * 60,
     # Fruit — multi-hour growth signals
-    "fruit_size":             6 * 60 * 60,
-    "large_fruit_diameter":   6 * 60 * 60,
+    "fruit_size": 6 * 60 * 60,
+    "large_fruit_diameter": 6 * 60 * 60,
     # Energy
-    "electricity_consumption":   30 * 60,
+    "electricity_consumption": 30 * 60,
 }
 
 # -----------------------------------------------------------------------------
