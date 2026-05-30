@@ -12,6 +12,7 @@ If you're an agronomist and want to change *what* gets sent, edit
 ``agri.core.agronomy.field_snapshot``. If you want to change *how* it's
 phrased, edit ``agri.core.notifications.compose_notification_email``.
 """
+
 from __future__ import annotations
 
 from django.utils.timezone import now
@@ -38,5 +39,16 @@ def _format_message(user, snapshot: dict) -> str:
 
 
 def perform_calculations(user) -> str:
-    """Build the French notification email body for ``user``."""
-    return _format_message(user, field_snapshot(user))
+    """Build the French notification email body for ``user``.
+
+    Thin adapter: delegate to agri-core's DB-backed
+    ``compose_notification_for_user`` (fetch user + field snapshot + compose)
+    via an ``agri.core.database`` session.
+    """
+    from agri.core.database import session_scope
+    from agri.core.notifications import compose_notification_for_user
+
+    with session_scope() as session:
+        body = compose_notification_for_user(session, user.id, now=now())
+    # Defensive fallback if the user isn't found via the SQLAlchemy session.
+    return body if body is not None else _format_message(user, field_snapshot(user))

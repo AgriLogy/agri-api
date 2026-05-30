@@ -8,11 +8,20 @@ the email template contract.
 """
 
 from datetime import date, time, timedelta
+from unittest import skipUnless
 from unittest.mock import patch
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, TransactionTestCase
 from django.utils import timezone
+
+# perform_calculations now delegates to agri-core's compose_notification_for_user
+# (own SQLAlchemy connection). Its tests need a shared Postgres + committed data.
+_REQUIRES_PG = skipUnless(
+    settings.DATABASES["default"]["ENGINE"].endswith("postgresql"),
+    "dual-ORM notification compose requires Postgres",
+)
 
 from apps.users.notification_helper import (
     _format_message,
@@ -124,14 +133,23 @@ class FormatMessageTests(TestCase):
         self.assertIn("Bonjour alice", body)
 
 
-class PerformCalculationsTests(TestCase):
-    def test_calls_field_snapshot_and_renders(self):
-        u = _u()
-        with patch(
-            "apps.users.notification_helper.field_snapshot",
-            return_value=SAMPLE_SNAPSHOT,
-        ) as m:
-            body = perform_calculations(u)
-        m.assert_called_once_with(u)
+@_REQUIRES_PG
+class PerformCalculationsTests(TransactionTestCase):
+    def test_composes_from_db_snapshot(self):
+        # perform_calculations now delegates to agri-core's
+        # compose_notification_for_user (fetch user + field snapshot + compose)
+        # over a SQLAlchemy session, so this exercises the real dual-ORM path.
+        from analytics.models import Zone
+
+        u = _u(firstname="Marc")
+        Zone.objects.create(
+            user=u,
+            name="zone-1",
+            space=1000.0,
+            critical_moisture_threshold=20.0,
+            pomp_flow_rate=1.0,
+        )
+        body = perform_calculations(u)
+        self.assertIn("Bonjour Marc", body)
         self.assertIn("zone-1", body)
         self.assertIn("ET0 cumulée", body)

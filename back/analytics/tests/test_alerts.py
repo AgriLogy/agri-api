@@ -18,10 +18,21 @@ Run:
 from datetime import timedelta
 from decimal import Decimal
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, TransactionTestCase
 from django.urls import reverse
 from django.utils import timezone
+
+# recent_triggers_for_user now delegates to agri-core's DB-backed handler
+# (own SQLAlchemy connection, AGRI_DB_URL). Those tests need a shared Postgres
+# + committed data; they skip on sqlite (fast local dev), run on Postgres in CI.
+from unittest import skipUnless  # noqa: E402
+
+_REQUIRES_PG = skipUnless(
+    settings.DATABASES["default"]["ENGINE"].endswith("postgresql"),
+    "dual-ORM alerts fan-out requires Postgres",
+)
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import AccessToken
 
@@ -201,7 +212,8 @@ class EvaluateAlertTests(TestCase):
 # ---------------------------------------------------------------------------
 
 
-class RecentTriggersTests(TestCase):
+@_REQUIRES_PG
+class RecentTriggersTests(TransactionTestCase):
     def setUp(self):
         self.user = _user()
         self.other = _user("bob")
@@ -345,9 +357,7 @@ class AlertCRUDTests(TestCase):
 
     def test_patch_updates_in_place(self):
         a = _alert(self.user, zone=self.zone)
-        r = self.client.patch(
-            f"/alerts/{a.id}", {"condition_nbr": 42}, format="json"
-        )
+        r = self.client.patch(f"/alerts/{a.id}", {"condition_nbr": 42}, format="json")
         self.assertEqual(r.status_code, 200)
         a.refresh_from_db()
         self.assertEqual(float(a.condition_nbr), 42.0)
@@ -370,7 +380,8 @@ class AlertCRUDTests(TestCase):
 # ---------------------------------------------------------------------------
 
 
-class AlertsForGraphTests(TestCase):
+@_REQUIRES_PG
+class AlertsForGraphTests(TransactionTestCase):
     def setUp(self):
         self.user = _user()
         self.zone = _zone(self.user)
@@ -441,8 +452,11 @@ class DispatchAlertsForReadingTests(TestCase):
         self.user = _user()
         self.zone = _zone(self.user)
         self.alert = _alert(
-            self.user, zone=self.zone, condition_nbr=Decimal("20.00"),
-            sensor_key="wind_speed", name="High wind",
+            self.user,
+            zone=self.zone,
+            condition_nbr=Decimal("20.00"),
+            sensor_key="wind_speed",
+            name="High wind",
         )
         self.now = timezone.now()
 
@@ -583,8 +597,11 @@ class IngestViewAlertDispatchTests(TestCase):
 
     def test_post_above_threshold_dispatches_alert(self):
         _alert(
-            self.user, zone=self.zone, sensor_key="wind_speed",
-            condition_nbr=Decimal("20.00"), name="High wind",
+            self.user,
+            zone=self.zone,
+            sensor_key="wind_speed",
+            condition_nbr=Decimal("20.00"),
+            name="High wind",
         )
         payload = {
             "client": "Router02",
@@ -592,9 +609,7 @@ class IngestViewAlertDispatchTests(TestCase):
             "pressure_weather": 1010.0,
         }
         with patch("agriBack.tasks.send_alert_email.delay") as send:
-            r = self.client.post(
-                "/ingest/weather", payload, format="json"
-            )
+            r = self.client.post("/ingest/weather", payload, format="json")
         self.assertEqual(r.status_code, 201)
         self.assertEqual(r.json()["inserted"], 2)
         send.assert_called_once()
@@ -602,25 +617,32 @@ class IngestViewAlertDispatchTests(TestCase):
 
     def test_post_below_threshold_does_not_dispatch(self):
         _alert(
-            self.user, zone=self.zone, sensor_key="wind_speed",
-            condition_nbr=Decimal("20.00"), name="High wind",
+            self.user,
+            zone=self.zone,
+            sensor_key="wind_speed",
+            condition_nbr=Decimal("20.00"),
+            name="High wind",
         )
         payload = {"client": "Router02", "wind_speed": 5.0}
         with patch("agriBack.tasks.send_alert_email.delay") as send:
-            r = self.client.post(
-                "/ingest/weather", payload, format="json"
-            )
+            r = self.client.post("/ingest/weather", payload, format="json")
         self.assertEqual(r.status_code, 201)
         send.assert_not_called()
 
     def test_post_fires_alerts_per_matching_metric(self):
         _alert(
-            self.user, zone=self.zone, sensor_key="wind_speed",
-            condition_nbr=Decimal("20.00"), name="High wind",
+            self.user,
+            zone=self.zone,
+            sensor_key="wind_speed",
+            condition_nbr=Decimal("20.00"),
+            name="High wind",
         )
         _alert(
-            self.user, zone=self.zone, sensor_key="temperature_weather",
-            condition_nbr=Decimal("35.00"), name="Hot day",
+            self.user,
+            zone=self.zone,
+            sensor_key="temperature_weather",
+            condition_nbr=Decimal("35.00"),
+            name="Hot day",
         )
         payload = {
             "client": "Router02",
@@ -628,9 +650,7 @@ class IngestViewAlertDispatchTests(TestCase):
             "temperature_weather": 40.0,
         }
         with patch("agriBack.tasks.send_alert_email.delay") as send:
-            r = self.client.post(
-                "/ingest/weather", payload, format="json"
-            )
+            r = self.client.post("/ingest/weather", payload, format="json")
         self.assertEqual(r.status_code, 201)
         self.assertEqual(send.call_count, 2)
 
@@ -654,9 +674,7 @@ class IngestViewFullCatalogueTests(TestCase):
 
     def _post(self, **fields):
         payload = {"client": "Router01", **fields}
-        return self.client.post(
-            "/ingest/weather", payload, format="json"
-        )
+        return self.client.post("/ingest/weather", payload, format="json")
 
     def test_soil_keys_persist_per_model(self):
         r = self._post(
@@ -717,8 +735,11 @@ class IngestViewFullCatalogueTests(TestCase):
 
     def test_alert_on_soil_key_fires_through_ingest(self):
         _alert(
-            self.user, zone=self.zone, sensor_key="soil_moisture_low",
-            condition_nbr=Decimal("20.00"), condition="<",
+            self.user,
+            zone=self.zone,
+            sensor_key="soil_moisture_low",
+            condition_nbr=Decimal("20.00"),
+            condition="<",
             name="Soil too dry",
         )
         with patch("agriBack.tasks.send_alert_email.delay") as send:
@@ -738,8 +759,11 @@ class SendAlertEmailTaskTests(TestCase):
         self.user = _user()
         self.zone = _zone(self.user)
         self.alert = _alert(
-            self.user, zone=self.zone, condition_nbr=Decimal("20.00"),
-            sensor_key="wind_speed", name="High wind",
+            self.user,
+            zone=self.zone,
+            condition_nbr=Decimal("20.00"),
+            sensor_key="wind_speed",
+            name="High wind",
         )
 
     def _call(self, alert_id=None):
