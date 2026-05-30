@@ -22,15 +22,15 @@ from __future__ import annotations
 from ninja import NinjaAPI
 
 from agriapi.api.auth import JwtAuth
-from analytics.router_admin import router as analytics_admin_router
-from analytics.router_alerts import router as alerts_router
-from analytics.router_manager_affirmation import (
+from apps.irrigation.router_admin import router as analytics_admin_router
+from apps.alerts.router_alerts import router as alerts_router
+from apps.irrigation.router_manager_affirmation import (
     router as manager_affirmation_router,
 )
-from analytics.router_notifications import router as notifications_router
-from analytics.router_reads import router as analytics_reads_router
-from analytics.router_sensors import router as sensors_router
-from analytics.router_weather_ingest import router as weather_ingest_router
+from apps.alerts.router_notifications import router as notifications_router
+from apps.irrigation.router_reads import router as analytics_reads_router
+from apps.sensors.router_sensors import router as sensors_router
+from apps.sensors.router_weather_ingest import router as weather_ingest_router
 from apps.bivocom.router import router as bivocom_router
 from apps.lorawan.chirpstack.router import router as chirpstack_router
 from apps.users.router import router as users_auth_router

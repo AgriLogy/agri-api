@@ -38,7 +38,7 @@ from rest_framework_simplejwt.tokens import AccessToken
 
 from unittest.mock import patch
 
-from analytics.alerts import (
+from apps.alerts.engine import (
     EQUALITY_TOLERANCE,
     SENSOR_KEY_REGISTRY,
     assert_keys_resolve,

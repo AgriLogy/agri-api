@@ -84,7 +84,7 @@ def send_alert_email(*, alert_id: int, value: float, timestamp_iso: str) -> dict
     alert is now inactive or has been deleted, and bails out cleanly if the
     owner has no email address.
     """
-    from analytics.alerts import SENSOR_KEY_REGISTRY
+    from apps.alerts.engine import SENSOR_KEY_REGISTRY
     from analytics.models import Alert
 
     try:
