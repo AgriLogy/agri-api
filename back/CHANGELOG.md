@@ -1,6 +1,63 @@
 # CHANGELOG
 
 
+## v1.31.2 (2026-05-30)
+
+### Bug Fixes
+
+- **et0**: Make compute_et0_vpd_hourly idempotent per (zone, timestamp)
+  ([#144](https://github.com/AgriLogy/agri-api/pull/144),
+  [`5f2261c`](https://github.com/AgriLogy/agri-api/commit/5f2261c67b36bc2b665d7c4d9bc6688dfa7f5fb6))
+
+Closes #16.
+
+### Continuous Integration
+
+- Run the full src/ test suite so e2e + ingest tests gate merges
+  ([#142](https://github.com/AgriLogy/agri-api/pull/142),
+  [`d5efc3f`](https://github.com/AgriLogy/agri-api/commit/d5efc3f84adcd6fa8e89c5968f4304f50fc596fd))
+
+Closes #141.
+
+### Refactoring
+
+- **analytics**: Relocate routers + alert engine into domain apps
+  ([#138](https://github.com/AgriLogy/agri-api/pull/138),
+  [`d2b25ec`](https://github.com/AgriLogy/agri-api/commit/d2b25ec889373ea6576012f25433985ef97512c6))
+
+Closes #137.
+
+- **analytics**: Split the god-app into apps/irrigation + apps/alerts
+  ([#134](https://github.com/AgriLogy/agri-api/pull/134),
+  [`086e18c`](https://github.com/AgriLogy/agri-api/commit/086e18c1ff33cb385b335a8dad12de539374ddbd))
+
+Closes #133.
+
+- **et0**: Thin the Celery ET0 adapter onto agri-core's fetch-and-compute
+  ([#132](https://github.com/AgriLogy/agri-api/pull/132),
+  [`d852d3e`](https://github.com/AgriLogy/agri-api/commit/d852d3e4487d7f8fc6e17281113aed3a0536247b))
+
+Closes #131.
+
+- **layout**: Adopt src/ layout — move agriapi/apps/analytics under back/src/
+  ([#140](https://github.com/AgriLogy/agri-api/pull/140),
+  [`3f328da`](https://github.com/AgriLogy/agri-api/commit/3f328da3fde8c499b377ddaf402c056c772df569))
+
+Closes #139.
+
+- **project**: Rename the Django project package agriBack → agriapi
+  ([#136](https://github.com/AgriLogy/agri-api/pull/136),
+  [`ca0586a`](https://github.com/AgriLogy/agri-api/commit/ca0586a840dd0c3c30b1f9e996eb49d2635511b0))
+
+Closes #135.
+
+- **users**: Drop the dead legacy DRF auth serializers
+  ([#143](https://github.com/AgriLogy/agri-api/pull/143),
+  [`036d442`](https://github.com/AgriLogy/agri-api/commit/036d44249271d1c4589ff2179f572284998afd7f))
+
+Closes #23.
+
+
 ## v1.31.1 (2026-05-30)
 
 ### Bug Fixes
