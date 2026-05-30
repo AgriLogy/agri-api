@@ -28,10 +28,9 @@ Engineering notes:
 
 from __future__ import annotations
 
-from datetime import datetime, time, timedelta
+from datetime import datetime
 from typing import Any
 
-from django.db.models import Avg
 from django.utils import timezone
 
 # Re-exports from agri-core. All the FAO-56 constants, hourly math, the
@@ -108,68 +107,25 @@ from agri.core.agronomy import field_snapshot as _core_field_snapshot
 # the re-export block above.
 
 
-# ----- 3. Sensor aggregation helpers (DB I/O) -------------------------------
-
-
-def _avg(model, *, zone, start, end) -> float | None:
-    """Mean of model.value over [start, end) for the given zone, or None."""
-    return model.objects.filter(
-        zone=zone, timestamp__gte=start, timestamp__lt=end
-    ).aggregate(v=Avg("value"))["v"]
-
-
-def _latest(model, *, zone, **extra):
-    """Most recent row for zone (or with extra filters), or None."""
-    qs = model.objects.filter(zone=zone, **extra).order_by("-timestamp")
-    return qs.first()
-
-
-def _day_bounds_local(now: datetime) -> tuple[datetime, datetime]:
-    """Today 00:00 and 24:00 in the active timezone, returned as aware UTC."""
-    tz = timezone.get_current_timezone()
-    local_now = now.astimezone(tz)
-    start_local = datetime.combine(local_now.date(), time.min, tzinfo=tz)
-    end_local = start_local + timedelta(days=1)
-    return (start_local.astimezone(timezone.utc), end_local.astimezone(timezone.utc))
-
-
 # ----- 4. High-level entry points ------------------------------------------
 
 
 def compute_et0_for_zone(zone, *, end: datetime | None = None) -> ZoneEt0 | None:
-    """Thin Django-side adapter around ``agri.core.agronomy.compute_zone_et0``.
+    """Thin adapter: delegate to agri-core's DB-backed ``compute_et0_for_zone``.
 
-    Fetches the previous full hour of sensor averages for the zone via
-    the Django ORM, packs them into an ``Et0Inputs`` DTO, and calls the
-    agri-core handler. Returns ``None`` if any required input is missing
-    for the slot. The persistence layer (writing the Et0Calculated /
-    VPDWeather rows) still lives in ``agriBack.tasks``.
+    Opens an ``agri.core.database`` SQLAlchemy session (its own engine on the
+    same Postgres, via ``AGRI_DB_URL``) and lets agri-core fetch the previous
+    full hour of weather averages for the zone and run the FAO-56 math. The
+    Django-ORM fetch that used to live here now lives in agri-core. Returns
+    ``None`` when a required input is missing for the slot. The persistence
+    layer (writing Et0Calculated / VPDWeather rows) still lives in
+    ``agriBack.tasks``.
     """
-    from analytics.models import (
-        HumidityWeather,
-        PressureWeather,
-        SolarRadiation,
-        TemperatureWeather,
-        WindSpeed,
-    )
+    from agri.core.agronomy import compute_et0_for_zone as _core_compute_et0
+    from agri.core.database import session_scope
 
-    end = (end or timezone.now()).replace(minute=0, second=0, microsecond=0)
-    start = end - timedelta(hours=1)
-
-    return compute_zone_et0(
-        Et0Inputs(
-            zone_id=zone.id,
-            user_id=zone.user_id,
-            timestamp=end,
-            temp_c=_avg(TemperatureWeather, zone=zone, start=start, end=end),
-            rh_pct=_avg(HumidityWeather, zone=zone, start=start, end=end),
-            wind_ms=_avg(WindSpeed, zone=zone, start=start, end=end),
-            rs_wm2=_avg(SolarRadiation, zone=zone, start=start, end=end),
-            pressure_hpa=_avg(PressureWeather, zone=zone, start=start, end=end),
-            latitude=getattr(zone.user, "latitude", None),
-            longitude=getattr(zone.user, "longitude", None),
-        )
-    )
+    with session_scope() as session:
+        return _core_compute_et0(session, zone.id, end=end)
 
 
 def field_snapshot(
