@@ -12,6 +12,10 @@ POSTGRES_PASSWORD=
 POSTGRES_HOST=aws-0-eu-central-1.pooler.supabase.com
 POSTGRES_PORT=5432
 CELERY_SCHEDULE_MODE=
+# Set to True ONLY for local dev without hardware — runs the random sensor
+# simulator. Leave blank/False on any server so graphs/ET0/notifications use
+# REAL ingested data (Bivocom / LoRaWAN).
+ENABLE_SENSOR_SIMULATOR=
 
 # ----- Email (notifications) ---------------------------------------------------
 # DEFAULT_FROM_EMAIL is what shows up in the From header.

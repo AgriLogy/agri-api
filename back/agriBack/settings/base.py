@@ -195,35 +195,42 @@ CELERY_IMPORTS = ("agriBack.tasks",)
 
 SCHEDULE_MODE = os.getenv("CELERY_SCHEDULE_MODE", "test").lower()
 
+# The sensor SIMULATOR fabricates random readings — a local-dev aid for working
+# without hardware. It is OFF by default and must be explicitly opted into
+# (ENABLE_SENSOR_SIMULATOR=True), so the deployed server NEVER fabricates data:
+# graphs / ET0 / notifications run on the REAL ingested readings from the
+# Bivocom / LoRaWAN endpoints. (It previously ran every 2-15 min in every
+# environment, polluting the sensor tables with dummy data.)
+ENABLE_SENSOR_SIMULATOR = os.getenv("ENABLE_SENSOR_SIMULATOR", "False").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+
+# SCHEDULE_MODE only controls cadence (fast in dev, hourly in prod).
 if SCHEDULE_MODE == "test":
-    CELERY_BEAT_SCHEDULE = {
-        "simulate_sensors_every_2min": {
-            "task": "agriBack.tasks.simulate_sensor_ingest",
-            "schedule": crontab(minute="*/2"),
-        },
-        "compute_et0_every_4min": {
-            "task": "agriBack.tasks.compute_et0_vpd_hourly",
-            "schedule": crontab(minute="*/4"),
-        },
-        "email_ping_every_4min": {
-            "task": "agriBack.tasks.send_periodic_notifications",
-            "schedule": crontab(minute="*/4"),
-        },
-    }
+    _et0_schedule = crontab(minute="*/4")
+    _email_schedule = crontab(minute="*/4")
+    _sim_schedule = crontab(minute="*/2")
 else:
-    CELERY_BEAT_SCHEDULE = {
-        "simulate_sensors_every_15min": {
-            "task": "agriBack.tasks.simulate_sensor_ingest",
-            "schedule": crontab(minute="*/15"),
-        },
-        "compute_et0_every_hour": {
-            "task": "agriBack.tasks.compute_et0_vpd_hourly",
-            "schedule": crontab(minute=0),
-        },
-        "email_ping_every_hour": {
-            "task": "agriBack.tasks.send_periodic_notifications",
-            "schedule": crontab(minute=0),
-        },
+    _et0_schedule = crontab(minute=0)
+    _email_schedule = crontab(minute=0)
+    _sim_schedule = crontab(minute="*/15")
+
+CELERY_BEAT_SCHEDULE = {
+    "compute_et0": {
+        "task": "agriBack.tasks.compute_et0_vpd_hourly",
+        "schedule": _et0_schedule,
+    },
+    "email_ping": {
+        "task": "agriBack.tasks.send_periodic_notifications",
+        "schedule": _email_schedule,
+    },
+}
+if ENABLE_SENSOR_SIMULATOR:
+    CELERY_BEAT_SCHEDULE["simulate_sensors"] = {
+        "task": "agriBack.tasks.simulate_sensor_ingest",
+        "schedule": _sim_schedule,
     }
 
 # -----------------------------------------------------------------------------
