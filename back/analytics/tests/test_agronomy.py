@@ -5,7 +5,9 @@ Cover both the pure math (no DB) and the high-level entry points
 (field_snapshot, compute_et0_for_zone) against synthetic sensor rows.
 """
 
+import datetime as dt
 from datetime import timedelta
+from unittest import mock
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
@@ -333,6 +335,16 @@ class ComputeEt0ForZoneTests(TestCase):
 class FieldSnapshotTests(TestCase):
     def setUp(self):
         self.user = _user()
+        # Freeze "now" to a stable mid-day. field_snapshot derives the local
+        # "today" window from now; the et0 rows seeded at now and now-1h must
+        # both land in today regardless of when the suite runs. Without this
+        # the test flaked near local midnight (et0_today_mm dropped to 0.6).
+        self._now_patch = mock.patch(
+            "django.utils.timezone.now",
+            return_value=dt.datetime(2026, 5, 15, 12, 0, tzinfo=dt.timezone.utc),
+        )
+        self._now_patch.start()
+        self.addCleanup(self._now_patch.stop)
         self.now = timezone.now()
 
     def test_returns_placeholder_dict_when_no_zone(self):
@@ -470,9 +482,7 @@ class WaterBalanceMathTests(TestCase):
     def test_etc_with_kc_and_permeability_loss(self):
         # ETc = ET0·Kc + loss_due_to_permeability — doc § 4.1
         self.assertAlmostEqual(etc_mm(5.0, 1.2), 6.0)
-        self.assertAlmostEqual(
-            etc_mm(5.0, 1.2, permeability_loss_mm=0.5), 6.5
-        )
+        self.assertAlmostEqual(etc_mm(5.0, 1.2, permeability_loss_mm=0.5), 6.5)
 
     def test_update_daily_depletion_basic(self):
         # Dr,i = max(0, Dr,(i-1) + ETc - Pe - In)
@@ -511,7 +521,9 @@ class WaterBalanceMathTests(TestCase):
         # typical p ≈ 0.5 the agronomist used.
         for stage, prof in CROP_STAGE_PROFILES.items():
             self.assertAlmostEqual(
-                prof["raw_mm"], 0.5 * prof["taw_mm"], places=2,
+                prof["raw_mm"],
+                0.5 * prof["taw_mm"],
+                places=2,
                 msg=f"stage={stage}",
             )
 
@@ -610,9 +622,7 @@ class IrrigationDecisionDrTests(TestCase):
         self.assertTrue(d.irrigate)
         self.assertIsNotNone(d.morning_volume_m3)
         self.assertIsNotNone(d.evening_volume_m3)
-        self.assertAlmostEqual(
-            d.morning_volume_m3 + d.evening_volume_m3, d.volume_m3
-        )
+        self.assertAlmostEqual(d.morning_volume_m3 + d.evening_volume_m3, d.volume_m3)
 
 
 # ---------------------------------------------------------------------------
