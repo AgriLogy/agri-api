@@ -293,7 +293,13 @@ class AgronomistReviewCorrectionsTests(TestCase):
 # ---------------------------------------------------------------------------
 
 
-class ComputeEt0ForZoneTests(TestCase):
+@_REQUIRES_PG
+class ComputeEt0ForZoneTests(TransactionTestCase):
+    # compute_et0_for_zone now delegates to agri-core's DB-backed handler,
+    # which reads through its own SQLAlchemy connection. So the seeded rows
+    # must be COMMITTED (TransactionTestCase) on a shared Postgres for that
+    # separate connection to see them — same dual-ORM contract as
+    # FieldSnapshotTests below.
     def setUp(self):
         self.user = _user()
         self.zone = _zone(self.user)
