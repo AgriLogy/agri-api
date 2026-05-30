@@ -1,4 +1,5 @@
 """Development settings — local docker stack, Supabase dev Postgres, console email."""
+
 from __future__ import annotations
 
 import os
@@ -42,6 +43,9 @@ else:
             "NAME": BASE_DIR / "db.sqlite3",
         }
     }
+
+# Let agri-core's DB-backed handlers reach the same Postgres (no-op on sqlite).
+export_agri_db_url(DATABASES)
 
 # -----------------------------------------------------------------------------
 # CORS / CSRF
