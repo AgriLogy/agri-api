@@ -149,42 +149,45 @@ def compute_et0_vpd_hourly():
     """
     For each Zone, ask agriapi.agronomy for one hour of ET0 + VPD and
     persist the result. All physics lives in that module.
-    """
-    zones = Zone.objects.all().select_related("user")
-    et0_records: list[Et0Calculated] = []
-    vpd_records: list[VPDWeather] = []
 
+    Idempotent per ``(zone, timestamp)`` (#16). The rows are timestamped at the
+    end of the closed hour window, but the task fires every few minutes in test
+    mode — and can be retried or double-fire in prod — so the same hour bucket
+    would otherwise accumulate duplicate rows (a dev run once produced 1358
+    Et0Calculated rows for a handful of real hour buckets). ``update_or_create``
+    keeps exactly one row per ``(zone, timestamp)`` and refreshes its value, so
+    the rows table stays honest, the dashboard stops drawing duplicate bars at
+    the same x-position, and "daily ET0 = sum of 24 hourly" is deterministic.
+
+    The agri-core reads happen first (each opens its own SQLAlchemy session);
+    only the upserts run inside the Django transaction, keeping it short. A
+    DB-level UniqueConstraint on ``(zone, timestamp)`` in agri-db would add
+    defense-in-depth, but this task is the sole writer of these tables.
+    """
+    zones = list(Zone.objects.all().select_related("user"))
+    results = []
     for z in zones:
         result = compute_et0_for_zone(z)
-        if result is None:
-            continue
-        et0_records.append(
-            Et0Calculated(
-                zone=z,
-                user=z.user,
-                value=result.et0_mm_per_h,
-                timestamp=result.timestamp,
-            )
-        )
-        vpd_records.append(
-            VPDWeather(
-                zone=z,
-                user=z.user,
-                value=result.vpd_kpa,
-                timestamp=result.timestamp,
-            )
-        )
+        if result is not None:
+            results.append((z, result))
 
     with transaction.atomic():
-        if et0_records:
-            Et0Calculated.objects.bulk_create(et0_records, batch_size=500)
-        if vpd_records:
-            VPDWeather.objects.bulk_create(vpd_records, batch_size=500)
+        for z, result in results:
+            Et0Calculated.objects.update_or_create(
+                zone=z,
+                timestamp=result.timestamp,
+                defaults={"user": z.user, "value": result.et0_mm_per_h},
+            )
+            VPDWeather.objects.update_or_create(
+                zone=z,
+                timestamp=result.timestamp,
+                defaults={"user": z.user, "value": result.vpd_kpa},
+            )
 
     return {
         "zones_processed": len(zones),
-        "et0_rows": len(et0_records),
-        "vpd_rows": len(vpd_records),
+        "et0_rows": len(results),
+        "vpd_rows": len(results),
     }
 
 
