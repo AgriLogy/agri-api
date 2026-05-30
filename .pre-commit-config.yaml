@@ -39,7 +39,7 @@ repos:
         stages: [pre-push]
       - id: pytest
         name: pytest (apps/users + analytics)
-        entry: bash -c 'cd back && DJANGO_SETTINGS_MODULE=agriapi.settings SECRET_KEY=ci DEBUG=True ALLOWED_HOSTS="*" USE_POSTGRES=False EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend" uv run pytest apps/users/ analytics/ -q'
+        entry: bash -c 'cd back && DJANGO_SETTINGS_MODULE=agriapi.settings SECRET_KEY=ci DEBUG=True ALLOWED_HOSTS="*" USE_POSTGRES=False EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend" uv run pytest src/apps/users/ src/analytics/ -q'
         language: system
         pass_filenames: false
         stages: [pre-push]

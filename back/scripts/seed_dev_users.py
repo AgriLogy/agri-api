@@ -16,6 +16,12 @@ import sys
 
 import django
 
+# src/ layout: make back/src/ importable when run outside the container
+# (the Docker image sets PYTHONPATH=/code/src; this covers local runs).
+sys.path.insert(
+    0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src")
+)
+
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "agriapi.settings")
 django.setup()
 

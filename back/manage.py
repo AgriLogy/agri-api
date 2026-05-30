@@ -4,6 +4,12 @@
 import os
 import sys
 
+# src/ layout: the importable packages (agriapi, apps, analytics) live under
+# back/src/. Put it on sys.path so `python manage.py ...` works from back/
+# without requiring PYTHONPATH (the Docker image also sets PYTHONPATH=/code/src
+# for the celery/script entry points that don't go through manage.py).
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "src"))
+
 
 def main():
     """Run administrative tasks."""
