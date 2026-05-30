@@ -5,7 +5,12 @@ ENV PYTHONUNBUFFERED=1 \
     UV_LINK_MODE=copy \
     UV_PYTHON_DOWNLOADS=never \
     UV_PROJECT_ENVIRONMENT=/opt/venv \
-    PATH=/opt/venv/bin:/root/.local/bin:$PATH
+    PATH=/opt/venv/bin:/root/.local/bin:$PATH \
+    # src/ layout: importable packages (agriapi, apps, analytics) live under
+    # /code/src. Put it on the path so `celery -A agriapi`, the seed scripts,
+    # and any non-manage.py entry point resolve them. manage.py also self-adds
+    # src/ to sys.path, so `python manage.py ...` works regardless.
+    PYTHONPATH=/code/src
 
 WORKDIR /code
 

@@ -9,7 +9,7 @@ float calculate_irrigation(
     float critical_moisture_threshold,
     float zone_area,
     float permeability_loss,
-    float irrigation_efficiency, 
+    float irrigation_efficiency,
     float flow_rate_m3h, // manula input
     float max_water_m3_day, // max li n9dar ns9i f haik zone
     int irrigated_today, // 0 = لم يتم الري, 1 = تم
