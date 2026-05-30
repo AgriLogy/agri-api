@@ -24,7 +24,7 @@ from django.utils import timezone
 from ninja import Router
 from ninja.responses import Response
 
-from analytics.alerts import (
+from apps.alerts.engine import (
     SENSOR_KEY_REGISTRY,
     dispatch_alerts_for_reading,
     get_sensor_model,

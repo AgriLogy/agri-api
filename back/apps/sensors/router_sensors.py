@@ -26,7 +26,7 @@ from ninja import Router, Schema
 from ninja.responses import Response
 
 from agriapi.api.auth import JwtAuth
-from analytics.sensor_registry import SENSOR_MODELS
+from apps.sensors.registry import SENSOR_MODELS
 
 router = Router()
 

@@ -22,7 +22,7 @@ from ninja.responses import Response
 
 from agri.core.alerts import SENSOR_KEY_REGISTRY
 from agriapi.api.auth import JwtAuth
-from analytics.alerts import recent_triggers_for_user, suggest_alert
+from apps.alerts.engine import recent_triggers_for_user, suggest_alert
 from analytics.models import Alert, Zone
 
 router = Router()

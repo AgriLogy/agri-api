@@ -36,7 +36,6 @@ urlpatterns = [
     # path the ninja API doesn't claim.
     path("", v2_api.urls),
     path("admin/", admin.site.urls),
-    path("api/", include("analytics.urls")),
     path("auth/", include("apps.users.urls")),
     # Hardware-family ingest endpoints migrated to django-ninja — served
     # from `v2_api.urls` (mounted at root above) at:
