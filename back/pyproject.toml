@@ -73,6 +73,7 @@ dev = [
     "ruff>=0.7.0",
     "pytest>=8.0.0",
     "pytest-django>=4.8.0",
+    "pytest-cov>=5.0.0",
 ]
 
 [tool.uv]
@@ -119,6 +120,29 @@ python_files = ["test_*.py", "*_test.py", "tests.py"]
 # src/ layout: put back/src on sys.path so agriapi/apps/analytics import during
 # collection (rootdir is back/, so this resolves to back/src).
 pythonpath = ["src"]
+# NB: coverage flags are intentionally NOT in addopts — they're passed only by
+# the CI command (`pytest --cov`). Local / pre-commit runs (which exercise a
+# subset and run without Postgres) must not trip the fail_under gate.
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "*/migrations/*",
+    # Boot / env-specific modules that aren't exercised by the test suite and
+    # shouldn't count against coverage:
+    "src/agriapi/wsgi.py",
+    "src/agriapi/asgi.py",
+    "src/agriapi/settings/prod.py",   # runs only in production
+    "src/agriapi/settings/test.py",   # settings shim
+    "src/agriapi/tests_errors.py",    # not collected (name doesn't match test_*.py)
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+# Coverage gate (#22): CI runs `pytest --cov`, which fails the build below this
+# floor. Current coverage sits above it; ratchet the floor up as it improves.
+fail_under = 85
 
 # ---------------------------------------------------------------------------
 # python-semantic-release (replaces the old JS semantic-release). Consistent

@@ -85,8 +85,11 @@ jobs:
       # lorawan/chirpstack) and the agriapi end-to-end workflow test gate
       # merges too — not just apps/users + analytics. Postgres (service above)
       # lets the dual-ORM handler tests run instead of skipping.
-      - name: Backend tests (pytest)
-        run: uv run pytest src/ -v
+      - name: Backend tests (pytest + coverage gate)
+        # --cov triggers the fail_under=85 floor in pyproject [tool.coverage].
+        # Coverage flags live here (not in addopts) so local/pre-commit subset
+        # runs don't trip the gate.
+        run: uv run pytest src/ --cov --cov-report=term-missing -v
         env:
           DJANGO_SETTINGS_MODULE: agriapi.settings
           SECRET_KEY: ci-placeholder-secret-key
