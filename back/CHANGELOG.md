@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v1.30.0 (2026-05-30)
+
+### Features
+
+- **agronomy**: Wire field_snapshot to agri-core's DB-backed handler
+  ([#126](https://github.com/AgriLogy/agri-api/pull/126),
+  [`05a8b50`](https://github.com/AgriLogy/agri-api/commit/05a8b50601a8325c8200ed71cb47f4cd398a61cd))
+
+Dual-ORM activation, first slice. Closes #125.
+
+
 ## v1.29.4 (2026-05-30)
 
 ### Bug Fixes
