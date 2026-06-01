@@ -4,7 +4,7 @@
 # The first argument selects the role; everything else is forwarded.
 #
 # Roles:
-#   web      Django dev server on :8000 (after running migrations)
+#   web      gunicorn when DJANGO_ENV=prod, else Django dev server, on :8000
 #   worker   Celery worker
 #   beat     Celery beat with the DatabaseScheduler
 #   shell    Drop into bash for debugging
@@ -87,12 +87,23 @@ PY
 case "$ROLE" in
   web)
     wait_for_postgres
-    log "Seeding dev users (idempotent; SEED_DEV_USERS=$SEED_DEV_USERS_DEFAULT)"
-    python scripts/seed_dev_users.py || log "  (user seed skipped or failed; continuing)"
-    log "Backfilling dev sensor data (idempotent; SEED_DEV_DATA=${SEED_DEV_DATA:-true})"
-    python scripts/seed_dev_data.py || log "  (data seed skipped or failed; continuing)"
-    log "Starting Django dev server on :8000"
-    exec python manage.py runserver 0.0.0.0:8000
+    if [[ "$DJANGO_ENV" == "prod" ]]; then
+      # Production: no dev seeders; serve via gunicorn with collected static
+      # (WhiteNoise serves them since DEBUG=False).
+      log "Collecting static files"
+      python manage.py collectstatic --noinput
+      log "Starting gunicorn on :8000 (workers=${GUNICORN_WORKERS:-3})"
+      exec gunicorn agriapi.wsgi:application --bind 0.0.0.0:8000 \
+        --workers "${GUNICORN_WORKERS:-3}" --timeout 60 \
+        --access-logfile - --error-logfile -
+    else
+      log "Seeding dev users (idempotent; SEED_DEV_USERS=$SEED_DEV_USERS_DEFAULT)"
+      python scripts/seed_dev_users.py || log "  (user seed skipped or failed; continuing)"
+      log "Backfilling dev sensor data (idempotent; SEED_DEV_DATA=${SEED_DEV_DATA:-true})"
+      python scripts/seed_dev_data.py || log "  (data seed skipped or failed; continuing)"
+      log "Starting Django dev server on :8000"
+      exec python manage.py runserver 0.0.0.0:8000
+    fi
     ;;
   worker)
     wait_for_postgres

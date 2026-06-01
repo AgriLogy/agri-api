@@ -32,6 +32,8 @@ dependencies = [
     "drf-yasg==1.21.10",
     "et_xmlfile==2.0.0",
     "Faker==35.2.0",
+    "gunicorn==23.0.0",
+    "whitenoise==6.8.2",
     "importlib_resources==6.5.2",
     "inflection==0.5.1",
     "jsonschema==4.23.0",

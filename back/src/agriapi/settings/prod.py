@@ -27,7 +27,9 @@ SECRET_KEY = _required("SECRET_KEY")
 ALLOWED_HOSTS = [h.strip() for h in _required("ALLOWED_HOSTS").split(",") if h.strip()]
 
 # -----------------------------------------------------------------------------
-# Database — Supabase Postgres (loud on missing creds)
+# Database — Postgres (managed e.g. Supabase, or a self-hosted container).
+# loud on missing creds. sslmode is configurable: "require" for managed/TLS
+# endpoints (default), "disable" for a local container without TLS.
 # -----------------------------------------------------------------------------
 DATABASES = {
     "default": {
@@ -37,11 +39,11 @@ DATABASES = {
         "PASSWORD": _required("POSTGRES_PASSWORD"),
         "HOST": _required("POSTGRES_HOST"),
         "PORT": int(os.getenv("POSTGRES_PORT", 5432)),
-        "OPTIONS": {"sslmode": "require"},
+        "OPTIONS": {"sslmode": os.getenv("POSTGRES_SSLMODE", "require")},
     }
 }
 
-# Let agri-core's DB-backed handlers reach the same Supabase Postgres.
+# Let agri-core's DB-backed handlers reach the same Postgres.
 export_agri_db_url(DATABASES)
 
 # -----------------------------------------------------------------------------
