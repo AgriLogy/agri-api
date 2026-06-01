@@ -1,6 +1,43 @@
 # CHANGELOG
 
 
+## v1.32.0 (2026-06-01)
+
+### Continuous Integration
+
+- Add a pytest-cov coverage gate (fail_under=85)
+  ([#145](https://github.com/AgriLogy/agri-api/pull/145),
+  [`854afd5`](https://github.com/AgriLogy/agri-api/commit/854afd5289b68528b1fa523dc534cc3ba001db27))
+
+Closes #22.
+
+### Features
+
+- **prod**: Production-harden agri-api serving (gunicorn + whitenoise)
+  ([#147](https://github.com/AgriLogy/agri-api/pull/147),
+  [`c6a4546`](https://github.com/AgriLogy/agri-api/commit/c6a4546867e30c58cb03441efaa0a1b187ec3de6))
+
+Closes #146
+
+## What Make agri-api production-servable so it can deploy to `back.agrogo-datafarm.com` (the REST
+  backend the post-#70 frontend targets).
+
+- **deps**: add `gunicorn==23.0.0` + `whitenoise==6.8.2` (uv.lock regenerated). -
+  **settings/base.py**: `WhiteNoiseMiddleware` after `SecurityMiddleware`; `STORAGES` →
+  `whitenoise.storage.CompressedStaticFilesStorage`. - **docker-entrypoint.sh** (`web` role): gated
+  on `DJANGO_ENV` — `prod` runs `collectstatic` + `gunicorn agriapi.wsgi:application` (no dev
+  seeders); non-prod unchanged (`runserver` + seeders).
+
+`SECURE_PROXY_SSL_HEADER` is already set in base.py, so this works behind the nginx TLS terminator
+  without a redirect loop.
+
+## Validation - `DJANGO_ENV=dev manage.py check` → no issues. - `collectstatic --dry-run` → 200
+  files via whitenoise storage. - `bash -n docker-entrypoint.sh` → clean.
+
+## Notes Dev workflow unchanged (still `runserver` + seeders). Part of the agri-api deployment plan
+  (Supabase prod DB).
+
+
 ## v1.31.2 (2026-05-30)
 
 ### Bug Fixes
