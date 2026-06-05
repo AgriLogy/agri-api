@@ -55,6 +55,11 @@ class ChirpStackUplink(BaseModel):
     fPort: int | None = None
     fCnt: int | None = None
     time: datetime | None = None
+    data: str | None = Field(
+        default=None,
+        description="Raw uplink payload, base64-encoded (used to decode a "
+        "value the codec doesn't expose yet)",
+    )
     object: dict[str, Any] = Field(
         default_factory=dict,
         description="Codec-decoded sensor payload; shape depends on the device codec",

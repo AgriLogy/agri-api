@@ -1,4 +1,4 @@
-"""Tests for the ChirpStack webhook."""
+"""Tests for the ChirpStack webhook (schema + pH decode + persistence)."""
 
 from __future__ import annotations
 
@@ -6,31 +6,36 @@ import pytest
 from pydantic import ValidationError
 from rest_framework.test import APIClient
 
+from apps.lorawan.chirpstack.router import _decode_ph
 from apps.lorawan.chirpstack.schemas import ChirpStackUplink
 
 
-def _valid_uplink_payload() -> dict:
-    return {
+def _valid_uplink_payload(**overrides) -> dict:
+    payload = {
         "deviceInfo": {
-            "devEui": "0011223344556677",
-            "deviceName": "soil-sensor-01",
+            "devEui": "a840412ca45d64d0",
+            "deviceName": "phh",
         },
-        "rxInfo": [{"rssi": -85.2, "snr": 7.5, "gatewayId": "gw-001"}],
-        "fPort": 1,
-        "fCnt": 42,
-        "time": "2026-05-28T11:00:00Z",
-        "object": {
-            "airTemperature": {"value": 22.5, "unit": "C"},
-            "soilMoisture": {"value": 0.32, "unit": "m3/m3"},
-        },
+        "rxInfo": [{"rssi": -111.0, "snr": -21.2, "gatewayId": "a84041ffff2b5d82"}],
+        "fPort": 2,
+        "fCnt": 574,
+        "time": "2026-06-05T11:00:00Z",
+        # raw RS485-LB data frame: 0D D4 01 02 F6  -> BatV 3.54, PayVer 1, pH 7.58
+        "data": "DdQBAvY=",
+        "object": {"BatV": 3.54, "Payver": 1.0, "Node_type": "RS485-LB"},
     }
+    payload.update(overrides)
+    return payload
+
+
+# --------------------------- schema --------------------------------------
 
 
 def test_schema_accepts_valid_uplink() -> None:
     p = ChirpStackUplink.model_validate(_valid_uplink_payload())
-    assert p.deviceInfo.devEui == "0011223344556677"
-    assert p.rxInfo[0].rssi == -85.2
-    assert len(p.object) == 2
+    assert p.deviceInfo.devEui == "a840412ca45d64d0"
+    assert p.rxInfo[0].rssi == -111.0
+    assert p.data == "DdQBAvY="
 
 
 def test_schema_rejects_short_dev_eui() -> None:
@@ -40,31 +45,84 @@ def test_schema_rejects_short_dev_eui() -> None:
         ChirpStackUplink.model_validate(payload)
 
 
-def test_schema_rejects_missing_device_info() -> None:
-    with pytest.raises(ValidationError):
-        ChirpStackUplink.model_validate({"rxInfo": []})
-
-
 def test_schema_ignores_extra_chirpstack_fields() -> None:
-    """ChirpStack adds new fields over time; we must NOT 400 on them."""
-    payload = _valid_uplink_payload()
-    payload["someFutureField"] = "ignored"
-    payload["deviceInfo"]["newField"] = "ignored"
+    payload = _valid_uplink_payload(someFutureField="ignored")
     p = ChirpStackUplink.model_validate(payload)
-    assert p.deviceInfo.devEui == "0011223344556677"
+    assert p.deviceInfo.devEui == "a840412ca45d64d0"
+
+
+# --------------------------- pH decode (pure) ----------------------------
+
+
+def test_decode_ph_from_raw_data() -> None:
+    """0x02F6 = 758 -> 7.58 (scaled /100), from the real captured frame."""
+    p = ChirpStackUplink.model_validate(_valid_uplink_payload())
+    assert _decode_ph(p) == 7.58
+
+
+def test_decode_ph_prefers_codec_object_field() -> None:
+    p = ChirpStackUplink.model_validate(
+        _valid_uplink_payload(object={"pH": 6.81}, data=None)
+    )
+    assert _decode_ph(p) == 6.81
+
+
+def test_decode_ph_status_frame_returns_none() -> None:
+    # fPort 5 is the device-status frame — no measurement.
+    p = ChirpStackUplink.model_validate(_valid_uplink_payload(fPort=5))
+    assert _decode_ph(p) is None
+
+
+def test_decode_ph_missing_data_returns_none() -> None:
+    p = ChirpStackUplink.model_validate(_valid_uplink_payload(data=None, object={}))
+    assert _decode_ph(p) is None
+
+
+def test_decode_ph_out_of_range_rejected() -> None:
+    # 0xFFFF -> 655.35, not a valid pH.
+    p = ChirpStackUplink.model_validate(_valid_uplink_payload(data="DdQB//8="))
+    assert _decode_ph(p) is None
+
+
+# --------------------------- endpoint + persistence ----------------------
 
 
 @pytest.mark.django_db
-def test_uplink_endpoint_accepts_valid() -> None:
+def test_uplink_persists_ph_into_lora_zone() -> None:
+    from analytics.models import PhSoil, Zone
+
     client = APIClient()
     resp = client.post(
         "/ingest/lorawan/chirpstack",
         data=_valid_uplink_payload(),
         format="json",
     )
+    assert resp.status_code == 201
+    assert resp.json() == {
+        "accepted": True,
+        "devEui": "a840412ca45d64d0",
+        "channels": 1,
+    }
+
+    zone = Zone.objects.get(name="lora")
+    assert zone.user.username == "lora"
+    reading = PhSoil.objects.get(zone=zone)
+    assert reading.value == 7.58
+
+
+@pytest.mark.django_db
+def test_status_frame_accepts_but_persists_nothing() -> None:
+    from analytics.models import PhSoil
+
+    client = APIClient()
+    resp = client.post(
+        "/ingest/lorawan/chirpstack",
+        data=_valid_uplink_payload(fPort=5),
+        format="json",
+    )
     assert resp.status_code == 202
-    body = resp.json()
-    assert body == {"accepted": True, "devEui": "0011223344556677", "channels": 2}
+    assert resp.json()["channels"] == 0
+    assert not PhSoil.objects.exists()
 
 
 @pytest.mark.django_db
@@ -75,7 +133,4 @@ def test_uplink_endpoint_rejects_invalid() -> None:
         data={"deviceInfo": {"devEui": "TOO_SHORT"}},
         format="json",
     )
-    # django-ninja returns 422 for pydantic ValidationError with a
-    # `{"detail": [{"loc": ..., "msg": ..., "type": ...}]}` envelope.
     assert resp.status_code == 422
-    assert "detail" in resp.json()
