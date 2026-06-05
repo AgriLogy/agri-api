@@ -1,6 +1,29 @@
 # CHANGELOG
 
 
+## v1.33.0 (2026-06-05)
+
+### Features
+
+- **lorawan**: Persist ChirpStack RS485-LB pH uplinks into a lora zone
+  ([#149](https://github.com/AgriLogy/agri-api/pull/149),
+  [`a86044e`](https://github.com/AgriLogy/agri-api/commit/a86044eec798941605d94ee8abf2bcea0db3f760))
+
+Closes #148
+
+Completes the ChirpStack v4 webhook (was a Phase-6.5 stub that discarded the payload): - **Decode
+  pH** from the codec `object` if present, else straight from the raw RS485-LB bytes (`bytes[3..4] /
+  100`, e.g. `0x02F6`=758=**7.58** — verified against a real captured frame). Status frames (fPort
+  5) and out-of-range values are accepted (202) but not stored. - **Persist** the reading as a
+  `PhSoil` row under a dedicated, lazily-provisioned `lora` zone (owner = a `lora` user) — grouping
+  every LoRaWAN device under one zone so it shows on the dashboard pH graph, reusing the live
+  weather-ingest write pattern. - **No schema change** (rows only; schema-of-record stays in
+  agri-db).
+
+Adds the raw `data` field to the uplink schema + **11 tests** (decode vectors + endpoint persistence
+  into the `lora` zone). Decoder defaults to **soil** pH; trivial switch to water pH if needed.
+
+
 ## v1.32.0 (2026-06-01)
 
 ### Continuous Integration
