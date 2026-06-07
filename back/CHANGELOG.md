@@ -1,6 +1,31 @@
 # CHANGELOG
 
 
+## v1.34.0 (2026-06-07)
+
+### Features
+
+- **lorawan**: Store full ChirpStack uplinks (battery + all fields)
+  ([#151](https://github.com/AgriLogy/agri-api/pull/151),
+  [`f4501c3`](https://github.com/AgriLogy/agri-api/commit/f4501c389ec59d71fc4af882fe1a5b4d685898fe))
+
+Closes #150
+
+Adds a `LoraUplink` table that captures **every** uplink in full so no device data is dropped: -
+  **battery_v** (BatV on data frames / BAT on status frames) — promoted to its own column as the
+  most operationally-critical metric - pH, RSSI, SNR, fCnt, fPort, frequency - the complete
+  codec-decoded `object` (JSON) + the raw base64 payload
+
+Every frame is now persisted (status/battery-only frames included). The per-metric `PhSoil` write
+  still happens for pH frames, so the dashboard pH graph is unchanged. No agri-api migration — the
+  table is created out-of-band via the schema editor (matching how the analytics tables already
+  work). Adds `txInfo.frequency` to the schema and tests for battery decode + full-record
+  persistence.
+
+(Includes a tiny `chore` commit syncing uv.lock to the released version 1.33.0 — it was drifted on
+  main.)
+
+
 ## v1.33.0 (2026-06-05)
 
 ### Features
