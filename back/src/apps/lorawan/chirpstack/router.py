@@ -26,7 +26,8 @@ from django.utils import timezone
 from ninja import Router
 from ninja.responses import Response
 
-from analytics.models import PhSoil, Zone
+from analytics.models import BatterySensor, PhSoil, SignalSensor, Zone
+from apps.alerts.engine import dispatch_alerts_for_reading
 from apps.lorawan.chirpstack.models import LoraUplink
 from apps.lorawan.chirpstack.schemas import (
     ChirpStackUplink,
@@ -129,6 +130,7 @@ def chirpstack_uplink(request, payload: ChirpStackUplink):
     dev_eui = payload.deviceInfo.devEui
     ph = _decode_ph(payload)
     battery = _decode_battery(payload)
+    rssi = payload.rxInfo[0].rssi if payload.rxInfo else None
     log.info(
         "chirpstack.uplink",
         extra={
@@ -136,25 +138,44 @@ def chirpstack_uplink(request, payload: ChirpStackUplink):
             "fPort": payload.fPort,
             "ph": ph,
             "battery_v": battery,
+            "rssi": rssi,
         },
     )
 
-    # Store the complete uplink (battery, signal, counters, decoded object,
-    # raw payload) for EVERY frame — nothing is dropped.
+    # Store the complete uplink (every field) for EVERY frame — nothing dropped.
     _store_uplink(payload, ph=ph)
 
-    if ph is None:
-        # No graphable measurement on this frame (e.g. status/battery-only).
+    # Per-metric graphable series under the dedicated ``lora`` zone — only the
+    # metrics actually present on this frame: (sensor_key, model, value).
+    readings: list[tuple[str, type, float]] = []
+    if ph is not None:
+        readings.append(("ph_soil", PhSoil, ph))
+    if battery is not None:
+        readings.append(("battery", BatterySensor, battery))
+    if rssi is not None:
+        readings.append(("signal", SignalSensor, round(float(rssi), 1)))
+
+    if not readings:
         body = ChirpStackUplinkResponse(accepted=True, devEui=dev_eui, channels=0)
         return Response(body.model_dump(), status=202)
 
-    # Also write pH to its per-metric table so it shows on the dashboard graph.
     zone = _lora_zone()
-    PhSoil.objects.create(
-        user=zone.user,
-        zone=zone,
-        value=ph,
-        timestamp=timezone.now(),
+    now = timezone.now()
+    for sensor_key, model_cls, value in readings:
+        model_cls.objects.create(user=zone.user, zone=zone, value=value, timestamp=now)
+        # Alert dispatch (e.g. low battery) must never abort the ingest loop.
+        try:
+            dispatch_alerts_for_reading(
+                sensor_key=sensor_key,
+                zone=zone,
+                user=zone.user,
+                value=value,
+                timestamp=now,
+            )
+        except Exception:
+            log.exception("alert dispatch failed for %s in lora zone", sensor_key)
+
+    body = ChirpStackUplinkResponse(
+        accepted=True, devEui=dev_eui, channels=len(readings)
     )
-    body = ChirpStackUplinkResponse(accepted=True, devEui=dev_eui, channels=1)
     return Response(body.model_dump(), status=201)

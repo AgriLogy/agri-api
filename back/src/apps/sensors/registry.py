@@ -21,9 +21,11 @@ from .models import (
     LeafTemperatureSensor,
     MultiDepthSoilMoistureSensor,
     NpkSensor,
+    BatterySensor,
     PhSoil,
     PhWaterSensor,
     PrecipitationRate,
+    SignalSensor,
     PressureWeather,
     SoilConductivitySensor,
     SoilMoistureHigh,
@@ -78,4 +80,6 @@ SENSOR_MODELS = [
     FruitSizeSensor,
     EcSalinitySensor,
     WaterPressureSensor,
+    BatterySensor,
+    SignalSensor,
 ]

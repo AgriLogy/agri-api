@@ -88,8 +88,8 @@ def test_decode_ph_out_of_range_rejected() -> None:
 
 
 @pytest.mark.django_db
-def test_uplink_persists_ph_into_lora_zone() -> None:
-    from analytics.models import PhSoil, Zone
+def test_uplink_persists_metrics_into_lora_zone() -> None:
+    from analytics.models import BatterySensor, PhSoil, SignalSensor, Zone
 
     client = APIClient()
     resp = client.post(
@@ -98,16 +98,18 @@ def test_uplink_persists_ph_into_lora_zone() -> None:
         format="json",
     )
     assert resp.status_code == 201
+    # pH + battery + signal all present on this frame.
     assert resp.json() == {
         "accepted": True,
         "devEui": "a840412ca45d64d0",
-        "channels": 1,
+        "channels": 3,
     }
 
     zone = Zone.objects.get(name="lora")
     assert zone.user.username == "lora"
-    reading = PhSoil.objects.get(zone=zone)
-    assert reading.value == 7.58
+    assert PhSoil.objects.get(zone=zone).value == 7.58
+    assert BatterySensor.objects.get(zone=zone).value == 3.54
+    assert SignalSensor.objects.get(zone=zone).value == -111.0
 
 
 def test_decode_battery_from_data_frame() -> None:
@@ -144,8 +146,8 @@ def test_uplink_stores_full_record() -> None:
 
 
 @pytest.mark.django_db
-def test_status_frame_stored_but_no_ph_graph() -> None:
-    from analytics.models import PhSoil
+def test_status_frame_stores_battery_signal_but_no_ph() -> None:
+    from analytics.models import BatterySensor, PhSoil, SignalSensor
     from apps.lorawan.chirpstack.models import LoraUplink
 
     client = APIClient()
@@ -156,11 +158,13 @@ def test_status_frame_stored_but_no_ph_graph() -> None:
         ),
         format="json",
     )
-    assert resp.status_code == 202
-    assert resp.json()["channels"] == 0
-    # No graphable pH reading…
+    # No pH on a status frame, but battery + signal are still graphed.
+    assert resp.status_code == 201
+    assert resp.json()["channels"] == 2
     assert not PhSoil.objects.exists()
-    # …but the full uplink (incl. battery) is still captured.
+    assert BatterySensor.objects.first().value == 3.48
+    assert SignalSensor.objects.first().value == -111.0
+    # …and the full uplink is captured too.
     row = LoraUplink.objects.get(dev_eui="a840412ca45d64d0")
     assert row.battery_v == 3.48
     assert row.ph is None
