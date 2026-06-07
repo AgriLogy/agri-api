@@ -386,6 +386,52 @@ class PhSoil(_SensorBase):
         return ["pH"]
 
 
+class BatterySensor(_SensorBase):
+    """Device battery voltage (V) — reported by LoRaWAN nodes."""
+
+    zone = models.ForeignKey(
+        "analytics.Zone", on_delete=models.CASCADE, related_name="battery"
+    )
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="battery_per_user"
+    )
+    value = models.FloatField(
+        null=True, blank=True, help_text="Device battery voltage in volts."
+    )
+    timestamp = models.DateTimeField()
+
+    @property
+    def default_unit(self) -> str:
+        return "V"
+
+    @property
+    def available_units(self) -> List[str]:
+        return ["V"]
+
+
+class SignalSensor(_SensorBase):
+    """Device radio signal strength, RSSI (dBm) — LoRaWAN nodes + Bivocom."""
+
+    zone = models.ForeignKey(
+        "analytics.Zone", on_delete=models.CASCADE, related_name="signal"
+    )
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="signal_per_user"
+    )
+    value = models.FloatField(
+        null=True, blank=True, help_text="Radio signal strength (RSSI) in dBm."
+    )
+    timestamp = models.DateTimeField()
+
+    @property
+    def default_unit(self) -> str:
+        return "dBm"
+
+    @property
+    def available_units(self) -> List[str]:
+        return ["dBm"]
+
+
 class SoilTemperatureLow(_SensorBase):
     zone = models.ForeignKey(
         "analytics.Zone", on_delete=models.CASCADE, related_name="soil_temperature_low"
