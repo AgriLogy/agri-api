@@ -1,6 +1,31 @@
 # CHANGELOG
 
 
+## v1.35.0 (2026-06-07)
+
+### Features
+
+- **lorawan**: Graph battery + signal as per-zone metrics
+  ([#153](https://github.com/AgriLogy/agri-api/pull/153),
+  [`0d8d6f8`](https://github.com/AgriLogy/agri-api/commit/0d8d6f8b1ed5061d086c0aa188d9f1b49eff2e22))
+
+Closes #152
+
+Promotes **battery** (V) and **signal/RSSI** (dBm) to first-class per-zone sensor metrics — the
+  shared dashboard renders them for LoRa *or* Bivocom whenever a device reports them (no per-device
+  branching).
+
+- Django `BatterySensor`/`SignalSensor` models + auto-registered `/api/sensors/battery`,`/signal`
+  read routes (via `SENSOR_MODELS`) - ChirpStack ingest writes **pH + battery + signal** each uplink
+  and dispatches alerts per metric → enables the **low-battery alert** - agri-core pin → `0.10.0`
+  (battery/signal registry keys, LESS_THAN condition) → transitively agri-db `0.2.0`
+
+**Note on the migration:** the analytics app's *test* DB is migration-built, so a Django migration
+  (`0060`) is required for the new tables; the **agri-db Alembic migration remains the
+  schema-of-record**, and prod tables are created out-of-band (Django schema editor) like the
+  existing analytics tables. Completes the cascade: agri-db ✓ → agri-core ✓ → **agri-api**.
+
+
 ## v1.34.0 (2026-06-07)
 
 ### Features
