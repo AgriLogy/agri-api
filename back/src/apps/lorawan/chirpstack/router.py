@@ -27,6 +27,7 @@ from ninja import Router
 from ninja.responses import Response
 
 from analytics.models import PhSoil, Zone
+from apps.lorawan.chirpstack.models import LoraUplink
 from apps.lorawan.chirpstack.schemas import (
     ChirpStackUplink,
     ChirpStackUplinkResponse,
@@ -72,6 +73,35 @@ def _decode_ph(payload: ChirpStackUplink) -> float | None:
     return round(ph, 2) if 0.0 <= ph <= 14.0 else None
 
 
+def _decode_battery(payload: ChirpStackUplink) -> float | None:
+    """Battery voltage — ``BatV`` on data frames, ``BAT`` on status frames."""
+    obj = payload.object or {}
+    for key in ("BatV", "BAT", "battery", "batV"):
+        value = obj.get(key)
+        if isinstance(value, (int, float)) and 0.0 < float(value) < 20.0:
+            return round(float(value), 3)
+    return None
+
+
+def _store_uplink(payload: ChirpStackUplink, *, ph: float | None) -> None:
+    """Persist the complete uplink (every field we got) — append-only."""
+    rx = payload.rxInfo[0] if payload.rxInfo else None
+    LoraUplink.objects.create(
+        dev_eui=payload.deviceInfo.devEui,
+        device_name=payload.deviceInfo.deviceName or "",
+        received_at=timezone.now(),
+        f_cnt=payload.fCnt,
+        f_port=payload.fPort,
+        rssi=rx.rssi if rx else None,
+        snr=rx.snr if rx else None,
+        frequency=payload.txInfo.frequency if payload.txInfo else None,
+        battery_v=_decode_battery(payload),
+        ph=ph,
+        decoded=payload.object or {},
+        raw_b64=payload.data or "",
+    )
+
+
 def _lora_zone() -> Zone:
     """Resolve (and lazily provision) the dedicated ``lora`` zone."""
     user, _ = CustomUser.objects.get_or_create(
@@ -98,16 +128,27 @@ def _lora_zone() -> Zone:
 def chirpstack_uplink(request, payload: ChirpStackUplink):
     dev_eui = payload.deviceInfo.devEui
     ph = _decode_ph(payload)
+    battery = _decode_battery(payload)
     log.info(
         "chirpstack.uplink",
-        extra={"dev_eui": dev_eui, "fPort": payload.fPort, "ph": ph},
+        extra={
+            "dev_eui": dev_eui,
+            "fPort": payload.fPort,
+            "ph": ph,
+            "battery_v": battery,
+        },
     )
 
+    # Store the complete uplink (battery, signal, counters, decoded object,
+    # raw payload) for EVERY frame — nothing is dropped.
+    _store_uplink(payload, ph=ph)
+
     if ph is None:
-        # Status / no-measurement frame — accept but persist nothing.
+        # No graphable measurement on this frame (e.g. status/battery-only).
         body = ChirpStackUplinkResponse(accepted=True, devEui=dev_eui, channels=0)
         return Response(body.model_dump(), status=202)
 
+    # Also write pH to its per-metric table so it shows on the dashboard graph.
     zone = _lora_zone()
     PhSoil.objects.create(
         user=zone.user,

@@ -45,6 +45,14 @@ class ChirpStackRxInfo(BaseModel):
     gatewayId: str | None = None
 
 
+class ChirpStackTxInfo(BaseModel):
+    """Radio transmission info — the frequency the device transmitted on."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    frequency: int | None = Field(default=None, description="Uplink frequency in Hz")
+
+
 class ChirpStackUplink(BaseModel):
     """ChirpStack v4 HTTP-integration uplink event (subset)."""
 
@@ -52,6 +60,7 @@ class ChirpStackUplink(BaseModel):
 
     deviceInfo: ChirpStackDeviceInfo
     rxInfo: list[ChirpStackRxInfo] = Field(default_factory=list)
+    txInfo: ChirpStackTxInfo | None = None
     fPort: int | None = None
     fCnt: int | None = None
     time: datetime | None = None

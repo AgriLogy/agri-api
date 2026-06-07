@@ -6,7 +6,7 @@ import pytest
 from pydantic import ValidationError
 from rest_framework.test import APIClient
 
-from apps.lorawan.chirpstack.router import _decode_ph
+from apps.lorawan.chirpstack.router import _decode_battery, _decode_ph
 from apps.lorawan.chirpstack.schemas import ChirpStackUplink
 
 
@@ -110,19 +110,60 @@ def test_uplink_persists_ph_into_lora_zone() -> None:
     assert reading.value == 7.58
 
 
+def test_decode_battery_from_data_frame() -> None:
+    p = ChirpStackUplink.model_validate(_valid_uplink_payload())
+    assert _decode_battery(p) == 3.54
+
+
+def test_decode_battery_from_status_frame() -> None:
+    # fPort 5 status frame reports battery as "BAT".
+    p = ChirpStackUplink.model_validate(
+        _valid_uplink_payload(fPort=5, object={"BAT": 3.48, "SENSOR_MODEL": "RS485-LB"})
+    )
+    assert _decode_battery(p) == 3.48
+
+
 @pytest.mark.django_db
-def test_status_frame_accepts_but_persists_nothing() -> None:
+def test_uplink_stores_full_record() -> None:
+    from apps.lorawan.chirpstack.models import LoraUplink
+
+    payload = _valid_uplink_payload(txInfo={"frequency": 869300000})
+    client = APIClient()
+    resp = client.post("/ingest/lorawan/chirpstack", data=payload, format="json")
+    assert resp.status_code == 201
+
+    row = LoraUplink.objects.get(dev_eui="a840412ca45d64d0")
+    assert row.battery_v == 3.54
+    assert row.ph == 7.58
+    assert row.f_cnt == 574
+    assert row.f_port == 2
+    assert row.rssi == -111.0
+    assert row.frequency == 869300000
+    assert row.raw_b64 == "DdQBAvY="
+    assert row.decoded["Node_type"] == "RS485-LB"
+
+
+@pytest.mark.django_db
+def test_status_frame_stored_but_no_ph_graph() -> None:
     from analytics.models import PhSoil
+    from apps.lorawan.chirpstack.models import LoraUplink
 
     client = APIClient()
     resp = client.post(
         "/ingest/lorawan/chirpstack",
-        data=_valid_uplink_payload(fPort=5),
+        data=_valid_uplink_payload(
+            fPort=5, object={"BAT": 3.48, "SENSOR_MODEL": "RS485-LB"}, data=None
+        ),
         format="json",
     )
     assert resp.status_code == 202
     assert resp.json()["channels"] == 0
+    # No graphable pH reading…
     assert not PhSoil.objects.exists()
+    # …but the full uplink (incl. battery) is still captured.
+    row = LoraUplink.objects.get(dev_eui="a840412ca45d64d0")
+    assert row.battery_v == 3.48
+    assert row.ph is None
 
 
 @pytest.mark.django_db
