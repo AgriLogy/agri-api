@@ -20,14 +20,13 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from django.db.models import Avg, CharField, FloatField, Max
-from django.db.models.functions import TruncHour
 from django.forms.models import model_to_dict
 from django.utils.dateparse import parse_date
 from ninja import Router, Schema
 from ninja.responses import Response
 
 from agriapi.api.auth import JwtAuth
+from apps.sensors import engine
 from apps.sensors.registry import SENSOR_MODELS
 
 router = Router()
@@ -45,76 +44,6 @@ def _serialize_reading(obj) -> dict[str, Any]:
     d["default_unit"] = getattr(obj, "default_unit", None)
     d["available_units"] = getattr(obj, "available_units", None)
     return d
-
-
-def _value_fields(model_cls) -> list[str]:
-    """Float measurement columns to average per hour.
-
-    For most sensors this is just ``["value"]``; for ``NpkSensor`` it's the
-    three ``nitrogen_value`` / ``phosphorus_value`` / ``potassium_value``
-    columns (it has no single ``value`` column).
-    """
-    return [
-        f.name for f in model_cls._meta.get_fields() if isinstance(f, FloatField)
-    ]
-
-
-def _meta_char_fields(model_cls) -> list[str]:
-    """Constant per-sensor text columns (``color``, ``courbe_name``, the NPK
-    per-component colors/curve names) carried through unchanged on the hourly
-    buckets so chart legends keep working.
-    """
-    return [
-        f.name for f in model_cls._meta.get_fields() if isinstance(f, CharField)
-    ]
-
-
-def _hourly_readings(qs, model_cls) -> list[dict[str, Any]]:
-    """Collapse the (already filtered) queryset to ONE row per hour per
-    sensor, averaging the numeric value column(s) over each clock hour.
-
-    The returned dicts match ``_serialize_reading``'s shape: ``id`` (the last
-    raw row in the bucket, so it stays unique + patchable), ``zone``/``user``,
-    an hour-aligned ISO ``timestamp``, the averaged value field(s), carried-over
-    text metadata, and ``default_unit`` / ``available_units``.
-    """
-    value_fields = _value_fields(model_cls)
-    sample = qs.first()
-    if sample is None:
-        return []
-    if not value_fields:
-        # No numeric column to average — nothing to aggregate; return raw rows.
-        return [_serialize_reading(r) for r in qs.order_by("timestamp")]
-
-    annotations: dict[str, Any] = {f: Avg(f) for f in value_fields}
-    annotations["_last_id"] = Max("id")
-    buckets = (
-        qs.annotate(_bucket=TruncHour("timestamp"))
-        .values("_bucket")
-        .annotate(**annotations)
-        .order_by("_bucket")
-    )
-
-    meta = {m: getattr(sample, m, None) for m in _meta_char_fields(model_cls)}
-    default_unit = getattr(sample, "default_unit", None)
-    available_units = getattr(sample, "available_units", None)
-
-    rows: list[dict[str, Any]] = []
-    for b in buckets:
-        ts: datetime | None = b["_bucket"]
-        row: dict[str, Any] = dict(meta)
-        row["id"] = b["_last_id"]
-        row["zone"] = sample.zone_id
-        row["user"] = sample.user_id
-        row["timestamp"] = (
-            ts.strftime("%Y-%m-%dT%H:%M:%SZ") if ts is not None else None
-        )
-        for f in value_fields:
-            row[f] = b[f]
-        row["default_unit"] = default_unit
-        row["available_units"] = available_units
-        rows.append(row)
-    return rows
 
 
 class _SensorPatchIn(Schema):
@@ -139,18 +68,26 @@ def _build_list_handler(model_cls):
         zone: int | None = None,
         raw: bool = False,
     ):
-        qs = model_cls.objects.filter(user=request.auth)
-        if start_date:
-            qs = qs.filter(timestamp__date__gte=parse_date(start_date))
-        if end_date:
-            qs = qs.filter(timestamp__date__lte=parse_date(end_date))
-        if zone is not None:
-            qs = qs.filter(zone_id=zone)
         if raw:
-            # Escape hatch: un-aggregated rows at the sensor's native cadence.
+            # Escape hatch: un-aggregated rows at the sensor's native cadence
+            # (stays on the Django ORM — no aggregation to delegate).
+            qs = model_cls.objects.filter(user=request.auth)
+            if start_date:
+                qs = qs.filter(timestamp__date__gte=parse_date(start_date))
+            if end_date:
+                qs = qs.filter(timestamp__date__lte=parse_date(end_date))
+            if zone is not None:
+                qs = qs.filter(zone_id=zone)
             return [_serialize_reading(r) for r in qs.order_by("timestamp")]
-        # Default: one averaged value per clock hour per sensor.
-        return _hourly_readings(qs, model_cls)
+        # Default: one averaged value per clock hour per sensor — delegated to
+        # agri-core's AgriMainDBClient.hourly_averages (SQLAlchemy over agri.db).
+        return engine.hourly_readings(
+            model_cls,
+            user_id=request.auth.id,
+            zone_id=zone,
+            start=parse_date(start_date) if start_date else None,
+            end=parse_date(end_date) if end_date else None,
+        )
 
     list_readings.__name__ = f"list_{model_cls.__name__}"
     list_readings.__doc__ = (
