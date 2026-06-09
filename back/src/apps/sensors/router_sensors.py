@@ -20,6 +20,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from django.db.models import Avg, CharField, FloatField, Max
+from django.db.models.functions import TruncHour
 from django.forms.models import model_to_dict
 from django.utils.dateparse import parse_date
 from ninja import Router, Schema
@@ -45,6 +47,76 @@ def _serialize_reading(obj) -> dict[str, Any]:
     return d
 
 
+def _value_fields(model_cls) -> list[str]:
+    """Float measurement columns to average per hour.
+
+    For most sensors this is just ``["value"]``; for ``NpkSensor`` it's the
+    three ``nitrogen_value`` / ``phosphorus_value`` / ``potassium_value``
+    columns (it has no single ``value`` column).
+    """
+    return [
+        f.name for f in model_cls._meta.get_fields() if isinstance(f, FloatField)
+    ]
+
+
+def _meta_char_fields(model_cls) -> list[str]:
+    """Constant per-sensor text columns (``color``, ``courbe_name``, the NPK
+    per-component colors/curve names) carried through unchanged on the hourly
+    buckets so chart legends keep working.
+    """
+    return [
+        f.name for f in model_cls._meta.get_fields() if isinstance(f, CharField)
+    ]
+
+
+def _hourly_readings(qs, model_cls) -> list[dict[str, Any]]:
+    """Collapse the (already filtered) queryset to ONE row per hour per
+    sensor, averaging the numeric value column(s) over each clock hour.
+
+    The returned dicts match ``_serialize_reading``'s shape: ``id`` (the last
+    raw row in the bucket, so it stays unique + patchable), ``zone``/``user``,
+    an hour-aligned ISO ``timestamp``, the averaged value field(s), carried-over
+    text metadata, and ``default_unit`` / ``available_units``.
+    """
+    value_fields = _value_fields(model_cls)
+    sample = qs.first()
+    if sample is None:
+        return []
+    if not value_fields:
+        # No numeric column to average — nothing to aggregate; return raw rows.
+        return [_serialize_reading(r) for r in qs.order_by("timestamp")]
+
+    annotations: dict[str, Any] = {f: Avg(f) for f in value_fields}
+    annotations["_last_id"] = Max("id")
+    buckets = (
+        qs.annotate(_bucket=TruncHour("timestamp"))
+        .values("_bucket")
+        .annotate(**annotations)
+        .order_by("_bucket")
+    )
+
+    meta = {m: getattr(sample, m, None) for m in _meta_char_fields(model_cls)}
+    default_unit = getattr(sample, "default_unit", None)
+    available_units = getattr(sample, "available_units", None)
+
+    rows: list[dict[str, Any]] = []
+    for b in buckets:
+        ts: datetime | None = b["_bucket"]
+        row: dict[str, Any] = dict(meta)
+        row["id"] = b["_last_id"]
+        row["zone"] = sample.zone_id
+        row["user"] = sample.user_id
+        row["timestamp"] = (
+            ts.strftime("%Y-%m-%dT%H:%M:%SZ") if ts is not None else None
+        )
+        for f in value_fields:
+            row[f] = b[f]
+        row["default_unit"] = default_unit
+        row["available_units"] = available_units
+        rows.append(row)
+    return rows
+
+
 class _SensorPatchIn(Schema):
     """Partial-update body. ``id`` selects the row; other fields are
     free-form (the legacy DRF view used the model serializer with
@@ -65,6 +137,7 @@ def _build_list_handler(model_cls):
         start_date: str | None = None,
         end_date: str | None = None,
         zone: int | None = None,
+        raw: bool = False,
     ):
         qs = model_cls.objects.filter(user=request.auth)
         if start_date:
@@ -73,12 +146,17 @@ def _build_list_handler(model_cls):
             qs = qs.filter(timestamp__date__lte=parse_date(end_date))
         if zone is not None:
             qs = qs.filter(zone_id=zone)
-        return [_serialize_reading(r) for r in qs]
+        if raw:
+            # Escape hatch: un-aggregated rows at the sensor's native cadence.
+            return [_serialize_reading(r) for r in qs.order_by("timestamp")]
+        # Default: one averaged value per clock hour per sensor.
+        return _hourly_readings(qs, model_cls)
 
     list_readings.__name__ = f"list_{model_cls.__name__}"
     list_readings.__doc__ = (
-        f"List the caller's {model_cls.__name__} readings (optional "
-        f"start_date/end_date/zone filters)."
+        f"List the caller's {model_cls.__name__} readings, aggregated to one "
+        f"averaged value per hour (optional start_date/end_date/zone filters; "
+        f"pass raw=true for un-aggregated rows)."
     )
     return list_readings
 
