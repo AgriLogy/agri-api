@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v1.36.0 (2026-06-09)
+
+### Features
+
+- **sensors**: Aggregate readings to one averaged value per hour
+  ([#155](https://github.com/AgriLogy/agri-api/pull/155),
+  [`1cd5078`](https://github.com/AgriLogy/agri-api/commit/1cd5078fa9d05a83c2f36296b6d4ba73c38f1713))
+
+Closes #154
+
+
 ## v1.35.0 (2026-06-07)
 
 ### Features
