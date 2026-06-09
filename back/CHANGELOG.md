@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v1.37.0 (2026-06-09)
+
+### Features
+
+- **sensors**: Delegate hourly aggregation to agri-core
+  ([#157](https://github.com/AgriLogy/agri-api/pull/157),
+  [`4a4eaaf`](https://github.com/AgriLogy/agri-api/commit/4a4eaafbab084d01939064189624e95c3ef6de46))
+
+Closes #156
+
+
 ## v1.36.0 (2026-06-09)
 
 ### Features
