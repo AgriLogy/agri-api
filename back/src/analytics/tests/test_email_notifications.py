@@ -250,3 +250,29 @@ class TestSendPeriodicNotificationsTask:
         result = send_periodic_notifications()
         assert result["sent"] == 0
         assert len(mail.outbox) == 0
+
+
+@pytest.mark.django_db(transaction=True)
+def test_periodic_atomic_claim_prevents_double_send(monkeypatch):
+    """Even if the cadence gate is bypassed (simulating two concurrent beat
+    runs that both read a stale last_notified), the conditional-UPDATE claim
+    must let only ONE run send — no duplicate emails. Mocks perform_calculations
+    so it runs on sqlite (no dual-ORM Postgres dependency)."""
+    import agriapi.tasks as tasks
+    from django.contrib.auth import get_user_model
+
+    monkeypatch.setattr(tasks, "perform_calculations", lambda user: "body")
+    monkeypatch.setattr(tasks, "should_notify", lambda user: True)  # force the race
+
+    User = get_user_model()
+    User.objects.create(
+        username="racer", email="racer@example.com", firstname="R",
+        is_active=True, last_notified=None,
+    )
+
+    first = send_periodic_notifications()
+    second = send_periodic_notifications()  # claim already taken -> must skip
+
+    assert first["sent"] == 1
+    assert second["sent"] == 0
+    assert len(mail.outbox) == 1

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 
 from celery import shared_task
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.mail import get_connection, send_mail
+from django.db.models import Q
 from django.utils.timezone import now
 
 from apps.users.notification_helper import perform_calculations, should_notify
@@ -38,6 +40,25 @@ def send_periodic_notifications():
                 skipped += 1
                 continue
 
+            # Atomically claim this user's slot BEFORE sending. should_notify()
+            # above is a cheap pre-filter, but it reads last_notified and the
+            # send/save happen later — so two concurrent beat runs could both
+            # pass it and double-send. The conditional UPDATE only succeeds for
+            # one worker (mirrors the alert engine's last_emailed_at gate),
+            # which is what makes the email exactly-once per cadence.
+            cadence_hours = getattr(user, "notify_every", 4) or 4
+            cutoff = now() - timedelta(hours=cadence_hours)
+            prev_notified = user.last_notified
+            claim_ts = now()
+            won = (
+                User.objects.filter(pk=user.pk)
+                .filter(Q(last_notified__isnull=True) | Q(last_notified__lt=cutoff))
+                .update(last_notified=claim_ts)
+            )
+            if not won:
+                skipped += 1
+                continue
+
             try:
                 message = perform_calculations(user)
                 send_mail(
@@ -48,11 +69,14 @@ def send_periodic_notifications():
                     connection=connection,
                     fail_silently=False,
                 )
-                user.last_notified = now()
-                user.save(update_fields=["last_notified"])
                 sent += 1
             except Exception:
                 failed += 1
+                # Release the claim (best-effort) so the next cadence retries
+                # this user instead of skipping them for a whole interval.
+                User.objects.filter(pk=user.pk, last_notified=claim_ts).update(
+                    last_notified=prev_notified
+                )
                 logger.exception(
                     "Failed to send periodic notification to %s", recipient
                 )
