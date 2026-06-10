@@ -194,13 +194,20 @@ def dispatch_alerts_for_reading(
         if not won:
             continue
 
-        from agriapi.tasks import send_alert_email
+        from agriapi.tasks import send_alert_email, send_alert_whatsapp
 
-        send_alert_email.delay(
+        # Fan out to the channels this alert opted into. Legacy alerts default
+        # notify_email=True / notify_whatsapp=False, so behaviour is unchanged
+        # unless the user explicitly enables WhatsApp.
+        kwargs = dict(
             alert_id=alert.pk,
             value=float(value),
             timestamp_iso=timestamp.isoformat(),
         )
+        if getattr(alert, "notify_email", True):
+            send_alert_email.delay(**kwargs)
+        if getattr(alert, "notify_whatsapp", False):
+            send_alert_whatsapp.delay(**kwargs)
         enqueued += 1
 
     return enqueued

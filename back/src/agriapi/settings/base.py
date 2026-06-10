@@ -155,6 +155,15 @@ USE_I18N = True
 USE_TZ = True
 
 # -----------------------------------------------------------------------------
+# Twilio WhatsApp (per-alert WhatsApp delivery). Set on the droplet; empty =
+# WhatsApp sends are a logged no-op (see agriapi.whatsapp). Sandbox FROM is
+# usually whatsapp:+14155238886.
+# -----------------------------------------------------------------------------
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
+TWILIO_WHATSAPP_FROM = os.getenv("TWILIO_WHATSAPP_FROM", "")
+
+# -----------------------------------------------------------------------------
 # Static / Media
 # -----------------------------------------------------------------------------
 STATIC_URL = "/static/"
