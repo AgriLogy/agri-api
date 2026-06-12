@@ -37,6 +37,7 @@ from .models import (
     SoilTemperatureMedium,
     SolarRadiation,
     TemperatureWeather,
+    VPDWeather,
     WaterECSensor,
     WaterFlowSensor,
     WaterLevelSensor,
@@ -74,6 +75,10 @@ SENSOR_MODELS = [
     SoilConductivitySensor,
     Et0Weather,
     Et0Calculated,
+    # VPD is computed hourly by compute_et0_vpd_hourly (same task as ET0) and
+    # stored in VPDWeather. Exposing it here gives the DPV chart a server-side
+    # series (slug: vpdweather) instead of a fragile client-side join.
+    VPDWeather,
     LeafTemperatureSensor,
     SoilSalinitySensor,
     NpkSensor,
