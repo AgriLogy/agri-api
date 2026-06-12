@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v1.37.1 (2026-06-12)
+
+### Bug Fixes
+
+- **users**: Default payement_status on admin create
+  ([#165](https://github.com/AgriLogy/agri-api/pull/165),
+  [`f28fc76`](https://github.com/AgriLogy/agri-api/commit/f28fc76afcbde3cc0f202161dc63ab7a635b593b))
+
+Closes #164
+
+
 ## v1.37.0 (2026-06-09)
 
 ### Features
