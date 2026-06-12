@@ -207,7 +207,10 @@ def create_user(request, payload: AdminUserCreateIn):
         latitude=payload.latitude,
         longitude=payload.longitude,
         is_staff=payload.is_staff,
-        payement_status=payload.payement_status,
+        # Column is NOT NULL with a model default of "actif"; passing the
+        # schema's optional None straight through would violate the
+        # constraint, so fall back to the default when it is omitted.
+        payement_status=payload.payement_status or "actif",
     )
     user.set_password(payload.password)
     user.save()
