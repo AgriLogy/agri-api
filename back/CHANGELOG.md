@@ -1,6 +1,47 @@
 # CHANGELOG
 
 
+## v1.38.0 (2026-06-12)
+
+### Chores
+
+- **deps**: Bump agri-core to 0.13.0 (registers vpd sensor key)
+  ([#167](https://github.com/AgriLogy/agri-api/pull/167),
+  [`155892d`](https://github.com/AgriLogy/agri-api/commit/155892d5b606a33717c368d01f602ec921ea1b0b))
+
+Closes #166
+
+agri-core 0.13.0 (AgriLogy/agri-core#30) adds `vpd` to `SENSOR_KEY_REGISTRY`. With this bump, the
+  DPV/VPD card's *Create alert* drawer can suggest, create, and evaluate alerts against the
+  already-populated `VPDWeather` rows (written by the ET₀ calc task) — no migration or new data
+  pipeline needed.
+
+- `back/pyproject.toml`: agri-core `0.12.0` → `0.13.0` - `back/uv.lock`: refreshed (`uv lock`)
+
+Frontend counterpart (the missing red button): AgriLogy/agrilogy-front#138.
+
+### Features
+
+- **sensors**: Expose VPDWeather as /sensors/vpdweather
+  ([#169](https://github.com/AgriLogy/agri-api/pull/169),
+  [`2286a02`](https://github.com/AgriLogy/agri-api/commit/2286a02176c73f7e3a640f24c77c8073393deb15))
+
+Closes #168
+
+VPD is computed hourly by `compute_et0_vpd_hourly` (alongside ET₀) and stored in `VPDWeather`, but
+  had no read endpoint — so the DPV chart re-derived it client-side by joining humidity+temperature
+  on exact timestamps, which yields nothing when readings arrive on separate uplinks
+  (Bivocom/LoRaWAN). This registers the model in `SENSOR_MODELS`, auto-generating `GET
+  /sensors/vpdweather` (hourly-averaged, kPa) — matching how ET₀ serves its calculated series, and
+  consistent with what the alert engine evaluates.
+
+Verified locally: `VPDWeather in SENSOR_MODELS == True` and the route `/sensors/vpdweather` is
+  registered on the NinjaAPI. ruff clean.
+
+Frontend counterpart (fetch this series instead of the client-side join): agrilogy-front PR to
+  follow.
+
+
 ## v1.37.1 (2026-06-12)
 
 ### Bug Fixes
