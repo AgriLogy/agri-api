@@ -15,8 +15,26 @@ jobs:
           host: ${{ secrets.DO_HOST }}
           username: ${{ secrets.DO_USER }}
           key: ${{ secrets.DO_SSH_KEY }}
+          # Stop on the first failed command instead of barrelling on and
+          # rebuilding stale code (the old script's `git pull` could abort on
+          # local changes while the job still reported success).
+          script_stop: true
           script: |
-            cd ${{ secrets.DO_APP_PATH }}
-            git pull origin main
-            docker compose down
-            docker compose up -d --build
+            set -euo pipefail
+            # The public API (back.agrogo-datafarm.com -> :8000 -> agri-api-web)
+            # is served from /root/agri-api. The old DO_APP_PATH pointed at the
+            # legacy /root/agrilogy-back stack, so deploys never reached the API.
+            cd /root/agri-api
+            # Force-sync to origin/main. A deploy box should never carry local
+            # commits; reset --hard avoids the "your local changes would be
+            # overwritten / Aborting" trap (untracked files like the droplet's
+            # docker-compose.override.yml are preserved).
+            git fetch origin main
+            git reset --hard origin/main
+            # Build BEFORE swapping: if the build fails (e.g. missing
+            # AGRI_DB_RO_TOKEN), set -e stops here and the running containers
+            # keep serving the old image — no downtime on a bad build.
+            docker compose build
+            # Recreate only changed services with the freshly built images.
+            docker compose up -d
+            docker image prune -f
