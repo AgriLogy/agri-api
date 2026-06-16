@@ -10,8 +10,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from django.conf import settings
-from django.core.mail import send_mail
 from ninja import Router, Schema
 from ninja.responses import Response
 
@@ -113,21 +111,17 @@ def zone_notification_outbound(request, payload: ZoneNotificationOutboundIn):
         "La configuration de notification de zone a été enregistrée."
     )
 
-    try:
-        send_mail(
-            subject=subject,
-            message=message,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[recipient],
-            fail_silently=False,
-        )
-    except Exception as exc:
-        log.exception("zone-notification-outbound: send failed")
-        return Response({"detail": str(exc)}, status=500)
+    # Hand off to Celery so the request never blocks on a slow/unreachable
+    # SMTP server (a dead mail host would otherwise hang the request until
+    # nginx 504s). Delivery + error logging happen in the worker.
+    from agriapi.tasks import send_zone_outbound_email
 
+    send_zone_outbound_email.delay(
+        recipient=recipient, subject=subject, message=message
+    )
     log.info(
-        "zone-notification-outbound: sent to %s zone=%s",
+        "zone-notification-outbound: queued for %s zone=%s",
         recipient,
         payload.zoneId,
     )
-    return {"status": "sent"}
+    return Response({"status": "queued"}, status=202)

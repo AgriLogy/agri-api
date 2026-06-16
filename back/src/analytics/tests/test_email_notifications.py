@@ -109,8 +109,8 @@ class TestZoneNotificationOutbound:
 
     def test_sends_email_when_channel_enabled(self, user_bearer, normal_user):
         r = user_bearer.post(ZONE_OUTBOUND_URL, self._payload(), format="json")
-        assert r.status_code == 200
-        assert r.json() == {"status": "sent"}
+        assert r.status_code == 202
+        assert r.json() == {"status": "queued"}
         assert len(mail.outbox) == 1
         assert mail.outbox[0].to == [normal_user.email]
         assert mail.outbox[0].subject == "Agrilogy — config"
@@ -121,7 +121,7 @@ class TestZoneNotificationOutbound:
             self._payload(contactEmail="ops@example.com"),
             format="json",
         )
-        assert r.status_code == 200
+        assert r.status_code == 202
         assert mail.outbox[0].to == ["ops@example.com"]
 
     def test_no_op_when_no_email_channel(self, user_bearer):
