@@ -1,6 +1,28 @@
 # CHANGELOG
 
 
+## v1.39.0 (2026-06-17)
+
+### Features
+
+- **notifications**: Minute-based notify_every cadence + faster email beat
+  ([#173](https://github.com/AgriLogy/agri-api/pull/173),
+  [`9bae9f0`](https://github.com/AgriLogy/agri-api/commit/9bae9f02e0c15925af04304d687ca916b9176aaa))
+
+Closes #172
+
+## What Reinterprets `notify_every` as **minutes** so sub-hour cadences work. - `should_notify`:
+  `*60` (was `*3600`), default 240 (=4h). - Admin validation 10..10080 min (was 1..168 h). - Prod
+  email beat `crontab(minute=0)` -> `*/5` so a 10-min cadence is honoured (per-user gate unchanged).
+  - Model default/help_text + task docstring -> minutes. Tests updated, new sub-hour test (19 pass,
+  ruff clean).
+
+## ⚠️ Coordinated deploy (do NOT merge alone) Needs the **agri-db backfill** (`UPDATE …
+  notify_every*60`) applied **first**, then this, then the **agri-admin** minutes UI. Merging this
+  alone (without backfill) would make existing rows mean 'every 4 min'. Migration lineage + backfill
+  pending a prod Alembic-head check.
+
+
 ## v1.38.0 (2026-06-12)
 
 ### Chores
