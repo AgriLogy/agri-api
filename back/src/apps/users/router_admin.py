@@ -89,8 +89,10 @@ def _validate_coords(payload: dict) -> dict | None:
     if lon is not None and (lon < -180 or lon > 180):
         return {"longitude": "Longitude must be between -180 and 180."}
     notify = payload.get("notify_every")
-    if notify is not None and (notify < 1 or notify > 168):
-        return {"notify_every": "notify_every must be between 1 and 168 hours."}
+    if notify is not None and (notify < 10 or notify > 10080):
+        return {
+            "notify_every": "notify_every must be between 10 and 10080 minutes."
+        }
     return None
 
 

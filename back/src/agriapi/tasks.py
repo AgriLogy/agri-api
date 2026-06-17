@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 def send_periodic_notifications():
     """
     For every active user with an email, dispatch a personalised
-    field-status notification when their cadence (notify_every hours)
+    field-status notification when their cadence (notify_every minutes)
     has elapsed since last_notified. Per-user failures don't abort the
     batch.
     """
