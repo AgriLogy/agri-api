@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v1.40.0 (2026-06-17)
+
+### Features
+
+- **notifications**: Deliver zone-outbound over SMS + WhatsApp (Twilio)
+  ([#176](https://github.com/AgriLogy/agri-api/pull/176),
+  [`7d83262`](https://github.com/AgriLogy/agri-api/commit/7d832621efb24cbae4fd502ddd322742de99f60c))
+
+Closes #174
+
+Re-opened against main (the original #175 auto-closed when its base branch
+  `fix/zone-outbound-async-email` was deleted on merge of #171). Now that #171 is in main, this diff
+  is just the SMS/WhatsApp delta.
+
+## What - **`agriapi.twilio_messaging`** — stdlib-only `send_sms`/`send_whatsapp` (Twilio Messages
+  API, Basic auth, E.164 normalisation), reads `TWILIO_*` from env. - **`send_zone_outbound_sms` /
+  `send_zone_outbound_whatsapp`** Celery tasks. - **zone-outbound** accepts `contactPhone`, fans out
+  to every enabled channel → `{status: queued, channels: [...]}`; 400 only when no channel has a
+  usable recipient. - 13 tests; ruff clean.
+
+## Deploy Set `TWILIO_ACCOUNT_SID/AUTH_TOKEN/SMS_FROM/WHATSAPP_FROM` on the droplet `.env`. Overlaps
+  PR #163's `whatsapp.py` — consolidate later.
+
+
 ## v1.39.1 (2026-06-17)
 
 ### Bug Fixes
