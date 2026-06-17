@@ -14,6 +14,7 @@ Covers:
 
 from datetime import time, timedelta
 from decimal import Decimal
+from unittest import mock
 
 import pytest
 from django.conf import settings
@@ -110,7 +111,7 @@ class TestZoneNotificationOutbound:
     def test_sends_email_when_channel_enabled(self, user_bearer, normal_user):
         r = user_bearer.post(ZONE_OUTBOUND_URL, self._payload(), format="json")
         assert r.status_code == 202
-        assert r.json() == {"status": "queued"}
+        assert r.json() == {"status": "queued", "channels": ["email"]}
         assert len(mail.outbox) == 1
         assert mail.outbox[0].to == [normal_user.email]
         assert mail.outbox[0].subject == "Agrilogy — config"
@@ -124,10 +125,10 @@ class TestZoneNotificationOutbound:
         assert r.status_code == 202
         assert mail.outbox[0].to == ["ops@example.com"]
 
-    def test_no_op_when_no_email_channel(self, user_bearer):
+    def test_no_op_when_no_channels(self, user_bearer):
         r = user_bearer.post(
             ZONE_OUTBOUND_URL,
-            self._payload(channels={"email": False, "sms": True, "whatsapp": False}),
+            self._payload(channels={"email": False, "sms": False, "whatsapp": False}),
             format="json",
         )
         assert r.status_code == 202
@@ -139,6 +140,69 @@ class TestZoneNotificationOutbound:
         r = user_bearer.post(ZONE_OUTBOUND_URL, self._payload(), format="json")
         assert r.status_code == 400
         assert len(mail.outbox) == 0
+
+    def test_sends_sms_when_channel_enabled(self, user_bearer):
+        with mock.patch(
+            "agriapi.twilio_messaging.send_sms", return_value=True
+        ) as m:
+            r = user_bearer.post(
+                ZONE_OUTBOUND_URL,
+                self._payload(
+                    channels={"email": False, "sms": True, "whatsapp": False},
+                    contactPhone="+212600000000",
+                ),
+                format="json",
+            )
+        assert r.status_code == 202
+        assert r.json() == {"status": "queued", "channels": ["sms"]}
+        m.assert_called_once()
+        assert m.call_args.args[0] == "+212600000000"
+
+    def test_sends_whatsapp_when_channel_enabled(self, user_bearer):
+        with mock.patch(
+            "agriapi.twilio_messaging.send_whatsapp", return_value=True
+        ) as m:
+            r = user_bearer.post(
+                ZONE_OUTBOUND_URL,
+                self._payload(
+                    channels={"email": False, "sms": False, "whatsapp": True},
+                    contactPhone="+212600000000",
+                ),
+                format="json",
+            )
+        assert r.status_code == 202
+        assert r.json() == {"status": "queued", "channels": ["whatsapp"]}
+        m.assert_called_once()
+
+    def test_email_and_sms_together(self, user_bearer, normal_user):
+        with mock.patch(
+            "agriapi.twilio_messaging.send_sms", return_value=True
+        ) as m:
+            r = user_bearer.post(
+                ZONE_OUTBOUND_URL,
+                self._payload(
+                    channels={"email": True, "sms": True, "whatsapp": False},
+                    contactPhone="+212600000000",
+                ),
+                format="json",
+            )
+        assert r.status_code == 202
+        assert r.json() == {"status": "queued", "channels": ["email", "sms"]}
+        assert len(mail.outbox) == 1
+        m.assert_called_once()
+
+    def test_400_when_phone_missing_for_sms(self, user_bearer, normal_user):
+        type(normal_user).objects.filter(pk=normal_user.pk).update(
+            phone_number=None
+        )
+        r = user_bearer.post(
+            ZONE_OUTBOUND_URL,
+            self._payload(
+                channels={"email": False, "sms": True, "whatsapp": False}
+            ),
+            format="json",
+        )
+        assert r.status_code == 400
 
     def test_unauthenticated_returns_401(self, anon_client):
         r = anon_client.post(ZONE_OUTBOUND_URL, self._payload(), format="json")
