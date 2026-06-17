@@ -75,7 +75,7 @@ class _Channels(Schema):
 
 
 class ZoneNotificationOutboundIn(Schema):
-    """Body for the one-shot zone-config confirmation email.
+    """Body for the one-shot zone notification (email / SMS / WhatsApp).
 
     Untyped extras (``zoneId``, ``zoneName``, …) are accepted but ignored —
     the legacy DRF view did the same.
@@ -83,6 +83,7 @@ class ZoneNotificationOutboundIn(Schema):
 
     channels: _Channels | None = None
     contactEmail: str | None = None
+    contactPhone: str | None = None
     subject: str | None = None
     message: str | None = None
     zoneId: int | None = None
@@ -91,20 +92,17 @@ class ZoneNotificationOutboundIn(Schema):
 @router.post(
     "/zone-outbound",
     auth=JwtAuth(),
-    summary="One-shot zone-config confirmation email",
+    summary="One-shot zone notification over email / SMS / WhatsApp",
 )
 def zone_notification_outbound(request, payload: ZoneNotificationOutboundIn):
     channels = (
         payload.channels.model_dump(exclude_unset=True) if payload.channels else {}
     )
-    if not channels.get("email"):
+    email_on = bool(channels.get("email"))
+    sms_on = bool(channels.get("sms"))
+    whatsapp_on = bool(channels.get("whatsapp"))
+    if not (email_on or sms_on or whatsapp_on):
         return Response({"status": "noop"}, status=202)
-
-    recipient = (payload.contactEmail or "").strip() or (
-        getattr(request.auth, "email", "") or ""
-    ).strip()
-    if not recipient:
-        return Response({"detail": "no email address on user"}, status=400)
 
     subject = (payload.subject or "").strip() or "Agrilogy — notification"
     message = (payload.message or "").strip() or (
@@ -112,16 +110,47 @@ def zone_notification_outbound(request, payload: ZoneNotificationOutboundIn):
     )
 
     # Hand off to Celery so the request never blocks on a slow/unreachable
-    # SMTP server (a dead mail host would otherwise hang the request until
-    # nginx 504s). Delivery + error logging happen in the worker.
-    from agriapi.tasks import send_zone_outbound_email
-
-    send_zone_outbound_email.delay(
-        recipient=recipient, subject=subject, message=message
+    # SMTP server or Twilio endpoint. Delivery + error logging happen in the
+    # worker.
+    from agriapi.tasks import (
+        send_zone_outbound_email,
+        send_zone_outbound_sms,
+        send_zone_outbound_whatsapp,
     )
+
+    queued: list[str] = []
+
+    if email_on:
+        recipient = (payload.contactEmail or "").strip() or (
+            getattr(request.auth, "email", "") or ""
+        ).strip()
+        if recipient:
+            send_zone_outbound_email.delay(
+                recipient=recipient, subject=subject, message=message
+            )
+            queued.append("email")
+
+    if sms_on or whatsapp_on:
+        phone = (payload.contactPhone or "").strip() or (
+            getattr(request.auth, "phone_number", "") or ""
+        ).strip()
+        if phone:
+            if sms_on:
+                send_zone_outbound_sms.delay(to_phone=phone, body=message)
+                queued.append("sms")
+            if whatsapp_on:
+                send_zone_outbound_whatsapp.delay(to_phone=phone, body=message)
+                queued.append("whatsapp")
+
+    if not queued:
+        return Response(
+            {"detail": "no usable recipient for the selected channels"},
+            status=400,
+        )
+
     log.info(
-        "zone-notification-outbound: queued for %s zone=%s",
-        recipient,
+        "zone-notification-outbound: queued %s zone=%s",
+        ",".join(queued),
         payload.zoneId,
     )
-    return Response({"status": "queued"}, status=202)
+    return Response({"status": "queued", "channels": queued}, status=202)

@@ -163,6 +163,38 @@ def send_zone_outbound_email(*, recipient: str, subject: str, message: str) -> d
     return {"sent": 1, "recipient": recipient}
 
 
+@shared_task
+def send_zone_outbound_sms(*, to_phone: str, body: str) -> dict:
+    """Deliver one ad-hoc notification-panel message over SMS (Twilio).
+
+    Enqueued by ``zone_notification_outbound`` when the SMS channel is on and a
+    recipient phone resolved. Stdlib-only Twilio call; never blocks the request.
+    """
+    from agriapi.twilio_messaging import send_sms
+
+    to_phone = (to_phone or "").strip()
+    if not to_phone:
+        return {"sent": 0, "reason": "no_recipient"}
+    ok = send_sms(to_phone, body)
+    if ok:
+        logger.info("send_zone_outbound_sms: sent to %s", to_phone)
+    return {"sent": 1 if ok else 0, "recipient": to_phone}
+
+
+@shared_task
+def send_zone_outbound_whatsapp(*, to_phone: str, body: str) -> dict:
+    """Deliver one ad-hoc notification-panel message over WhatsApp (Twilio)."""
+    from agriapi.twilio_messaging import send_whatsapp
+
+    to_phone = (to_phone or "").strip()
+    if not to_phone:
+        return {"sent": 0, "reason": "no_recipient"}
+    ok = send_whatsapp(to_phone, body)
+    if ok:
+        logger.info("send_zone_outbound_whatsapp: sent to %s", to_phone)
+    return {"sent": 1 if ok else 0, "recipient": to_phone}
+
+
 ######################################################################################################
 ######################   ET0 / VPD persistence (math lives in agriapi.agronomy)   ###################
 ######################################################################################################
