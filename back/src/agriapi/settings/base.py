@@ -206,6 +206,16 @@ CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", CELERY_BROKER_URL)
 # Ensure Celery imports project-level tasks
 CELERY_IMPORTS = ("agriapi.tasks",)
 
+# Cap how long a single SMTP send may block. Without this Django uses the
+# socket default (can hang ~60s on an unreachable mail host, 504-ing requests
+# and stalling Celery workers). Applies to every environment's SMTP backend.
+EMAIL_TIMEOUT = int(os.getenv("EMAIL_TIMEOUT", "10") or 10)
+
+# Resend HTTP-API key, read by agriapi.email_backends.ResendEmailBackend.
+# Defined here (not just prod) so every settings module exposes it — the
+# deployed container can run under dev settings depending on DJANGO_ENV.
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+
 SCHEDULE_MODE = os.getenv("CELERY_SCHEDULE_MODE", "test").lower()
 
 # The sensor SIMULATOR fabricates random readings — a local-dev aid for working

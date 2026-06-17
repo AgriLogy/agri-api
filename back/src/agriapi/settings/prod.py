@@ -72,17 +72,32 @@ if not CORS_ALLOWED_ORIGINS:
 CSRF_TRUSTED_ORIGINS = _csv_env("CSRF_TRUSTED_ORIGINS", "")
 
 # -----------------------------------------------------------------------------
-# Email — SMTP only in prod
+# Email — Resend HTTP API by default
 # -----------------------------------------------------------------------------
+# DigitalOcean blocks outbound SMTP (25/465/587) on the droplet, so the stock
+# smtp backend hangs and 504s. Resend's REST API runs over HTTPS/443 (open), so
+# it is the default transport here. Set EMAIL_BACKEND explicitly to override
+# (e.g. back to smtp if the SMTP block is ever lifted).
 EMAIL_BACKEND = os.getenv(
-    "EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend"
+    "EMAIL_BACKEND", "agriapi.email_backends.ResendEmailBackend"
 )
-EMAIL_HOST = _required("EMAIL_HOST")
-EMAIL_HOST_USER = _required("EMAIL_HOST_USER")
-EMAIL_HOST_PASSWORD = _required("EMAIL_HOST_PASSWORD")
-EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587") or 587)
-EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True").lower() in ("1", "true", "yes")
-EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "False").lower() in ("1", "true", "yes")
+# RESEND_API_KEY is inherited from base settings (read from env there).
+
+# SMTP settings are only consulted (and required) when the smtp backend is
+# explicitly selected via EMAIL_BACKEND.
+if EMAIL_BACKEND.endswith("smtp.EmailBackend"):
+    EMAIL_HOST = _required("EMAIL_HOST")
+    EMAIL_HOST_USER = _required("EMAIL_HOST_USER")
+    EMAIL_HOST_PASSWORD = _required("EMAIL_HOST_PASSWORD")
+    EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587") or 587)
+    EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True").lower() in ("1", "true", "yes")
+    EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "False").lower() in ("1", "true", "yes")
+elif EMAIL_BACKEND.endswith("ResendEmailBackend") and not RESEND_API_KEY:
+    raise RuntimeError(
+        "RESEND_API_KEY is required when EMAIL_BACKEND is the Resend backend. "
+        "Set it in back/.env before boot."
+    )
+
 DEFAULT_FROM_EMAIL = os.getenv(
     "DEFAULT_FROM_EMAIL", "Agrilogy <noreply@agrogo-datafarm.com>"
 )

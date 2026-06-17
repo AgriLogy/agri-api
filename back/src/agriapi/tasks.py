@@ -133,6 +133,36 @@ def send_alert_email(*, alert_id: int, value: float, timestamp_iso: str) -> dict
     return {"sent": 1, "alert_id": alert_id}
 
 
+@shared_task
+def send_zone_outbound_email(*, recipient: str, subject: str, message: str) -> dict:
+    """
+    Deliver one ad-hoc "notification panel" email (custom recipient).
+
+    Enqueued by ``apps.alerts.router_notifications.zone_notification_outbound``
+    so the HTTP request never blocks on a slow/unreachable SMTP server. The
+    gate (email channel enabled, recipient present) is already enforced by the
+    caller; this task just delivers and logs the outcome.
+    """
+    recipient = (recipient or "").strip()
+    if not recipient:
+        return {"sent": 0, "reason": "no_recipient"}
+
+    try:
+        send_mail(
+            subject=subject,
+            message=message,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[recipient],
+            fail_silently=False,
+        )
+    except Exception:
+        logger.exception("send_zone_outbound_email: failed for %s", recipient)
+        return {"sent": 0, "reason": "send_error"}
+
+    logger.info("send_zone_outbound_email: sent to %s", recipient)
+    return {"sent": 1, "recipient": recipient}
+
+
 ######################################################################################################
 ######################   ET0 / VPD persistence (math lives in agriapi.agronomy)   ###################
 ######################################################################################################
