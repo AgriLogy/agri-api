@@ -1,6 +1,38 @@
 # CHANGELOG
 
 
+## v1.39.1 (2026-06-17)
+
+### Bug Fixes
+
+- **email**: Deliver via Resend HTTP API instead of blocked SMTP
+  ([#171](https://github.com/AgriLogy/agri-api/pull/171),
+  [`11164ef`](https://github.com/AgriLogy/agri-api/commit/11164efb84a913470c17c9e6413e6e2e384b5dc9))
+
+Closes #170
+
+## Why The droplet cannot make outbound SMTP connections (DigitalOcean blocks 25/465/587; 443 is
+  open). `send_mail` blocks on connect until nginx 504s, so notification emails never deliver — both
+  the periodic emails and the `/notifications/zone-outbound` custom-email send.
+
+## What - **New `agriapi.email_backends.ResendEmailBackend`** — stdlib-only (urllib) sender over
+  Resend's HTTPS API; drop-in for every `send_mail`/`EmailMessage`. Default `EMAIL_BACKEND` in prod;
+  selectable via env in dev. - **`EMAIL_TIMEOUT=10`** in base settings — no send can hang
+  requests/workers ~60s again. - **`RESEND_API_KEY`** read in base settings (applies under both dev
+  and prod modules; the deployed container runs dev settings via `DJANGO_ENV`). - **`zone-outbound`
+  now enqueues** `send_zone_outbound_email` (Celery) instead of sending inline → returns `202
+  queued`, request can't block. - SMTP env vars required only when the smtp backend is explicitly
+  selected.
+
+## Tests - New `test_resend_backend.py` (payload shape, HTML alt, timeout, missing-key behaviour). -
+  Updated `zone-outbound` assertions to 202/queued. - `15 passed, 6 skipped` (Postgres-only skips);
+  ruff clean.
+
+## Deploy notes Set `RESEND_API_KEY` and `EMAIL_BACKEND=agriapi.email_backends.ResendEmailBackend`
+  in `back/.env`. No rebuild needed (stdlib-only; code is bind-mounted). Requires a verified Resend
+  sending domain for `noreply@agrogo-datafarm.com`.
+
+
 ## v1.39.0 (2026-06-17)
 
 ### Features
