@@ -235,7 +235,7 @@ class TestSendPeriodicNotificationsTask:
 
     def test_skips_users_within_cadence(self):
         u = self._make_user("recent", email="recent@example.com")
-        u.notify_every = 4  # hours
+        u.notify_every = 240  # minutes (4 h)
         u.last_notified = timezone.now() - timedelta(minutes=10)
         u.save()
 

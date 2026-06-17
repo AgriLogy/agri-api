@@ -227,7 +227,9 @@ if SCHEDULE_MODE == "test":
     _sim_schedule = crontab(minute="*/2")
 else:
     _et0_schedule = crontab(minute=0)
-    _email_schedule = crontab(minute=0)
+    # Every 5 min so per-user notify_every cadences down to 10 min are
+    # honoured (should_notify gates each user; this is just the check tick).
+    _email_schedule = crontab(minute="*/5")
     _sim_schedule = crontab(minute="*/15")
 
 CELERY_BEAT_SCHEDULE = {

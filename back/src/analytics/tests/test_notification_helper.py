@@ -78,16 +78,27 @@ class ShouldNotifyTests(TestCase):
         self.assertTrue(should_notify(u))
 
     def test_within_cadence_does_not_notify(self):
-        u = _u(notify_every=4)
+        # notify_every is in minutes; 240 min = 4 h.
+        u = _u(notify_every=240)
         u.last_notified = timezone.now() - timedelta(hours=1)
         u.save()
         self.assertFalse(should_notify(u))
 
     def test_past_cadence_does_notify(self):
-        u = _u(notify_every=4)
+        u = _u(notify_every=240)
         u.last_notified = timezone.now() - timedelta(hours=5)
         u.save()
         self.assertTrue(should_notify(u))
+
+    def test_sub_hour_cadence_notifies(self):
+        # A 10-minute cadence fires once >10 min have elapsed.
+        u = _u(notify_every=10)
+        u.last_notified = timezone.now() - timedelta(minutes=12)
+        u.save()
+        self.assertTrue(should_notify(u))
+        u.last_notified = timezone.now() - timedelta(minutes=5)
+        u.save()
+        self.assertFalse(should_notify(u))
 
     def test_default_cadence_when_attribute_missing(self):
         # When the user model has no notify_every attribute, the helper

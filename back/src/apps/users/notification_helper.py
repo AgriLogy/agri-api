@@ -22,11 +22,11 @@ from agriapi.agronomy import field_snapshot
 
 
 def should_notify(user) -> bool:
-    """True when the user's cadence (notify_every hours) has elapsed."""
+    """True when the user's cadence (notify_every *minutes*) has elapsed."""
     if not getattr(user, "last_notified", None):
         return True
     elapsed = now() - user.last_notified
-    return elapsed.total_seconds() >= getattr(user, "notify_every", 4) * 3600
+    return elapsed.total_seconds() >= getattr(user, "notify_every", 240) * 60
 
 
 def _format_message(user, snapshot: dict) -> str:

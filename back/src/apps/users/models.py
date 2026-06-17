@@ -45,11 +45,12 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
 
-    # Notification cadence: how often (in hours) to send the periodic
-    # field-status email, and when it last went out.
+    # Notification cadence: how often (in minutes) to send the periodic
+    # field-status email, and when it last went out. Stored in minutes so
+    # sub-hour cadences (e.g. every 10 min) are expressible; 240 = 4 h.
     notify_every = models.PositiveSmallIntegerField(
-        default=4,
-        help_text="Hours between automated notification emails.",
+        default=240,
+        help_text="Minutes between automated notification emails.",
     )
     last_notified = models.DateTimeField(
         null=True,
