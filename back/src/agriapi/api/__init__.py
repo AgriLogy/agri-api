@@ -35,6 +35,7 @@ from apps.bivocom.router import router as bivocom_router
 from apps.lorawan.chirpstack.router import router as chirpstack_router
 from apps.users.router import router as users_auth_router
 from apps.users.router_admin import router as users_router
+from apps.assistant.router import router as assistant_router
 
 api = NinjaAPI(
     title="Agrilogy API",
@@ -81,3 +82,6 @@ api.add_router("/ingest", weather_ingest_router, tags=["ingest"])
 
 # Admin tree (KPIs, per-user resources, admin alert override).
 api.add_router("", analytics_admin_router, tags=["admin"])
+
+# AI assistant — tool catalog, per-tool invoke, and the orchestrated /chat.
+api.add_router("/assistant", assistant_router, tags=["assistant"])
