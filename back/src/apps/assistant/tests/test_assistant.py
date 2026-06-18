@@ -215,3 +215,69 @@ class TestLLMOrchestrator:
         assert res.intent == "llm"
         assert res.tool is None
         assert res.reply == "Hello!"
+
+
+# ── conversation history (server-side) ───────────────────────────────────────
+CONV_URL = "/assistant/conversations"
+
+
+@pytest.mark.django_db
+class TestConversationHistory:
+    def _conv(self, **over):
+        body = {
+            "title": "My chat",
+            "messages": [{"id": "m1", "role": "user", "content": "hi"}],
+            "created_at": "2026-06-18T10:00:00Z",
+            "updated_at": "2026-06-18T10:00:00Z",
+        }
+        body.update(over)
+        return body
+
+    def test_list_empty(self, assistant_client):
+        r = assistant_client.get(CONV_URL)
+        assert r.status_code == 200
+        assert r.json() == []
+
+    def test_upsert_then_list(self, assistant_client):
+        r = assistant_client.put(f"{CONV_URL}/c-1", self._conv(), format="json")
+        assert r.status_code == 200
+        assert r.json()["id"] == "c-1"
+        lst = assistant_client.get(CONV_URL).json()
+        assert len(lst) == 1 and lst[0]["title"] == "My chat"
+
+    def test_upsert_replaces(self, assistant_client):
+        assistant_client.put(f"{CONV_URL}/c-1", self._conv(), format="json")
+        assistant_client.put(
+            f"{CONV_URL}/c-1",
+            self._conv(
+                title="Renamed", messages=[{"id": "m1", "role": "user", "content": "x"}]
+            ),
+            format="json",
+        )
+        lst = assistant_client.get(CONV_URL).json()
+        assert len(lst) == 1 and lst[0]["title"] == "Renamed"
+
+    def test_delete(self, assistant_client):
+        assistant_client.put(f"{CONV_URL}/c-1", self._conv(), format="json")
+        r = assistant_client.delete(f"{CONV_URL}/c-1")
+        assert r.status_code == 200
+        assert assistant_client.get(CONV_URL).json() == []
+
+    def test_user_isolation(self, assistant_client):
+        # Another user's conversation must not be visible.
+        from django.contrib.auth import get_user_model
+        from rest_framework.test import APIClient
+        from rest_framework_simplejwt.tokens import AccessToken
+
+        other = get_user_model().objects.create_user(
+            username="other_assist", email="o@e.com", password="pw"
+        )
+        oc = APIClient()
+        oc.credentials(HTTP_AUTHORIZATION=f"Bearer {AccessToken.for_user(other)}")
+        oc.put(f"{CONV_URL}/c-other", self._conv(title="secret"), format="json")
+        assert assistant_client.get(CONV_URL).json() == []
+
+    def test_requires_auth(self):
+        from rest_framework.test import APIClient
+
+        assert APIClient().get(CONV_URL).status_code == 401

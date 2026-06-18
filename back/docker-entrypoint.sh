@@ -87,6 +87,8 @@ PY
 case "$ROLE" in
   web)
     wait_for_postgres
+    log "Ensuring assistant tables exist (idempotent)"
+    python scripts/ensure_assistant_tables.py || log "  (assistant table ensure skipped/failed; continuing)"
     if [[ "$DJANGO_ENV" == "prod" ]]; then
       # Production: no dev seeders; serve via gunicorn with collected static
       # (WhiteNoise serves them since DEBUG=False).

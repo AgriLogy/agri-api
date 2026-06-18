@@ -88,6 +88,7 @@ INSTALLED_APPS = [
     "apps.sensors.apps.SensorsConfig",
     "apps.irrigation.apps.IrrigationConfig",
     "apps.alerts.apps.AlertsConfig",
+    "apps.assistant.apps.AssistantConfig",
 ]
 
 MIDDLEWARE = [
