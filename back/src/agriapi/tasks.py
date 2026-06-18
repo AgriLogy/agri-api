@@ -48,14 +48,22 @@ def send_periodic_notifications():
                     connection=connection,
                     fail_silently=False,
                 )
-                user.last_notified = now()
-                user.save(update_fields=["last_notified"])
                 sent += 1
             except Exception:
                 failed += 1
                 logger.exception(
                     "Failed to send periodic notification to %s", recipient
                 )
+            finally:
+                # Advance the cadence clock whether or not the send succeeded.
+                # If we only updated last_notified on success, a persistent
+                # provider failure (e.g. quota / rate-limit) would leave the
+                # user perpetually "due" and re-attempt them on every beat tick,
+                # hammering the email provider. Treating a failed attempt as
+                # "notified for this cycle" trades one missed digest for not
+                # spamming; the next cadence window retries normally.
+                user.last_notified = now()
+                user.save(update_fields=["last_notified"])
 
     logger.info(
         "Periodic notifications: sent=%d, skipped=%d, failed=%d",

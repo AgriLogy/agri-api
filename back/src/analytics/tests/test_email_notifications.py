@@ -142,9 +142,7 @@ class TestZoneNotificationOutbound:
         assert len(mail.outbox) == 0
 
     def test_sends_sms_when_channel_enabled(self, user_bearer):
-        with mock.patch(
-            "agriapi.twilio_messaging.send_sms", return_value=True
-        ) as m:
+        with mock.patch("agriapi.twilio_messaging.send_sms", return_value=True) as m:
             r = user_bearer.post(
                 ZONE_OUTBOUND_URL,
                 self._payload(
@@ -175,9 +173,7 @@ class TestZoneNotificationOutbound:
         m.assert_called_once()
 
     def test_email_and_sms_together(self, user_bearer, normal_user):
-        with mock.patch(
-            "agriapi.twilio_messaging.send_sms", return_value=True
-        ) as m:
+        with mock.patch("agriapi.twilio_messaging.send_sms", return_value=True) as m:
             r = user_bearer.post(
                 ZONE_OUTBOUND_URL,
                 self._payload(
@@ -192,14 +188,10 @@ class TestZoneNotificationOutbound:
         m.assert_called_once()
 
     def test_400_when_phone_missing_for_sms(self, user_bearer, normal_user):
-        type(normal_user).objects.filter(pk=normal_user.pk).update(
-            phone_number=None
-        )
+        type(normal_user).objects.filter(pk=normal_user.pk).update(phone_number=None)
         r = user_bearer.post(
             ZONE_OUTBOUND_URL,
-            self._payload(
-                channels={"email": False, "sms": True, "whatsapp": False}
-            ),
+            self._payload(channels={"email": False, "sms": True, "whatsapp": False}),
             format="json",
         )
         assert r.status_code == 400
@@ -314,3 +306,26 @@ class TestSendPeriodicNotificationsTask:
         result = send_periodic_notifications()
         assert result["sent"] == 0
         assert len(mail.outbox) == 0
+
+    def test_failed_send_still_advances_last_notified(self):
+        # A persistent provider failure must not leave the user "due" forever:
+        # last_notified is advanced on failure too, so the next beat tick skips
+        # them (cadence respected) instead of re-attempting every tick.
+        u = self._make_user("flaky", email="flaky@example.com")
+        before = timezone.now()
+
+        with (
+            mock.patch("agriapi.tasks.perform_calculations", return_value="msg"),
+            mock.patch(
+                "agriapi.tasks.send_mail", side_effect=Exception("provider down")
+            ),
+        ):
+            result = send_periodic_notifications()
+
+        assert result["sent"] == 0
+        assert result["failed"] == 1
+        assert len(mail.outbox) == 0
+
+        u.refresh_from_db()
+        assert u.last_notified is not None
+        assert u.last_notified >= before
