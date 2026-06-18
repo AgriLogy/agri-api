@@ -32,12 +32,13 @@ class AssistantConversation(models.Model):
     updated_at = models.DateTimeField()
 
     class Meta:
-        # Homeless app_label (no installed app uses it) so Django's migrate
-        # never tries to manage this table — it's created out-of-band, exactly
-        # like LoraUplink. A managed app_label here would break the migration
-        # graph (FK to the migrated user model with no migration of our own).
-        app_label = "assistant_history"
+        app_label = "assistant"
         db_table = "assistant_conversation"
+        # Django does NOT manage this table: it's created out-of-band
+        # (scripts/ensure_assistant_tables.py on boot / a test fixture), since
+        # schema-of-record lives in agri-db. managed=False keeps it out of the
+        # migration graph AND out of the test flush table-list.
+        managed = False
         ordering = ["-updated_at"]
         constraints = [
             models.UniqueConstraint(
