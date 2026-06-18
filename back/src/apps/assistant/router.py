@@ -54,23 +54,25 @@ def invoke_tool(request, name: str, payload: ToolInvokeIn):
     "/chat", auth=JwtAuth(), summary="Understand a message and return the right data"
 )
 def chat(request, payload: ChatIn):
-    decision = get_orchestrator().decide(payload.message, context=payload.context)
+    user = request.auth
 
-    data = None
-    if decision.tool:
-        tool = registry.get(decision.tool)
-        if tool is not None:
-            params = dict(decision.params)
-            if payload.zone_id is not None:
-                params.setdefault("zone_id", payload.zone_id)
-            data = tool.handler(request.auth, params)
-    elif decision.intent == "commands":
-        # No DB needed — hand back the catalog so the UI can render it.
-        data = {"commands": registry.catalog()}
+    def run_tool(name: str, params: dict) -> dict:
+        tool = registry.get(name)
+        if tool is None:
+            raise HttpError(404, f"Unknown tool: {name}")
+        merged = dict(params or {})
+        if payload.zone_id is not None:
+            merged.setdefault("zone_id", payload.zone_id)
+        return tool.handler(user, merged)
+
+    result = get_orchestrator().respond(
+        payload.message, run_tool=run_tool, context=payload.context
+    )
 
     return {
-        "intent": decision.intent,
-        "reply_key": decision.reply_key,
-        "tool": decision.tool,
-        "data": data,
+        "intent": result.intent,
+        "reply_key": result.reply_key,
+        "reply": result.reply,
+        "tool": result.tool,
+        "data": result.data,
     }
