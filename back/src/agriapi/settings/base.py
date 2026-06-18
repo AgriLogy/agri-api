@@ -217,6 +217,16 @@ CELERY_TASK_EAGER_PROPAGATES = CELERY_TASK_ALWAYS_EAGER
 # Ensure Celery imports project-level tasks
 CELERY_IMPORTS = ("agriapi.tasks",)
 
+# Queue isolation. This worker shares a redis broker with the legacy agriback
+# monolith stack (the demo simulator), and both used to consume the default
+# `celery` queue — so each worker grabbed ~half the other's tasks and rejected
+# them as "unregistered", and our own scheduled tasks were silently dropped
+# whenever they landed on the legacy worker. Route everything we own onto a
+# dedicated `agriapi` queue (the worker is started with `-Q agriapi`); unrouted
+# legacy `agriBack.*` tasks keep flowing to the default queue for their own
+# worker, so the demo simulator is untouched.
+CELERY_TASK_ROUTES = {"agriapi.*": {"queue": "agriapi"}}
+
 # Cap how long a single SMTP send may block. Without this Django uses the
 # socket default (can hang ~60s on an unreachable mail host, 504-ing requests
 # and stalling Celery workers). Applies to every environment's SMTP backend.
