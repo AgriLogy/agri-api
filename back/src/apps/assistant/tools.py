@@ -10,7 +10,11 @@ rule-based router today and an LLM tool-caller later.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import timedelta
 from typing import Any, Callable
+
+from django.db.models import Avg, Count, Max, Min
+from django.utils import timezone
 
 from apps.alerts.models import Alert
 from .registry import SENSOR_SOURCES, latest_reading
@@ -270,6 +274,65 @@ def _get_water_status(user, params: dict) -> dict:
     return _metric_snapshot(user, _WATER_KEYS, params.get("zone_id"))
 
 
+def _get_sensor_trend(user, params: dict) -> dict:
+    """Rolling-window trend for one sensor key: latest/min/max/avg/count plus a
+    direction (rising|falling|flat) from the first vs last value in the window."""
+    sensor_key = params.get("sensor_key")
+    zone_id = params.get("zone_id")
+    try:
+        hours = int(params.get("hours") or 24)
+    except (TypeError, ValueError):
+        hours = 24
+
+    source = SENSOR_SOURCES.get(sensor_key)
+    if source is None:
+        return {"error": f"Unknown sensor key: {sensor_key}", "key": sensor_key}
+
+    now = timezone.now()
+    window_start = now - timedelta(hours=hours)
+    qs = source.model.objects.filter(
+        user=user, timestamp__gte=window_start, timestamp__lte=now
+    )
+    if zone_id is not None:
+        qs = qs.filter(zone_id=zone_id)
+
+    stats = qs.aggregate(
+        min_val=Min("value"),
+        max_val=Max("value"),
+        avg_val=Avg("value"),
+        count=Count("id"),
+    )
+    latest = latest_reading(user, sensor_key, zone_id=zone_id)
+    first_row = qs.order_by("timestamp").first()
+    last_row = qs.order_by("-timestamp").first()
+
+    direction = "flat"
+    if (
+        first_row is not None
+        and last_row is not None
+        and first_row.value is not None
+        and last_row.value is not None
+    ):
+        if last_row.value > first_row.value:
+            direction = "rising"
+        elif last_row.value < first_row.value:
+            direction = "falling"
+
+    return {
+        "key": sensor_key,
+        "label": source.label,
+        "unit": source.unit,
+        "latest": _round(latest.value if latest else None),
+        "min": _round(stats["min_val"]),
+        "max": _round(stats["max_val"]),
+        "avg": _round(stats["avg_val"]),
+        "count": stats["count"] or 0,
+        "direction": direction,
+        "window_start": window_start.isoformat(),
+        "window_end": now.isoformat(),
+    }
+
+
 registry.register(
     Tool(
         name="get_sitemap",
@@ -375,5 +438,33 @@ registry.register(
         "conductivity, pH, precipitation rate, water level).",
         handler=_get_water_status,
         params=_ZONE_PARAM,
+    )
+)
+registry.register(
+    Tool(
+        name="get_sensor_trend",
+        description="Trend of one sensor over a rolling window: latest, min, max, "
+        "average, sample count and direction (rising/falling/flat). Use to answer "
+        '"how has X changed today / over the last N hours?".',
+        handler=_get_sensor_trend,
+        params={
+            "sensor_key": {
+                "type": "string",
+                "required": True,
+                "description": "Sensor to trend. One of: "
+                + ", ".join(SENSOR_SOURCES.keys())
+                + ".",
+            },
+            "zone_id": {
+                "type": "integer",
+                "required": False,
+                "description": "Restrict the trend to a single zone.",
+            },
+            "hours": {
+                "type": "integer",
+                "required": False,
+                "description": "Rolling window length in hours (default 24).",
+            },
+        },
     )
 )

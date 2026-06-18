@@ -56,6 +56,10 @@ class _IntentRule:
     reply_key: str
     triggers: list[str]
     tool: str | None = None
+    # Default params passed to the tool. The rule-based path can't parse
+    # arguments from free text, so a parametrised tool (e.g. get_sensor_trend)
+    # supplies a sensible default here; the LLM path fills them itself.
+    params: dict[str, Any] = field(default_factory=dict)
 
 
 _RULES: list[_IntentRule] = [
@@ -157,6 +161,25 @@ _RULES: list[_IntentRule] = [
         tool="get_water_status",
     ),
     _IntentRule(
+        "trend",
+        "misc.chatbot.trendCard.intro",
+        [
+            "/trend",
+            "/trends",
+            "/tendance",
+            "trend",
+            "trends",
+            "history",
+            "evolution",
+            "évolution",
+            "tendance",
+            "الاتجاه",
+        ],
+        tool="get_sensor_trend",
+        # Free text can't supply a sensor; default to soil moisture (most asked).
+        params={"sensor_key": "soilMoisture"},
+    ),
+    _IntentRule(
         "clear",
         "misc.chatbot.cleared",
         ["/clear", "/clr", "/effacer", "clear chat", "effacer la conversation"],
@@ -175,12 +198,16 @@ class RuleBasedOrchestrator:
         for rule in _RULES:
             for trig in rule.triggers:
                 if text == trig or (trig.startswith("/") and text.startswith(trig)):
-                    return Decision(rule.intent, rule.reply_key, rule.tool)
+                    return Decision(
+                        rule.intent, rule.reply_key, rule.tool, dict(rule.params)
+                    )
         # 2) natural-language contains (guard tiny tokens)
         for rule in _RULES:
             for trig in rule.triggers:
                 if not trig.startswith("/") and len(trig) >= 4 and trig in text:
-                    return Decision(rule.intent, rule.reply_key, rule.tool)
+                    return Decision(
+                        rule.intent, rule.reply_key, rule.tool, dict(rule.params)
+                    )
         return _FALLBACK
 
     def respond(
