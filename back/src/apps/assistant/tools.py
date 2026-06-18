@@ -156,6 +156,56 @@ def _get_weather(user, params: dict) -> dict:
     return {"metrics": metrics}
 
 
+def _zone_summary(z) -> dict:
+    return {
+        "id": z.id,
+        "name": z.name,
+        "area_m2": _round(z.space),
+        "critical_moisture": _round(z.critical_moisture_threshold),
+        "soil_param_TAW": _round(z.soil_param_TAW),
+        "soil_param_FC": _round(z.soil_param_FC),
+        "soil_param_WP": _round(z.soil_param_WP),
+        "soil_param_RAW": _round(z.soil_param_RAW),
+    }
+
+
+def _list_zones(user, params: dict) -> dict:
+    """The caller's zones, optionally filtered by a case-insensitive name substring."""
+    from apps.irrigation.models import Zone
+
+    name_filter = (params.get("zone_name") or "").strip().lower()
+    zones = [
+        _zone_summary(z)
+        for z in Zone.objects.filter(user=user).order_by("id")
+        if not name_filter or name_filter in (z.name or "").lower()
+    ]
+    return {"zones": zones}
+
+
+def _get_zone_detail(user, params: dict) -> dict:
+    """Resolve one zone by id or (case-insensitive) name and return full details."""
+    from apps.irrigation.models import Zone
+
+    zone_id = params.get("zone_id")
+    zone_name = (params.get("zone_name") or "").strip()
+    qs = Zone.objects.filter(user=user)
+    z = None
+    if zone_id:
+        z = qs.filter(id=zone_id).first()
+    elif zone_name:
+        z = next((c for c in qs if (c.name or "").lower() == zone_name.lower()), None)
+    if z is None:
+        return {"zone": None}
+    detail = _zone_summary(z)
+    detail.update(
+        {
+            "pomp_flow_rate": _round(z.pomp_flow_rate),
+            "irrigation_water_quantity": _round(z.irrigation_water_quantity),
+        }
+    )
+    return {"zone": detail}
+
+
 registry.register(
     Tool(
         name="get_sitemap",
@@ -191,5 +241,40 @@ registry.register(
         description="Latest weather-station readings (air temperature, humidity, "
         "pressure, ET0, VPD) for the caller.",
         handler=_get_weather,
+    )
+)
+registry.register(
+    Tool(
+        name="list_zones",
+        description="List the caller's zones (name, area, critical-moisture "
+        "threshold, soil params), optionally filtered by name.",
+        handler=_list_zones,
+        params={
+            "zone_name": {
+                "type": "string",
+                "required": False,
+                "description": "Case-insensitive name substring to filter zones.",
+            }
+        },
+    )
+)
+registry.register(
+    Tool(
+        name="get_zone_detail",
+        description="Full details of one zone (soil params + irrigation settings), "
+        "resolved by id or name.",
+        handler=_get_zone_detail,
+        params={
+            "zone_id": {
+                "type": "integer",
+                "required": False,
+                "description": "Zone id (or pass zone_name).",
+            },
+            "zone_name": {
+                "type": "string",
+                "required": False,
+                "description": "Zone name, case-insensitive (or pass zone_id).",
+            },
+        },
     )
 )

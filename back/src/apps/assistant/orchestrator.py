@@ -123,6 +123,22 @@ _RULES: list[_IntentRule] = [
         tool="get_weather",
     ),
     _IntentRule(
+        "zones",
+        "misc.chatbot.zonesCard.intro",
+        [
+            "/zones",
+            "/zone",
+            "zones",
+            "my zones",
+            "list zones",
+            "mes zones",
+            "liste des zones",
+            "مناطق",
+            "المناطق",
+        ],
+        tool="list_zones",
+    ),
+    _IntentRule(
         "clear",
         "misc.chatbot.cleared",
         ["/clear", "/clr", "/effacer", "clear chat", "effacer la conversation"],
