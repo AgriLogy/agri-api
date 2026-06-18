@@ -1,6 +1,52 @@
 # CHANGELOG
 
 
+## v1.40.2 (2026-06-18)
+
+### Bug Fixes
+
+- **celery**: Isolate agri-api tasks onto a dedicated queue
+  ([#186](https://github.com/AgriLogy/agri-api/pull/186),
+  [`68b06e6`](https://github.com/AgriLogy/agri-api/commit/68b06e60b0451192bb554314cb852d5541965672))
+
+Closes #185
+
+The agri-api Celery worker shares a redis broker (`redis://redis:6379/0`) with the legacy
+  **agriback** monolith stack, and both consumed the default `celery` queue. Consequences:
+
+- agri-api worker rejects legacy `agriBack.tasks.*` as unregistered (KeyError noise every `*/2`). -
+  **Our own scheduled tasks (`compute_et0`, `email_ping`) are silently dropped ~half the time** when
+  they land on the legacy worker. Real reliability bug.
+
+## Change - `CELERY_TASK_ROUTES = {"agriapi.*": {"queue": "agriapi"}}` (settings/base.py). - Worker
+  started with `-Q agriapi` (docker-entrypoint.sh). - Routing tests (`test_celery_routing.py`).
+
+Unrouted `agriBack.*` tasks stay on the default queue → the legacy worker keeps running the demo
+  simulator (verified live on the droplet).
+
+## Deploy note Reset `/root/agri-api` to main and restart **web + worker + beat together** (the
+  entrypoint + settings are bind-mounted; no rebuild). Restarting all three avoids a window where
+  the beat publishes to one queue while the worker listens on another.
+
+## Verification Local: `app.amqp.router.route` sends `agriapi.tasks.*` → `agriapi` and
+  `agriBack.tasks.*` → `celery`; routing tests pass; ruff clean.
+
+### Continuous Integration
+
+- Fix Auto Assign workflow failing on pull_request events
+  ([#184](https://github.com/AgriLogy/agri-api/pull/184),
+  [`2e49959`](https://github.com/AgriLogy/agri-api/commit/2e49959eadfb3ca6415d5f523ce58d8d99c366c7))
+
+Closes #183
+
+Replaces the broken `pozil/auto-assign-issue@v1` step (errors "Couldn't find issue info in current
+  context" on `pull_request`, plus an invalid `numOfAssignee` input warning) with a single `gh api`
+  call to the `issues/{number}/assignees` endpoint. That endpoint assigns **both** issues and PRs,
+  so one step covers both triggers.
+
+Same fix is being applied across all active org repos.
+
+
 ## v1.40.1 (2026-06-18)
 
 ### Bug Fixes
