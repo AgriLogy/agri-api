@@ -104,3 +104,6 @@ jobs:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: postgres
           EMAIL_BACKEND: "django.core.mail.backends.locmem.EmailBackend"
+          # Run Celery tasks inline so `.delay()`-based tests (zone outbound
+          # email/SMS/WhatsApp) execute without a redis broker service.
+          CELERY_TASK_ALWAYS_EAGER: "True"
