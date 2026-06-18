@@ -1,6 +1,42 @@
 # CHANGELOG
 
 
+## v1.43.0 (2026-06-18)
+
+### Chores
+
+- **assistant**: Tighten LLM system prompt (no function tags, use Markdown)
+  ([#200](https://github.com/AgriLogy/agri-api/pull/200),
+  [`ee9e077`](https://github.com/AgriLogy/agri-api/commit/ee9e0778a2c9181151825608f96c2d512b05dd9d))
+
+Closes #199
+
+The model occasionally emitted pseudo function-call syntax like `<function=...>` in its reply text.
+  Tighten the system prompt: never mention tool/function names or emit call syntax/tags; format
+  answers with simple **Markdown** (rendered on the frontend, companion agrilogy-front PR).
+
+### Features
+
+- **assistant**: Server-side conversation history
+  ([#202](https://github.com/AgriLogy/agri-api/pull/202),
+  [`84c5435`](https://github.com/AgriLogy/agri-api/commit/84c54355a66fc47035eb163a58ad84d027b2b6fc))
+
+Closes #201
+
+Persist the assistant's conversations per user, server-side, so history follows the account across
+  devices.
+
+- **`AssistantConversation`** — one row/conversation, messages as a JSON list; keyed by `(user,
+  client_id)` (the frontend uuid) for stable identity across offline/online. - **Endpoints**
+  (`/assistant`, JWT, user-scoped): `GET /conversations`, `PUT /conversations/{client_id}` (upsert),
+  `DELETE /conversations/{client_id}`. - **Self-deploying table**: schema-of-record is agri-db and
+  Django doesn't migrate on boot, so the table is created out-of-band by an idempotent
+  `scripts/ensure_assistant_tables.py` run on web boot (the LoraUplink pattern) — no manual prod-DB
+  migration. - 30 tests (history CRUD + user isolation); ruff + django check clean.
+
+Frontend syncs to these endpoints (companion agrilogy-front PR).
+
+
 ## v1.42.1 (2026-06-18)
 
 ### Bug Fixes
