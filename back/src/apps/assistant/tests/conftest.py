@@ -4,6 +4,11 @@ from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import AccessToken
 
 
+# The assistant_conversation table is created session-wide in the root
+# conftest (_create_assistant_history_table), so all apps' flush-based tests
+# see it.
+
+
 @pytest.fixture
 def assistant_user(db):
     User = get_user_model()

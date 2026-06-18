@@ -38,6 +38,25 @@ def _bind_agri_core_db(django_db_setup):
     yield
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _create_assistant_history_table(django_db_setup, django_db_blocker):
+    """``assistant_conversation`` is created out-of-band in prod (homeless
+    model, not migrate-managed). Create it once for the whole test DB so the
+    flush-based TransactionTestCases across all apps don't choke on a missing
+    table.
+    """
+    from django.db import connection
+
+    from apps.assistant.models import AssistantConversation
+
+    table = AssistantConversation._meta.db_table
+    with django_db_blocker.unblock():
+        if table not in connection.introspection.table_names():
+            with connection.schema_editor() as editor:
+                editor.create_model(AssistantConversation)
+    yield
+
+
 def _bearer_client(user) -> APIClient:
     from rest_framework_simplejwt.tokens import AccessToken
 

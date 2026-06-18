@@ -16,10 +16,14 @@ from __future__ import annotations
 
 from typing import Any
 
+from datetime import datetime
+
+from django.utils import timezone
 from ninja import Router, Schema
 from ninja.errors import HttpError
 
 from agriapi.api.auth import JwtAuth
+from .models import AssistantConversation
 from .orchestrator import get_orchestrator
 from .tools import registry
 
@@ -34,6 +38,23 @@ class ChatIn(Schema):
     message: str
     zone_id: int | None = None
     context: str | None = None
+
+
+class ConversationIn(Schema):
+    title: str = ""
+    messages: list[dict] = []
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+def _serialize_conversation(c: AssistantConversation) -> dict:
+    return {
+        "id": c.client_id,
+        "title": c.title,
+        "messages": c.messages,
+        "createdAt": c.created_at.isoformat(),
+        "updatedAt": c.updated_at.isoformat(),
+    }
 
 
 @router.get("/tools", auth=JwtAuth(), summary="List the assistant's available tools")
@@ -76,3 +97,40 @@ def chat(request, payload: ChatIn):
         "tool": result.tool,
         "data": result.data,
     }
+
+
+# ── conversation history (server-side, per user) ─────────────────────────────
+@router.get("/conversations", auth=JwtAuth(), summary="List the caller's conversations")
+def list_conversations(request):
+    qs = AssistantConversation.objects.filter(user=request.auth)
+    return [_serialize_conversation(c) for c in qs]
+
+
+@router.put(
+    "/conversations/{client_id}",
+    auth=JwtAuth(),
+    summary="Create or replace a conversation",
+)
+def upsert_conversation(request, client_id: str, payload: ConversationIn):
+    now = timezone.now()
+    obj, _ = AssistantConversation.objects.update_or_create(
+        user=request.auth,
+        client_id=client_id,
+        defaults={
+            "title": (payload.title or "")[:200],
+            "messages": payload.messages or [],
+            "created_at": payload.created_at or now,
+            "updated_at": payload.updated_at or now,
+        },
+    )
+    return _serialize_conversation(obj)
+
+
+@router.delete(
+    "/conversations/{client_id}", auth=JwtAuth(), summary="Delete a conversation"
+)
+def delete_conversation(request, client_id: str):
+    AssistantConversation.objects.filter(
+        user=request.auth, client_id=client_id
+    ).delete()
+    return {"deleted": True}
