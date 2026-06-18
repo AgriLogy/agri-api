@@ -33,10 +33,13 @@ class TestOrchestrator:
             ("/alerts", "active_alerts", "get_active_alerts"),
             ("/status", "farm_status", "get_farm_status"),
             ("/weather", "weather", "get_weather"),
+            ("/zones", "zones", "list_zones"),
             ("/clear", "clear", None),
             ("show me the site map", "sitemap", "get_sitemap"),
             ("what are my alertes", "active_alerts", "get_active_alerts"),
             ("météo", "weather", "get_weather"),
+            ("list zones please", "zones", "list_zones"),
+            ("mes zones", "zones", "list_zones"),
         ],
     )
     def test_routes(self, message, intent, tool):
@@ -63,6 +66,8 @@ class TestAssistantApi:
             "get_active_alerts",
             "get_farm_status",
             "get_weather",
+            "list_zones",
+            "get_zone_detail",
         } <= names
 
     def test_invoke_farm_status(self, assistant_client):
@@ -126,6 +131,99 @@ class TestAssistantApi:
 
         r = APIClient().get(TOOLS_URL)
         assert r.status_code == 401
+
+
+# ── zones tools ──────────────────────────────────────────────────────────────
+@pytest.mark.django_db
+class TestZonesTools:
+    def _zone(self, user, name, **over):
+        from apps.irrigation.models import Zone
+
+        fields = {
+            "user": user,
+            "name": name,
+            "space": 1000.0,
+            "critical_moisture_threshold": 25.0,
+        }
+        fields.update(over)
+        return Zone.objects.create(**fields)
+
+    def test_list_zones_returns_callers_zones(self, assistant_client, assistant_user):
+        self._zone(assistant_user, "North field")
+        self._zone(assistant_user, "South field")
+        r = assistant_client.post(
+            f"{TOOLS_URL}/list_zones", {"params": {}}, format="json"
+        )
+        assert r.status_code == 200
+        zones = r.json()["data"]["zones"]
+        names = {z["name"] for z in zones}
+        assert names == {"North field", "South field"}
+        north = next(z for z in zones if z["name"] == "North field")
+        assert north["area_m2"] == 1000.0
+        assert north["critical_moisture"] == 25.0
+
+    def test_list_zones_name_filter(self, assistant_client, assistant_user):
+        self._zone(assistant_user, "North field")
+        self._zone(assistant_user, "South orchard")
+        r = assistant_client.post(
+            f"{TOOLS_URL}/list_zones",
+            {"params": {"zone_name": "orchard"}},
+            format="json",
+        )
+        zones = r.json()["data"]["zones"]
+        assert [z["name"] for z in zones] == ["South orchard"]
+
+    def test_list_zones_user_isolation(self, assistant_client, assistant_user):
+        from django.contrib.auth import get_user_model
+
+        other = get_user_model().objects.create_user(
+            username="other_zones", email="oz@e.com", password="pw"
+        )
+        self._zone(other, "Not mine")
+        self._zone(assistant_user, "Mine")
+        r = assistant_client.post(
+            f"{TOOLS_URL}/list_zones", {"params": {}}, format="json"
+        )
+        names = {z["name"] for z in r.json()["data"]["zones"]}
+        assert names == {"Mine"}
+
+    def test_get_zone_detail_by_id(self, assistant_client, assistant_user):
+        z = self._zone(assistant_user, "Plot A", pomp_flow_rate=42.0)
+        r = assistant_client.post(
+            f"{TOOLS_URL}/get_zone_detail",
+            {"params": {"zone_id": z.id}},
+            format="json",
+        )
+        detail = r.json()["data"]["zone"]
+        assert detail["name"] == "Plot A"
+        assert detail["pomp_flow_rate"] == 42.0
+
+    def test_get_zone_detail_by_name(self, assistant_client, assistant_user):
+        self._zone(assistant_user, "Plot B")
+        r = assistant_client.post(
+            f"{TOOLS_URL}/get_zone_detail",
+            {"params": {"zone_name": "plot b"}},
+            format="json",
+        )
+        assert r.json()["data"]["zone"]["name"] == "Plot B"
+
+    def test_get_zone_detail_missing_returns_null(self, assistant_client):
+        r = assistant_client.post(
+            f"{TOOLS_URL}/get_zone_detail",
+            {"params": {"zone_name": "nope"}},
+            format="json",
+        )
+        assert r.status_code == 200
+        assert r.json()["data"]["zone"] is None
+
+    def test_chat_zones_returns_user_zones(self, assistant_client, assistant_user):
+        self._zone(assistant_user, "Greenhouse")
+        r = assistant_client.post(CHAT_URL, {"message": "/zones"}, format="json")
+        body = r.json()
+        assert body["intent"] == "zones"
+        assert body["tool"] == "list_zones"
+        names = [z["name"] for z in body["data"]["zones"]]
+        assert "Greenhouse" in names
 
 
 # ── orchestrator factory + LLM orchestrator (pure, no DB) ────────────────────
