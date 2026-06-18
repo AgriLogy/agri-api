@@ -19,43 +19,26 @@ jobs:
           # rebuilding stale code (the old script's `git pull` could abort on
           # local changes while the job still reported success).
           script_stop: true
+          # IMPORTANT: single-line commands only. The appleboy SSH action runs
+          # this under the droplet's login shell (zsh), and multi-line compound
+          # constructs (if/case/for) fail to PARSE there — the whole script then
+          # aborts before any command runs. Every line below is a standalone
+          # command.
           script: |
             set -eu
-            # The public API (back.agrogo-datafarm.com -> :8000 -> agri-api-web)
-            # is served from /root/agri-api. The old DO_APP_PATH pointed at the
-            # legacy /root/agrilogy-back stack, so deploys never reached the API.
             cd /root/agri-api
-            # Force-sync to origin/main. A deploy box should never carry local
-            # commits; reset --hard avoids the "your local changes would be
-            # overwritten / Aborting" trap (untracked files like the droplet's
-            # docker-compose.override.yml are preserved).
-            PREV=$(git rev-parse HEAD)
             git fetch origin main
             git reset --hard origin/main
-            NEW=$(git rev-parse HEAD)
-            # Rebuild ONLY when dependencies changed. The venv is baked into the
-            # image but the app code is bind-mounted (./back:/code), so a
-            # code-only change needs no rebuild, and rebuilding pulls the private
-            # agri-db dep which requires AGRI_DB_RO_TOKEN. Skipping the build on
-            # code-only deploys keeps them working without that token. Build
-            # BEFORE swapping: on a bad build, set -e stops here and the running
-            # containers keep serving the old image (no downtime).
-            # (case glob, no pipe/grep, so it is robust under the SSH shell.)
-            CHANGED=$(git diff --name-only "$PREV" "$NEW")
-            case "$CHANGED" in
-              *back/uv.lock*|*back/pyproject.toml*)
-                echo "Dependencies changed -> rebuilding image"
-                docker compose build
-                ;;
-              *)
-                echo "No dependency change -> skipping build"
-                ;;
-            esac
-            # Ensure containers exist / pick up any compose changes.
-            docker compose up -d
-            # Bind-mounted code does NOT hot-reload in the Celery worker/beat
-            # (only the web's runserver StatReloader does), and `up -d` won't
-            # recreate containers when nothing in their config changed. Restart
-            # the app services so the new code actually takes effect.
-            docker compose restart agri-api-web agri-api-worker agri-api-beat
+            docker restart agri-api-web agri-api-worker agri-api-beat
             docker image prune -f
+          # Why just reset + restart (no build / no `compose up`):
+          #   - app code is bind-mounted (./back:/code), so a code-only deploy
+          #     (the overwhelming majority) only needs a restart to take effect;
+          #     the web auto-reloads but the celery worker/beat do not.
+          #   - `docker compose up -d` conflicts here: mailpit/redis are owned by
+          #     another compose project ("container name already in use").
+          #   - a rebuild needs AGRI_DB_RO_TOKEN (private agri-db dep), which is
+          #     not on the droplet. So DEPENDENCY changes (back/uv.lock or
+          #     pyproject.toml) require a one-off manual rebuild on the droplet:
+          #       cd /root/agri-api && docker compose build agri-api-web \
+          #         && docker compose up -d --no-deps agri-api-web agri-api-worker agri-api-beat
