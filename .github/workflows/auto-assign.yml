@@ -13,9 +13,12 @@ jobs:
       issues: write
       pull-requests: write
     steps:
-      - name: Auto-assign issue
-        uses: pozil/auto-assign-issue@v1
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-          assignees: mks-zakaria
-          numOfAssignee: 1
+      # A PR shares its repo's issue-number space, so the issues/assignees
+      # endpoint assigns both issues and PRs with one call. Pick whichever
+      # number the triggering event carries.
+      - name: Assign to mks-zakaria
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
+        run: gh api --method POST "repos/$REPO/issues/$NUMBER/assignees" -f "assignees[]=mks-zakaria"
