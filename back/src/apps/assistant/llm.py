@@ -76,6 +76,9 @@ def _post(payload: dict) -> dict:
         headers={
             "Content-Type": "application/json",
             "Authorization": f"Bearer {settings.AI_API_KEY}",
+            # Some providers' edge/WAF (e.g. Groq) reject the default
+            # "Python-urllib/x.y" agent with 403 — send an explicit one.
+            "User-Agent": "agri-api-assistant/1.0",
         },
     )
     with urllib.request.urlopen(req, timeout=settings.AI_TIMEOUT) as resp:
