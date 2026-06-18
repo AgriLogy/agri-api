@@ -109,7 +109,11 @@ case "$ROLE" in
     wait_for_postgres
     wait_for_redis
     log "Starting Celery worker"
-    exec celery -A agriapi worker --loglevel=info --concurrency=1
+    # -Q agriapi: consume only our own queue (CELERY_TASK_ROUTES sends every
+    # agriapi.* task here). Keeps the legacy agriBack.* tasks — which share this
+    # broker on the default queue — off this worker, and stops our tasks being
+    # silently dropped onto the legacy worker.
+    exec celery -A agriapi worker --loglevel=info --concurrency=1 -Q agriapi
     ;;
   beat)
     wait_for_postgres
