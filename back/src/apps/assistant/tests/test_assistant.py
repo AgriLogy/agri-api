@@ -77,6 +77,7 @@ class TestAssistantApi:
             "get_soil_status",
             "get_plant_status",
             "get_water_status",
+            "get_sensor_trend",
         } <= names
 
     def test_invoke_farm_status(self, assistant_client):
@@ -325,6 +326,107 @@ class TestSnapshotTools:
         assert body["intent"] == intent
         assert body["tool"] == tool
         assert "metrics" in body["data"]
+
+
+# ── sensor trend ─────────────────────────────────────────────────────────────
+@pytest.mark.django_db
+class TestSensorTrendTool:
+    def _zone(self, user, name="Z"):
+        from apps.irrigation.models import Zone
+
+        return Zone.objects.create(
+            user=user, name=name, space=1000.0, critical_moisture_threshold=25.0
+        )
+
+    def _reading(self, user, value, zone, minutes_ago):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from apps.sensors.models import SoilMoistureMedium
+
+        return SoilMoistureMedium.objects.create(
+            user=user,
+            zone=zone,
+            value=value,
+            timestamp=timezone.now() - timedelta(minutes=minutes_ago),
+        )
+
+    def _trend(self, client, **params):
+        return client.post(
+            f"{TOOLS_URL}/get_sensor_trend", {"params": params}, format="json"
+        )
+
+    def test_stats_and_rising(self, assistant_client, assistant_user):
+        z = self._zone(assistant_user)
+        # oldest→newest 10,20,30 → rising, min10 max30 avg20 latest30 count3
+        self._reading(assistant_user, 10.0, z, 180)
+        self._reading(assistant_user, 20.0, z, 120)
+        self._reading(assistant_user, 30.0, z, 60)
+        d = self._trend(assistant_client, sensor_key="soilMoisture").json()["data"]
+        assert d["count"] == 3
+        assert (d["min"], d["max"], d["avg"]) == (10.0, 30.0, 20.0)
+        assert d["latest"] == 30.0
+        assert d["direction"] == "rising"
+        assert d["key"] == "soilMoisture" and d["unit"]
+
+    def test_falling(self, assistant_client, assistant_user):
+        z = self._zone(assistant_user)
+        self._reading(assistant_user, 40.0, z, 180)
+        self._reading(assistant_user, 10.0, z, 30)
+        d = self._trend(assistant_client, sensor_key="soilMoisture").json()["data"]
+        assert d["direction"] == "falling"
+
+    def test_flat_single_reading(self, assistant_client, assistant_user):
+        z = self._zone(assistant_user)
+        self._reading(assistant_user, 25.0, z, 30)
+        d = self._trend(assistant_client, sensor_key="soilMoisture").json()["data"]
+        assert d["direction"] == "flat"
+
+    def test_window_excludes_old(self, assistant_client, assistant_user):
+        z = self._zone(assistant_user)
+        self._reading(assistant_user, 99.0, z, 60)  # inside 24h
+        self._reading(assistant_user, 1.0, z, 60 * 48)  # 2 days ago, excluded
+        d = self._trend(
+            assistant_client, sensor_key="soilMoisture", hours=24
+        ).json()["data"]
+        assert d["count"] == 1 and d["min"] == 99.0
+
+    def test_unknown_key_errors_no_500(self, assistant_client):
+        r = self._trend(assistant_client, sensor_key="nope")
+        assert r.status_code == 200
+        assert "error" in r.json()["data"]
+
+    def test_zone_filter(self, assistant_client, assistant_user):
+        z = self._zone(assistant_user, "target")
+        other = self._zone(assistant_user, "other")
+        self._reading(assistant_user, 50.0, z, 30)
+        self._reading(assistant_user, 5.0, other, 30)
+        d = self._trend(
+            assistant_client, sensor_key="soilMoisture", zone_id=z.id
+        ).json()["data"]
+        assert d["count"] == 1 and d["latest"] == 50.0
+
+    def test_user_isolation(self, assistant_client, assistant_user):
+        from django.contrib.auth import get_user_model
+
+        other = get_user_model().objects.create_user(
+            username="other_trend", email="ot@e.com", password="pw"
+        )
+        self._reading(other, 70.0, self._zone(other), 30)
+        d = self._trend(assistant_client, sensor_key="soilMoisture").json()["data"]
+        assert d["count"] == 0 and d["direction"] == "flat"
+
+    def test_chat_trend_route(self, assistant_client, assistant_user):
+        z = self._zone(assistant_user)
+        self._reading(assistant_user, 33.0, z, 30)
+        body = assistant_client.post(
+            CHAT_URL, {"message": "/trend"}, format="json"
+        ).json()
+        assert body["intent"] == "trend"
+        assert body["tool"] == "get_sensor_trend"
+        assert body["data"]["key"] == "soilMoisture"
+        assert body["data"]["direction"] in {"rising", "falling", "flat"}
 
 
 # ── orchestrator factory + LLM orchestrator (pure, no DB) ────────────────────
