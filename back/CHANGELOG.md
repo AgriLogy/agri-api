@@ -1,6 +1,33 @@
 # CHANGELOG
 
 
+## v1.47.0 (2026-06-18)
+
+### Features
+
+- **assistant**: Irrigation advice + recent notifications tools
+  ([#210](https://github.com/AgriLogy/agri-api/pull/210),
+  [`a783261`](https://github.com/AgriLogy/agri-api/commit/a783261fa572519f859f6fe2a642dc1cf3746a70))
+
+Closes #209
+
+Final richer-assistant tool group (D+E).
+
+## Tools - **`get_irrigation_advice`** (param `zone_id` optional → first zone): two-tier decision —
+  agri-core's `field_snapshot(user)` Dr/RAW result when available, else a soil-moisture vs
+  `critical_moisture_threshold` fallback. Always returns a complete payload (recommendation
+  irrigate|hold|unknown, French reason, soil/et0/vpd, Dr/RAW, estimated water m³ + duration,
+  decision_source). Read-only; wrapped in try/except so a missing agri-core DB never 500s. -
+  **`list_recent_notifications`** (param `limit` default 5): recent `Notification` rows
+  newest-first, composed into {id,title,message,date,type}.
+
+## Orchestrator Rule-based routes `/irrigation` and `/notifications` (+ NL fr/en/ar).
+
+## Verification `pytest src/apps/assistant` **72 passed** (10 new), `ruff` + `manage.py check`
+  clean. No schema change. Units per spec: irrigation_water_quantity liters→m³ (÷1000),
+  pomp_flow_rate L/s→m³/h (×3.6).
+
+
 ## v1.46.0 (2026-06-18)
 
 ### Features
