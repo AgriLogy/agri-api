@@ -14,13 +14,33 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from apps.sensors.models import (
+    ECSoilHigh,
+    ECSoilLow,
+    ECSoilMedium,
     Et0Calculated,
+    FruitSizeSensor,
     HumidityWeather,
+    LargeFruitDiameterSensor,
+    LeafMoistureSensor,
+    LeafTemperatureSensor,
+    PhSoil,
+    PhWaterSensor,
+    PrecipitationRate,
     PressureWeather,
+    SoilConductivitySensor,
+    SoilMoistureHigh,
+    SoilMoistureLow,
     SoilMoistureMedium,
+    SoilSalinitySensor,
+    SoilTemperatureHigh,
+    SoilTemperatureLow,
     SoilTemperatureMedium,
     TemperatureWeather,
     VPDWeather,
+    WaterECSensor,
+    WaterFlowSensor,
+    WaterLevelSensor,
+    WaterPressureSensor,
 )
 
 
@@ -48,6 +68,63 @@ SENSOR_SOURCES: dict[str, SensorSource] = {
     "airTemp": SensorSource("airTemp", TemperatureWeather, "Air temperature", "°C"),
     "humidity": SensorSource("humidity", HumidityWeather, "Air humidity", "%"),
     "pressure": SensorSource("pressure", PressureWeather, "Pressure", "hPa"),
+    # ── soil (moisture/temperature at 3 depths, chemistry) ──────────────────
+    "soilMoistureMedium": SensorSource(
+        "soilMoistureMedium", SoilMoistureMedium, "Soil moisture (medium)", "%"
+    ),
+    "soilMoistureHigh": SensorSource(
+        "soilMoistureHigh", SoilMoistureHigh, "Soil moisture (shallow)", "%"
+    ),
+    "soilMoistureLow": SensorSource(
+        "soilMoistureLow", SoilMoistureLow, "Soil moisture (deep)", "%"
+    ),
+    "soilTempMedium": SensorSource(
+        "soilTempMedium", SoilTemperatureMedium, "Soil temperature (medium)", "°C"
+    ),
+    "soilTempHigh": SensorSource(
+        "soilTempHigh", SoilTemperatureHigh, "Soil temperature (shallow)", "°C"
+    ),
+    "soilTempLow": SensorSource(
+        "soilTempLow", SoilTemperatureLow, "Soil temperature (deep)", "°C"
+    ),
+    "phSoil": SensorSource("phSoil", PhSoil, "Soil pH", "pH"),
+    "soilSalinity": SensorSource(
+        "soilSalinity", SoilSalinitySensor, "Soil salinity", "dS/m"
+    ),
+    "soilConductivity": SensorSource(
+        "soilConductivity", SoilConductivitySensor, "Soil conductivity", "µS/cm"
+    ),
+    "ecSoilMedium": SensorSource(
+        "ecSoilMedium", ECSoilMedium, "Soil EC (medium)", "dS/m"
+    ),
+    "ecSoilHigh": SensorSource(
+        "ecSoilHigh", ECSoilHigh, "Soil EC (shallow)", "dS/m"
+    ),
+    "ecSoilLow": SensorSource("ecSoilLow", ECSoilLow, "Soil EC (deep)", "dS/m"),
+    # ── plant / canopy ──────────────────────────────────────────────────────
+    "leafMoisture": SensorSource(
+        "leafMoisture", LeafMoistureSensor, "Leaf moisture", "%"
+    ),
+    "leafTemperature": SensorSource(
+        "leafTemperature", LeafTemperatureSensor, "Leaf temperature", "°C"
+    ),
+    "fruitSize": SensorSource("fruitSize", FruitSizeSensor, "Fruit size", "mm"),
+    "largeFruitDiameter": SensorSource(
+        "largeFruitDiameter", LargeFruitDiameterSensor, "Large fruit diameter", "mm"
+    ),
+    # ── water ───────────────────────────────────────────────────────────────
+    "waterFlow": SensorSource("waterFlow", WaterFlowSensor, "Water flow", "L/s"),
+    "waterPressure": SensorSource(
+        "waterPressure", WaterPressureSensor, "Water pressure", "Bar"
+    ),
+    "waterEC": SensorSource("waterEC", WaterECSensor, "Water conductivity", "µS/cm"),
+    "waterPH": SensorSource("waterPH", PhWaterSensor, "Water pH", "pH"),
+    "precipitation": SensorSource(
+        "precipitation", PrecipitationRate, "Precipitation rate", "mm/h"
+    ),
+    "waterLevel": SensorSource(
+        "waterLevel", WaterLevelSensor, "Water level", "cm"
+    ),
 }
 
 

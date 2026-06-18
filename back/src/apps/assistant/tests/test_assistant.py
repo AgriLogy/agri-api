@@ -40,6 +40,12 @@ class TestOrchestrator:
             ("météo", "weather", "get_weather"),
             ("list zones please", "zones", "list_zones"),
             ("mes zones", "zones", "list_zones"),
+            ("/soil", "soil", "get_soil_status"),
+            ("how is my soil", "soil", "get_soil_status"),
+            ("/plant", "plant", "get_plant_status"),
+            ("leaf moisture", "plant", "get_plant_status"),
+            ("/water", "water", "get_water_status"),
+            ("water status", "water", "get_water_status"),
         ],
     )
     def test_routes(self, message, intent, tool):
@@ -68,6 +74,9 @@ class TestAssistantApi:
             "get_weather",
             "list_zones",
             "get_zone_detail",
+            "get_soil_status",
+            "get_plant_status",
+            "get_water_status",
         } <= names
 
     def test_invoke_farm_status(self, assistant_client):
@@ -224,6 +233,98 @@ class TestZonesTools:
         assert body["tool"] == "list_zones"
         names = [z["name"] for z in body["data"]["zones"]]
         assert "Greenhouse" in names
+
+
+# ── soil / plant / water snapshot tools ──────────────────────────────────────
+@pytest.mark.django_db
+class TestSnapshotTools:
+    def _zone(self, user, name="Z"):
+        from apps.irrigation.models import Zone
+
+        return Zone.objects.create(
+            user=user, name=name, space=1000.0, critical_moisture_threshold=25.0
+        )
+
+    def _reading(self, model_path, user, value, zone):
+        from importlib import import_module
+
+        from django.utils import timezone
+
+        module, name = model_path.rsplit(".", 1)
+        Model = getattr(import_module(module), name)
+        return Model.objects.create(
+            user=user, zone=zone, value=value, timestamp=timezone.now()
+        )
+
+    @pytest.mark.parametrize(
+        "tool,model_path,key",
+        [
+            ("get_soil_status", "apps.sensors.models.SoilMoistureMedium",
+             "soilMoistureMedium"),
+            ("get_plant_status", "apps.sensors.models.LeafMoistureSensor",
+             "leafMoisture"),
+            ("get_water_status", "apps.sensors.models.WaterFlowSensor",
+             "waterFlow"),
+        ],
+    )
+    def test_snapshot_returns_metric(
+        self, assistant_client, assistant_user, tool, model_path, key
+    ):
+        self._reading(model_path, assistant_user, 42.0, self._zone(assistant_user))
+        r = assistant_client.post(f"{TOOLS_URL}/{tool}", {"params": {}}, format="json")
+        assert r.status_code == 200
+        metrics = {m["key"]: m for m in r.json()["data"]["metrics"]}
+        assert key in metrics
+        assert metrics[key]["value"] == 42.0
+        assert metrics[key]["label"] and metrics[key]["unit"]
+
+    def test_soil_status_zone_filter(self, assistant_client, assistant_user):
+        z = self._zone(assistant_user, "target")
+        other_zone = self._zone(assistant_user, "other")
+        self._reading(
+            "apps.sensors.models.SoilMoistureMedium", assistant_user, 10.0, z
+        )
+        self._reading(
+            "apps.sensors.models.SoilMoistureMedium", assistant_user, 90.0, other_zone
+        )
+        r = assistant_client.post(
+            f"{TOOLS_URL}/get_soil_status",
+            {"params": {"zone_id": z.id}},
+            format="json",
+        )
+        m = {x["key"]: x for x in r.json()["data"]["metrics"]}
+        assert m["soilMoistureMedium"]["value"] == 10.0
+
+    def test_water_status_user_isolation(self, assistant_client, assistant_user):
+        from django.contrib.auth import get_user_model
+
+        other = get_user_model().objects.create_user(
+            username="other_snap", email="os@e.com", password="pw"
+        )
+        self._reading(
+            "apps.sensors.models.WaterFlowSensor", other, 5.0, self._zone(other)
+        )
+        r = assistant_client.post(
+            f"{TOOLS_URL}/get_water_status", {"params": {}}, format="json"
+        )
+        m = {x["key"]: x for x in r.json()["data"]["metrics"]}
+        # No reading for the caller → value None, but the metric is well-formed.
+        assert m["waterFlow"]["value"] is None
+
+    @pytest.mark.parametrize(
+        "message,intent,tool",
+        [
+            ("/soil", "soil", "get_soil_status"),
+            ("/plant", "plant", "get_plant_status"),
+            ("/water", "water", "get_water_status"),
+        ],
+    )
+    def test_chat_routes(self, assistant_client, message, intent, tool):
+        r = assistant_client.post(CHAT_URL, {"message": message}, format="json")
+        body = r.json()
+        assert body["intent"] == intent
+        assert body["tool"] == tool
+        assert "metrics" in body["data"]
 
 
 # ── orchestrator factory + LLM orchestrator (pure, no DB) ────────────────────

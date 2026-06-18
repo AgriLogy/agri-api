@@ -139,6 +139,24 @@ _RULES: list[_IntentRule] = [
         tool="list_zones",
     ),
     _IntentRule(
+        "soil",
+        "misc.chatbot.soilCard.intro",
+        ["/soil", "/sol", "soil", "my soil", "sol", "التربة"],
+        tool="get_soil_status",
+    ),
+    _IntentRule(
+        "plant",
+        "misc.chatbot.plantCard.intro",
+        ["/plant", "/plante", "plant", "leaf", "canopy", "plante", "النبات"],
+        tool="get_plant_status",
+    ),
+    _IntentRule(
+        "water",
+        "misc.chatbot.waterCard.intro",
+        ["/water", "/eau", "water", "irrigation water", "eau", "الماء"],
+        tool="get_water_status",
+    ),
+    _IntentRule(
         "clear",
         "misc.chatbot.cleared",
         ["/clear", "/clr", "/effacer", "clear chat", "effacer la conversation"],

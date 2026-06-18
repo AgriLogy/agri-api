@@ -206,6 +206,70 @@ def _get_zone_detail(user, params: dict) -> dict:
     return {"zone": detail}
 
 
+# Domain key lists for the snapshot tools. Keys must exist in SENSOR_SOURCES;
+# any unknown key is skipped so a partial registry never breaks a snapshot.
+_SOIL_KEYS = [
+    "soilMoistureMedium",
+    "soilMoistureHigh",
+    "soilMoistureLow",
+    "soilTempMedium",
+    "soilTempHigh",
+    "soilTempLow",
+    "phSoil",
+    "soilSalinity",
+    "soilConductivity",
+    "ecSoilMedium",
+    "ecSoilHigh",
+    "ecSoilLow",
+]
+_PLANT_KEYS = ["leafMoisture", "leafTemperature", "fruitSize", "largeFruitDiameter"]
+_WATER_KEYS = [
+    "waterFlow",
+    "waterPressure",
+    "waterEC",
+    "waterPH",
+    "precipitation",
+    "waterLevel",
+]
+
+
+def _metric_snapshot(user, keys: list[str], zone_id: int | None) -> dict:
+    """Latest reading per key as the shared {metrics:[...]} card shape."""
+    metrics = []
+    for key in keys:
+        reading = latest_reading(user, key, zone_id=zone_id)
+        if reading is None:  # key not in the registry
+            continue
+        source = SENSOR_SOURCES[key]
+        value = _round(reading.value)
+        metrics.append(
+            {
+                "key": key,
+                "label": source.label,
+                "value": value,
+                "unit": source.unit,
+                "status": _metric_status(key, value),
+            }
+        )
+    return {"metrics": metrics, "zone_id": zone_id}
+
+
+def _get_soil_status(user, params: dict) -> dict:
+    """Latest soil sensor readings (moisture/temperature at 3 depths, pH,
+    salinity, conductivity, EC)."""
+    return _metric_snapshot(user, _SOIL_KEYS, params.get("zone_id"))
+
+
+def _get_plant_status(user, params: dict) -> dict:
+    """Latest plant/canopy readings (leaf moisture/temperature, fruit metrics)."""
+    return _metric_snapshot(user, _PLANT_KEYS, params.get("zone_id"))
+
+
+def _get_water_status(user, params: dict) -> dict:
+    """Latest water readings (flow, pressure, EC, pH, precipitation, level)."""
+    return _metric_snapshot(user, _WATER_KEYS, params.get("zone_id"))
+
+
 registry.register(
     Tool(
         name="get_sitemap",
@@ -276,5 +340,40 @@ registry.register(
                 "description": "Zone name, case-insensitive (or pass zone_id).",
             },
         },
+    )
+)
+
+_ZONE_PARAM = {
+    "zone_id": {
+        "type": "integer",
+        "required": False,
+        "description": "Restrict the snapshot to a single zone.",
+    }
+}
+registry.register(
+    Tool(
+        name="get_soil_status",
+        description="Snapshot of the latest soil sensor readings (moisture and "
+        "temperature at three depths, pH, salinity, conductivity, EC).",
+        handler=_get_soil_status,
+        params=_ZONE_PARAM,
+    )
+)
+registry.register(
+    Tool(
+        name="get_plant_status",
+        description="Snapshot of the latest plant/canopy readings (leaf moisture, "
+        "leaf temperature, fruit size, large fruit diameter).",
+        handler=_get_plant_status,
+        params=_ZONE_PARAM,
+    )
+)
+registry.register(
+    Tool(
+        name="get_water_status",
+        description="Snapshot of the latest water readings (flow, pressure, "
+        "conductivity, pH, precipitation rate, water level).",
+        handler=_get_water_status,
+        params=_ZONE_PARAM,
     )
 )
