@@ -203,6 +203,17 @@ CELERY_TIMEZONE = os.getenv("DJANGO_TIME_ZONE", "UTC")
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
 CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", CELERY_BROKER_URL)
 
+# Run tasks inline (no broker) when CELERY_TASK_ALWAYS_EAGER is truthy. Off by
+# default so dev/prod keep dispatching to the real worker; CI sets it so the
+# pytest suite — which runs against Postgres in dev settings, not the sqlite
+# `test` settings — can exercise `.delay()` code paths without a redis service.
+CELERY_TASK_ALWAYS_EAGER = os.getenv("CELERY_TASK_ALWAYS_EAGER", "False").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+CELERY_TASK_EAGER_PROPAGATES = CELERY_TASK_ALWAYS_EAGER
+
 # Ensure Celery imports project-level tasks
 CELERY_IMPORTS = ("agriapi.tasks",)
 
