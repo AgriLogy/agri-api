@@ -1,6 +1,80 @@
 # CHANGELOG
 
 
+## v1.40.1 (2026-06-18)
+
+### Bug Fixes
+
+- **notifications**: Advance last_notified even when the send fails
+  ([#180](https://github.com/AgriLogy/agri-api/pull/180),
+  [`e4a1f54`](https://github.com/AgriLogy/agri-api/commit/e4a1f54040d11e0f7389b3fccc321c540a791523))
+
+Closes #179
+
+`send_periodic_notifications` advanced `last_notified` only after a **successful** `send_mail`, so a
+  persistent provider failure (e.g. Resend `429 daily_quota_exceeded`) left every due user
+  perpetually "due" and re-attempted them on **every** beat tick — hammering the provider. Observed
+  live: `{sent:0, failed:7}` every 4 min.
+
+**Fix:** move the `last_notified` update into a `finally` so it advances whether or not the send
+  succeeds. A failed attempt counts as "notified for this cycle"; the next attempt waits for the
+  user's cadence window instead of retrying every tick.
+
+**Tradeoff:** a transiently-failed digest is skipped until the next cadence window rather than
+  retried immediately — acceptable for a periodic field-status email, and far better than spamming
+  the provider.
+
+Adds `test_failed_send_still_advances_last_notified` (mocks `send_mail` to raise, asserts
+  `last_notified` is advanced). `ruff check` clean.
+
+### Chores
+
+- **ci**: Auto-assign new issues and PRs to mks-zakaria
+  ([#178](https://github.com/AgriLogy/agri-api/pull/178),
+  [`916d071`](https://github.com/AgriLogy/agri-api/commit/916d071072a6b11feb141450c999b54a7d505ba5))
+
+Closes #177
+
+Adds `.github/workflows/auto-assign.yml` (`pozil/auto-assign-issue@v1`) so every newly opened issue
+  and pull request is automatically assigned to `mks-zakaria`, enforcing the PR↔issue assignment
+  convention without manual steps.
+
+Takes effect once on `main`; future issues/PRs auto-assign on open.
+
+### Continuous Integration
+
+- Green the backend test suite (eager Celery + lora_uplink fixture)
+  ([#182](https://github.com/AgriLogy/agri-api/pull/182),
+  [`834188a`](https://github.com/AgriLogy/agri-api/commit/834188a91805625cd5ac000b4de783833ad7428c))
+
+Closes #181
+
+The CI **Backend tests** job runs pytest against Postgres in dev settings and has been red on `main`
+  (and therefore every branch) on 8 environmental failures — no real code defects.
+
+## Redis (5 tests) `TestZoneNotificationOutbound::*` dispatch `send_zone_outbound_email.delay()`
+  (and SMS/WhatsApp). Dev settings aren't eager-Celery and CI provisions no redis service, so
+  `.delay()` fails with `kombu ... Error -3 connecting to redis:6379`.
+
+**Fix:** `CELERY_TASK_ALWAYS_EAGER` is now env-driven in `settings/base.py` (default **off** —
+  dev/prod dispatch to the real worker unchanged). The CI pytest step sets
+  `CELERY_TASK_ALWAYS_EAGER=True` so tasks run inline, no broker needed. The sqlite `test` settings
+  still force it on explicitly.
+
+## lora_uplink (3 tests) `LoraUplink` is intentionally **not** migrated (the model docstring: prod
+  creates it out-of-band via `schema_editor().create_model()`), so pytest-django's migration-built
+  test DB lacks the table.
+
+**Fix:** a session-scoped fixture in a new `apps/lorawan/chirpstack/conftest.py` creates
+  `lora_uplink` the same way prod does, once per session — keeping the not-migrated contract intact.
+
+## Verification Ran the 8 previously-failing tests under dev settings locally: **28 passed, 6
+  skipped** (the 6 are the Postgres-only dual-ORM handler tests). Ruff check + format clean. Final
+  Postgres confirmation is this PR's own CI run.
+
+Unblocks clean CI for all PRs, notably #180.
+
+
 ## v1.40.0 (2026-06-17)
 
 ### Features
