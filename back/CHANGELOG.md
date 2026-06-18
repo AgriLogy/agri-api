@@ -1,6 +1,41 @@
 # CHANGELOG
 
 
+## v1.44.0 (2026-06-18)
+
+### Features
+
+- **assistant**: Zones tools (list_zones, get_zone_detail)
+  ([#204](https://github.com/AgriLogy/agri-api/pull/204),
+  [`55ba340`](https://github.com/AgriLogy/agri-api/commit/55ba340d99074eebdbd0333e03370e71a83d53e1))
+
+## What
+
+Adds two read-only tools to the AI assistant so users can ask about their irrigation zones in chat:
+
+- **`list_zones`** — the caller's zones (name, `area_m2`, `critical_moisture`, soil params
+  `TAW/FC/WP/RAW`), with an optional case-insensitive `zone_name` substring filter. -
+  **`get_zone_detail`** — full details of one zone (soil params + `pomp_flow_rate` +
+  `irrigation_water_quantity`), resolved by `zone_id` **or** `zone_name`; returns `{"zone": null}`
+  when not found.
+
+A new orchestrator rule routes `/zones` (and NL "my zones" / "mes zones" / "list zones" / Arabic
+  مناطق) to `list_zones`.
+
+## Notes
+
+- Reuses the existing `Zone` model (`apps.irrigation.models`) — **no schema change**. - All data is
+  scoped per-user through the tool registry (verified by an isolation test).
+
+## Tests
+
+`pytest src/apps/assistant/tests/test_assistant.py` → **40 passed**. Adds a `TestZonesTools` class
+  (list, name filter, user isolation, detail-by-id, detail-by-name, missing→null, chat route) +
+  orchestrator route params + catalog assertions. `ruff` clean.
+
+Closes #203
+
+
 ## v1.43.0 (2026-06-18)
 
 ### Chores
