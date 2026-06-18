@@ -1,6 +1,56 @@
 # CHANGELOG
 
 
+## v1.42.0 (2026-06-18)
+
+### Continuous Integration
+
+- Make backend auto-deploy single-line (zsh can't parse multi-line)
+  ([#194](https://github.com/AgriLogy/agri-api/pull/194),
+  [`0af481d`](https://github.com/AgriLogy/agri-api/commit/0af481db734558aeff373b968da7976d7b805860))
+
+Closes #193
+
+The appleboy SSH action runs the deploy `script` under the droplet's **zsh**, which fails to PARSE
+  the multi-line `case`/`if` — the whole script aborted before `git reset` ran, so deploys silently
+  never reached the droplet (every deploy this week was manual).
+
+Reduce to **single-line commands only**: `fetch` + `reset --hard` + `restart web/worker/beat`. Drop
+  the conditional build + `compose up` (rebuild needs `AGRI_DB_RO_TOKEN` not on the droplet;
+  `compose up` conflicts with the externally-owned mailpit/redis). Code-only deploys just need a
+  restart (bind-mounted code); dependency changes get a documented manual rebuild. Verified `bash
+  -n` + `dash -n`.
+
+Merging this triggers the **fixed** workflow on its own push → should be the first green
+  auto-deploy.
+
+### Features
+
+- **assistant**: Provider-agnostic LLM orchestrator
+  ([#196](https://github.com/AgriLogy/agri-api/pull/196),
+  [`dc2c4a8`](https://github.com/AgriLogy/agri-api/commit/dc2c4a851bef2d12bdee476e229029880061a862))
+
+Closes #195
+
+The assistant can now **understand free-form questions** and call the right tool via an LLM, behind
+  the existing `get_orchestrator()` seam (rule-based stays the fallback).
+
+- **`llm.py`** — OpenAI-compatible tool-caller (stdlib `urllib`, no new dep). Feeds
+  `registry.catalog()` to the model as tool schemas, runs the chosen tool through the same
+  `run_tool` the HTTP routes use (data access stays behind the registry), feeds the result back,
+  returns the model's natural-language reply + the tool data for the card. - **Provider-agnostic**:
+  `AI_API_KEY` / `AI_API_BASE_URL` / `AI_MODEL` — defaults to **Groq free tier**
+  (`llama-3.3-70b-versatile`). Not vendor-locked. - **Graceful fallback** to rule-based on any
+  failure → always safe to deploy; the key just upgrades it. - `/assistant/chat` gains a `reply`
+  field (model free text).
+
+24 tests (incl. the agentic tool-call loop with a mocked API, fallback-on-error, schema conversion);
+  ruff + django check clean.
+
+**Activation**: set a free `AI_API_KEY` in the droplet `back/.env` + restart. Frontend consumes the
+  new `reply` field in agrilogy-front (companion PR).
+
+
 ## v1.41.0 (2026-06-18)
 
 ### Continuous Integration
