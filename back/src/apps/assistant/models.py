@@ -22,6 +22,10 @@ class AssistantConversation(models.Model):
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="assistant_conversations",
+        # No DB-level FK constraint: this table is unmanaged/out-of-band, and a
+        # real constraint would block TRUNCATE of the user table during the test
+        # flush. The relation is still enforced at the ORM level.
+        db_constraint=False,
     )
     # Frontend-generated conversation id (stable across devices/offline).
     client_id = models.CharField(max_length=64)
