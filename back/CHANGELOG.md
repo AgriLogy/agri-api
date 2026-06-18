@@ -1,6 +1,89 @@
 # CHANGELOG
 
 
+## v1.41.0 (2026-06-18)
+
+### Continuous Integration
+
+- Make deploy dep-check POSIX-robust (case glob, no pipefail/grep)
+  ([#190](https://github.com/AgriLogy/agri-api/pull/190),
+  [`4dc9e0b`](https://github.com/AgriLogy/agri-api/commit/4dc9e0b8a4b0d6a3f09c0f04e9e1645039e17c59))
+
+Closes #189
+
+The #188 conditional-build logic still failed the deploy run right after `git reset` — the `if git
+  diff ... | grep -qE` pipeline (with `set -o pipefail` and a `\` line-continuation) misbehaves
+  under the appleboy SSH action shell despite working locally.
+
+## Change Replace it with a captured variable + POSIX `case` glob, and drop `pipefail`: ```sh
+  CHANGED=$(git diff --name-only "$PREV" "$NEW") case "$CHANGED" in
+  *back/uv.lock*|*back/pyproject.toml*) docker compose build ;; *) echo "No dependency change ->
+  skipping build" ;; esac ``` Verified `bash -n` **and** `dash -n` clean; glob matches
+  `back/uv.lock`/`back/pyproject.toml`, skips workflow-only changes.
+
+Merging is workflow-only → the new deploy run should skip the build, `up -d`, restart the three app
+  services, and finally go **green**.
+
+- Only rebuild backend on dep changes; restart worker/beat after deploy
+  ([#188](https://github.com/AgriLogy/agri-api/pull/188),
+  [`af0c7f1`](https://github.com/AgriLogy/agri-api/commit/af0c7f1722503cb6eeacaffd8d3b794878317bdc))
+
+Closes #187
+
+The backend auto-deploy (`deploy-back.yml`) has been **failing on every push**, so deploys are
+  currently all manual.
+
+## Why it failed The script always ran `docker compose build`, which pulls the private `agri-db` dep
+  and requires `AGRI_DB_RO_TOKEN` (missing on the droplet) → `could not read Username for
+  github.com`. But the image bakes the venv and the app code is **bind-mounted** (`./back:/code`),
+  so a code-only change needs **no build**.
+
+Also, `docker compose up -d` does not recreate unchanged containers, so the Celery **worker/beat
+  kept running stale code** (only the web hot-reloads via StatReloader) — which is why #180 and #186
+  both needed a manual restart.
+
+## Change - Rebuild **only** when `back/uv.lock` / `back/pyproject.toml` changed; skip otherwise →
+  code-only deploys succeed without the token. - `docker compose restart agri-api-web
+  agri-api-worker agri-api-beat` after `up -d` so bind-mounted code actually takes effect.
+
+Merging this is itself a code-only (workflow) change → the new run will skip the build, `up -d`, and
+  restart the three app services (brief blip), so it should be the first **green** auto-deploy.
+
+## Still user-blocked (noted in #187, not fixed here) Dependency-change deploys still need a valid
+  read-only `AGRI_DB_RO_TOKEN` for `AgriLogy/agri-db` on the droplet.
+
+### Features
+
+- **assistant**: Ai tool registry, HTTP routes & orchestrator
+  ([#192](https://github.com/AgriLogy/agri-api/pull/192),
+  [`ed328e9`](https://github.com/AgriLogy/agri-api/commit/ed328e95a24aa7c42a05a0e8478460b00c700c6d))
+
+Closes #191
+
+Backend the in-app assistant talks to — a senior, swappable **tool-calling** architecture. The
+  assistant reads data **only** via HTTP tools (never the DB directly); an orchestrator maps the
+  user message to the right tool.
+
+## Layers (`apps/assistant`) - **`registry.py`** — DB abstraction: stable sensor keys → backing
+  Django model + label/unit, one `latest_reading()` primitive. The only seam to the data layer. -
+  **`tools.py`** — `ToolRegistry` of self-describing tools (name + description + param schema +
+  handler): `get_sitemap`, `get_active_alerts`, `get_farm_status`, `get_weather`. Handlers read
+  exclusively through the registry. - **`orchestrator.py`** — `Orchestrator` protocol +
+  `RuleBasedOrchestrator` (slash + natural language, fr/en/ar → intent + tool + localized reply
+  key). `get_orchestrator()` factory = drop-in seam for an LLM tool-caller (Claude tool-use over
+  `registry.catalog()`).
+
+## Routes (`/assistant`, JWT, user-scoped) - `GET /assistant/tools` — tool catalog - `POST
+  /assistant/tools/{name}` — invoke one tool - `POST /assistant/chat` — understand → pick + run tool
+  → `{intent, reply_key, tool, data}`
+
+## Verification 18 tests (pure orchestrator routing + HTTP per intent + auth); `ruff check` +
+  `manage.py check` clean.
+
+Next: agri-front assistant calls `/assistant/chat` to replace mock data (separate PR); LLM
+  orchestrator swap when a key is provisioned.
+
+
 ## v1.40.2 (2026-06-18)
 
 ### Bug Fixes
