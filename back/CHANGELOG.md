@@ -1,6 +1,34 @@
 # CHANGELOG
 
 
+## v1.45.0 (2026-06-18)
+
+### Features
+
+- **assistant**: Soil/plant/water snapshot tools
+  ([#206](https://github.com/AgriLogy/agri-api/pull/206),
+  [`828e5c6`](https://github.com/AgriLogy/agri-api/commit/828e5c6fc32829e84298ca283db77b863c1fcfbb))
+
+Closes #205
+
+Group B of the assistant's richer tools.
+
+**New tools** (each accepts optional `zone_id`, returns the shared
+  `{metrics:[{key,label,value,unit,status}]}` shape so the frontend reuses the FarmStatus metrics
+  card): - `get_soil_status` — moisture & temperature at 3 depths, pH, salinity, conductivity, EC. -
+  `get_plant_status` — leaf moisture/temperature, fruit size, large fruit diameter. -
+  `get_water_status` — flow, pressure, EC, pH, precipitation rate, water level.
+
+**Registry** — 20 new `SensorSource` entries (all `apps.sensors.models`, `app_label=analytics`);
+  reads go through `latest_reading`, no raw ORM, no schema change.
+
+**Orchestrator** — `/soil` `/plant` `/water` slash + NL routes (fr/en/ar) for the rule-based
+  fallback; the LLM path picks the tools from the catalog.
+
+Tests: 54 passed (catalog, per-domain metric retrieval, zone filter, user isolation, chat routing).
+  ruff + `manage.py check` clean.
+
+
 ## v1.44.0 (2026-06-18)
 
 ### Features
