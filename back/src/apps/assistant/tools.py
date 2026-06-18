@@ -333,6 +333,190 @@ def _get_sensor_trend(user, params: dict) -> dict:
     }
 
 
+_DEFAULT_CRITICAL_MOISTURE_PCT = 20.0
+# decision_reason values from agri-core that mean "irrigate now" / "hold".
+_IRRIGATE_REASONS = {"stress", "soil_moisture_low", "complementary"}
+_HOLD_REASONS = {"no_stress", "rain_will_suffice"}
+
+
+def _irrigation_unknown(reason: str) -> dict:
+    """A complete, null-filled payload for the no-data / no-zone case."""
+    return {
+        "recommendation": "unknown",
+        "reason": reason,
+        "soil_moisture_pct": None,
+        "critical_moisture_threshold": None,
+        "soil_moisture_status": "unknown",
+        "et0_mm": None,
+        "vpd_kpa": None,
+        "dr_today_mm": None,
+        "raw_mm": None,
+        "zone_name": None,
+        "zone_area_m2": None,
+        "estimated_water_m3": None,
+        "estimated_duration_min": None,
+        "morning_volume_m3": None,
+        "evening_volume_m3": None,
+        "decision_source": "no_zone",
+        "last_update_timestamp": None,
+    }
+
+
+def _get_irrigation_advice(user, params: dict) -> dict:
+    """Per-zone irrigation recommendation.
+
+    Two-tier: prefer agri-core's Dr/RAW field snapshot; if that is unavailable
+    (no agri-core DB, missing data, raises), fall back to a simple
+    soil-moisture-vs-critical-threshold rule. Always returns a valid payload —
+    never raises — and never writes.
+    """
+    from apps.irrigation.models import Zone
+
+    zone_id = params.get("zone_id")
+    zone_qs = Zone.objects.filter(user=user)
+    zone = (
+        zone_qs.filter(id=zone_id).first()
+        if zone_id
+        else zone_qs.order_by("id").first()
+    )
+    if zone is None:
+        return _irrigation_unknown("Aucune zone configurée pour ce compte.")
+
+    soil_reading = latest_reading(user, "soilMoisture", zone_id=zone.id)
+    et0_reading = latest_reading(user, "et0", zone_id=zone.id)
+    vpd_reading = latest_reading(user, "vpd", zone_id=zone.id)
+    soil_moisture_pct = _round(soil_reading.value) if soil_reading else None
+    et0_mm = _round(et0_reading.value) if et0_reading else None
+    vpd_kpa = _round(vpd_reading.value) if vpd_reading else None
+    critical_threshold = (
+        zone.critical_moisture_threshold
+        if zone.critical_moisture_threshold is not None
+        else _DEFAULT_CRITICAL_MOISTURE_PCT
+    )
+
+    recommendation = "unknown"
+    reason = "Données insuffisantes pour une recommandation."
+    decision_source = "fallback"
+    dr_today_mm = raw_mm = None
+    estimated_water_m3 = estimated_duration_min = None
+    morning_volume_m3 = evening_volume_m3 = None
+
+    # Tier 1: agri-core Dr/RAW snapshot (best-effort, never fatal).
+    try:
+        from agriapi.agronomy import field_snapshot
+
+        snap = field_snapshot(user)
+    except Exception:
+        snap = None
+    if snap:
+        decision_reason = snap.get("decision_reason")
+        if decision_reason in _IRRIGATE_REASONS:
+            recommendation = "irrigate"
+        elif decision_reason in _HOLD_REASONS:
+            recommendation = "hold"
+        if recommendation != "unknown":
+            decision_source = "field_snapshot_dr"
+            reason = snap.get("irrigation_decision") or reason
+            dr_today_mm = _round(snap.get("dr_today_mm"))
+            raw_mm = _round(snap.get("raw_mm"))
+            estimated_water_m3 = _round(snap.get("recommended_volume_m3"))
+            estimated_duration_min = _round(snap.get("recommended_duration_min"))
+            morning_volume_m3 = _round(snap.get("morning_volume_m3"))
+            evening_volume_m3 = _round(snap.get("evening_volume_m3"))
+            if soil_moisture_pct is None and snap.get("soil_moisture_pct") is not None:
+                soil_moisture_pct = _round(snap.get("soil_moisture_pct"))
+            if et0_mm is None and snap.get("et0_today_mm") is not None:
+                et0_mm = _round(snap.get("et0_today_mm"))
+
+    # Tier 2: critical-threshold fallback when the snapshot gave no decision.
+    if recommendation == "unknown" and soil_moisture_pct is not None:
+        decision_source = "critical_threshold_fallback"
+        if soil_moisture_pct < critical_threshold:
+            recommendation = "irrigate"
+            reason = (
+                f"Humidité du sol {soil_moisture_pct:.1f} % < "
+                f"seuil critique {critical_threshold:.1f} %."
+            )
+            if zone.irrigation_water_quantity:
+                estimated_water_m3 = _round(zone.irrigation_water_quantity / 1000.0)
+                if zone.pomp_flow_rate:
+                    flow_m3h = zone.pomp_flow_rate * 3.6  # L/s → m³/h
+                    estimated_duration_min = _round(
+                        (estimated_water_m3 / flow_m3h) * 60.0
+                    )
+        else:
+            recommendation = "hold"
+            reason = (
+                f"Humidité du sol {soil_moisture_pct:.1f} % ≥ "
+                f"seuil critique {critical_threshold:.1f} %."
+            )
+
+    return {
+        "recommendation": recommendation,
+        "reason": reason,
+        "soil_moisture_pct": soil_moisture_pct,
+        "critical_moisture_threshold": _round(critical_threshold),
+        "soil_moisture_status": _metric_status("soilMoisture", soil_moisture_pct),
+        "et0_mm": et0_mm,
+        "vpd_kpa": vpd_kpa,
+        "dr_today_mm": dr_today_mm,
+        "raw_mm": raw_mm,
+        "zone_name": zone.name,
+        "zone_area_m2": _round(zone.space),
+        "estimated_water_m3": estimated_water_m3,
+        "estimated_duration_min": estimated_duration_min,
+        "morning_volume_m3": morning_volume_m3,
+        "evening_volume_m3": evening_volume_m3,
+        "decision_source": decision_source,
+        "last_update_timestamp": (
+            soil_reading.timestamp.isoformat()
+            if soil_reading and soil_reading.timestamp
+            else None
+        ),
+    }
+
+
+def _list_recent_notifications(user, params: dict) -> dict:
+    """The caller's recent irrigation-summary notifications, newest first."""
+    from apps.alerts.models import Notification
+
+    try:
+        limit = int(params.get("limit") or 5)
+    except (TypeError, ValueError):
+        limit = 5
+    limit = max(1, min(limit, 50))
+
+    rows = Notification.objects.filter(user=user).order_by("-notification_date")[:limit]
+    notifications = []
+    for n in rows:
+        day = (
+            n.last_irrigation_date.strftime("%Y-%m-%d")
+            if n.last_irrigation_date
+            else "—"
+        )
+        bits = []
+        if n.ET0 is not None:
+            bits.append(f"ET0 {n.ET0} mm")
+        if n.soil_humidity is not None:
+            bits.append(f"sol {n.soil_humidity} %")
+        if n.soil_temperature is not None:
+            bits.append(f"{n.soil_temperature} °C")
+        if n.perfect_irrigation_period:
+            bits.append(str(n.perfect_irrigation_period))
+        notifications.append(
+            {
+                "id": n.id,
+                "title": f"Irrigation {day}",
+                "message": " · ".join(bits),
+                "date": (
+                    n.notification_date.isoformat() if n.notification_date else None
+                ),
+                "type": "irrigation_summary",
+            }
+        )
+    return {"notifications": notifications}
+
+
 registry.register(
     Tool(
         name="get_sitemap",
@@ -465,6 +649,37 @@ registry.register(
                 "required": False,
                 "description": "Rolling window length in hours (default 24).",
             },
+        },
+    )
+)
+registry.register(
+    Tool(
+        name="get_irrigation_advice",
+        description="Irrigation recommendation for a zone (irrigate / hold) with "
+        "the reason, soil moisture vs critical threshold, ET0/VPD and an estimated "
+        'water volume + duration. Use to answer "should I irrigate?".',
+        handler=_get_irrigation_advice,
+        params={
+            "zone_id": {
+                "type": "integer",
+                "required": False,
+                "description": "Zone to advise on (defaults to the user's first zone).",
+            }
+        },
+    )
+)
+registry.register(
+    Tool(
+        name="list_recent_notifications",
+        description="The caller's most recent irrigation-summary notifications, "
+        "newest first.",
+        handler=_list_recent_notifications,
+        params={
+            "limit": {
+                "type": "integer",
+                "required": False,
+                "description": "Max notifications to return (default 5, max 50).",
+            }
         },
     )
 )

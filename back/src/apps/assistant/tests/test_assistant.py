@@ -78,6 +78,8 @@ class TestAssistantApi:
             "get_plant_status",
             "get_water_status",
             "get_sensor_trend",
+            "get_irrigation_advice",
+            "list_recent_notifications",
         } <= names
 
     def test_invoke_farm_status(self, assistant_client):
@@ -427,6 +429,176 @@ class TestSensorTrendTool:
         assert body["tool"] == "get_sensor_trend"
         assert body["data"]["key"] == "soilMoisture"
         assert body["data"]["direction"] in {"rising", "falling", "flat"}
+
+
+# ── irrigation advice ────────────────────────────────────────────────────────
+@pytest.mark.django_db
+class TestIrrigationAdviceTool:
+    def _zone(self, user, name="Z", **over):
+        from apps.irrigation.models import Zone
+
+        fields = {
+            "user": user,
+            "name": name,
+            "space": 1000.0,
+            "critical_moisture_threshold": 30.0,
+        }
+        fields.update(over)
+        return Zone.objects.create(**fields)
+
+    def _soil(self, user, value, zone):
+        from django.utils import timezone
+
+        from apps.sensors.models import SoilMoistureMedium
+
+        return SoilMoistureMedium.objects.create(
+            user=user, zone=zone, value=value, timestamp=timezone.now()
+        )
+
+    def _advise(self, client, **params):
+        # Force the snapshot tier to be unavailable so the fallback is exercised
+        # without an agri-core DB (AGRI_DB_URL) in CI.
+        with mock.patch(
+            "agriapi.agronomy.field_snapshot", side_effect=Exception("no core db")
+        ):
+            return client.post(
+                f"{TOOLS_URL}/get_irrigation_advice", {"params": params}, format="json"
+            )
+
+    def test_fallback_recommends_irrigate_below_threshold(
+        self, assistant_client, assistant_user
+    ):
+        z = self._zone(assistant_user)
+        self._soil(assistant_user, 12.0, z)  # < 30 critical
+        data = self._advise(assistant_client).json()["data"]
+        assert data["recommendation"] == "irrigate"
+        assert data["decision_source"] == "critical_threshold_fallback"
+        assert data["soil_moisture_pct"] == 12.0
+        assert data["critical_moisture_threshold"] == 30.0
+        assert data["zone_name"] == "Z"
+
+    def test_fallback_holds_above_threshold(self, assistant_client, assistant_user):
+        z = self._zone(assistant_user)
+        self._soil(assistant_user, 55.0, z)  # ≥ 30 critical
+        data = self._advise(assistant_client).json()["data"]
+        assert data["recommendation"] == "hold"
+
+    def test_estimated_volume_and_duration(self, assistant_client, assistant_user):
+        z = self._zone(
+            assistant_user,
+            irrigation_water_quantity=3600.0,  # liters → 3.6 m³
+            pomp_flow_rate=1.0,  # L/s → 3.6 m³/h → 3.6/3.6*60 = 60 min
+        )
+        self._soil(assistant_user, 5.0, z)
+        data = self._advise(assistant_client).json()["data"]
+        assert data["estimated_water_m3"] == 3.6
+        assert data["estimated_duration_min"] == 60.0
+
+    def test_no_zone_returns_unknown_not_500(self, assistant_client):
+        r = self._advise(assistant_client)
+        assert r.status_code == 200
+        data = r.json()["data"]
+        assert data["recommendation"] == "unknown"
+        assert data["decision_source"] == "no_zone"
+
+    def test_user_isolation(self, assistant_client, assistant_user):
+        from django.contrib.auth import get_user_model
+
+        other = get_user_model().objects.create_user(
+            username="other_adv", email="oa@e.com", password="pw"
+        )
+        oz = self._zone(other, "other-zone")
+        self._soil(other, 5.0, oz)
+        data = self._advise(assistant_client).json()["data"]
+        # Caller has no zone of their own → unknown (didn't see other's zone).
+        assert data["recommendation"] == "unknown"
+
+    def test_chat_route(self, assistant_client, assistant_user):
+        z = self._zone(assistant_user)
+        self._soil(assistant_user, 10.0, z)
+        with mock.patch(
+            "agriapi.agronomy.field_snapshot", side_effect=Exception("no core db")
+        ):
+            body = assistant_client.post(
+                CHAT_URL, {"message": "should i irrigate"}, format="json"
+            ).json()
+        assert body["intent"] == "irrigation_advice"
+        assert body["tool"] == "get_irrigation_advice"
+        assert body["data"]["recommendation"] == "irrigate"
+
+
+# ── recent notifications ─────────────────────────────────────────────────────
+@pytest.mark.django_db
+class TestNotificationsTool:
+    def _notif(self, user, days_ago=0):
+        from datetime import date, time, timedelta
+
+        from django.utils import timezone
+
+        from apps.alerts.models import Notification
+
+        return Notification.objects.create(
+            user=user,
+            yesterday_temperature=20,
+            today_temperature=22,
+            yesterday_humidity=50,
+            today_humidity=55,
+            ET0=4.2,
+            soil_humidity=33,
+            soil_temperature=18,
+            soil_ph=6.8,
+            perfect_irrigation_period="06:00 - 07:00",
+            last_irrigation_date=date(2026, 6, 1),
+            last_start_irrigation_hour=time(6, 0),
+            last_finish_irrigation_hour=time(7, 0),
+            used_water_irrigation=1200,
+            notification_date=timezone.now() - timedelta(days=days_ago),
+        )
+
+    def test_returns_newest_first_and_shape(self, assistant_client, assistant_user):
+        self._notif(assistant_user, days_ago=2)
+        self._notif(assistant_user, days_ago=0)
+        r = assistant_client.post(
+            f"{TOOLS_URL}/list_recent_notifications", {"params": {}}, format="json"
+        )
+        assert r.status_code == 200
+        rows = r.json()["data"]["notifications"]
+        assert len(rows) == 2
+        # Newest first: index 0 is more recent than index 1.
+        assert rows[0]["date"] > rows[1]["date"]
+        assert rows[0]["type"] == "irrigation_summary"
+        assert rows[0]["title"] and "ET0" in rows[0]["message"]
+
+    def test_limit(self, assistant_client, assistant_user):
+        for i in range(4):
+            self._notif(assistant_user, days_ago=i)
+        rows = assistant_client.post(
+            f"{TOOLS_URL}/list_recent_notifications",
+            {"params": {"limit": 2}},
+            format="json",
+        ).json()["data"]["notifications"]
+        assert len(rows) == 2
+
+    def test_user_isolation(self, assistant_client, assistant_user):
+        from django.contrib.auth import get_user_model
+
+        other = get_user_model().objects.create_user(
+            username="other_notif", email="on@e.com", password="pw"
+        )
+        self._notif(other, days_ago=0)
+        rows = assistant_client.post(
+            f"{TOOLS_URL}/list_recent_notifications", {"params": {}}, format="json"
+        ).json()["data"]["notifications"]
+        assert rows == []
+
+    def test_chat_route(self, assistant_client, assistant_user):
+        self._notif(assistant_user, days_ago=0)
+        body = assistant_client.post(
+            CHAT_URL, {"message": "/notifications"}, format="json"
+        ).json()
+        assert body["intent"] == "notifications"
+        assert body["tool"] == "list_recent_notifications"
+        assert len(body["data"]["notifications"]) == 1
 
 
 # ── orchestrator factory + LLM orchestrator (pure, no DB) ────────────────────
