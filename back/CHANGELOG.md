@@ -1,6 +1,33 @@
 # CHANGELOG
 
 
+## v1.46.0 (2026-06-18)
+
+### Features
+
+- **assistant**: Sensor trend tool (get_sensor_trend)
+  ([#208](https://github.com/AgriLogy/agri-api/pull/208),
+  [`bf08004`](https://github.com/AgriLogy/agri-api/commit/bf080047c45e2cf691e353f94ba61c207163b3d7))
+
+Closes #207
+
+Adds `get_sensor_trend` — a rolling-window trend over any registered sensor key.
+
+**Returns** `{key,label,unit,latest,min,max,avg,count,direction,window_start,window_end}`;
+  `direction` is rising|falling|flat from the first-vs-last value in the window (flat unless both
+  endpoints are non-null).
+
+**Behaviour** - params: `sensor_key` (required, validated against SENSOR_SOURCES — unknown →
+  `{error}`, never a 500), `zone_id` (optional), `hours` (optional, default 24). - scoped by `user`
+  (+ `zone_id`); reads via the registry / `latest_reading`. - rule-based orchestrator routes
+  `/trend` (+ NL fr/en/ar) with a `soilMoisture` default; LLM path fills `sensor_key`/`hours` via
+  tool-calling. `_IntentRule` now carries default params.
+
+**Tests:** `pytest src/apps/assistant` 62 passed (8 new: stats+rising, falling, flat,
+  window-excludes-old, unknown-key-no-500, zone filter, user isolation, /trend chat route). ruff +
+  manage.py check clean. No schema change.
+
+
 ## v1.45.0 (2026-06-18)
 
 ### Features
