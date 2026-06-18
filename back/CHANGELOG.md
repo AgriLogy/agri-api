@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v1.42.1 (2026-06-18)
+
+### Bug Fixes
+
+- **assistant**: Send a User-Agent on LLM calls (Groq 403s urllib default)
+  ([#198](https://github.com/AgriLogy/agri-api/pull/198),
+  [`37d5b52`](https://github.com/AgriLogy/agri-api/commit/37d5b523127e9b36eef5027b7e1b45f835d5b9b5))
+
+Closes #197
+
+Groq's edge/WAF rejects stdlib urllib's default `User-Agent: Python-urllib/3.x` with **403**, so
+  every LLM call silently fell back to rule-based. Verified in-container: default UA → 403, explicit
+  UA → 200 (key, model, and tools all valid). Send `User-Agent: agri-api-assistant/1.0` in
+  `llm._post`. 24 tests + ruff clean.
+
+
 ## v1.42.0 (2026-06-18)
 
 ### Continuous Integration
