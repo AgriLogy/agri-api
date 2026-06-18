@@ -2,12 +2,22 @@
 
 from __future__ import annotations
 
+from unittest import mock
+
 import pytest
 
-from apps.assistant.orchestrator import RuleBasedOrchestrator
+from apps.assistant.orchestrator import (
+    RuleBasedOrchestrator,
+    get_orchestrator,
+)
 
 TOOLS_URL = "/assistant/tools"
 CHAT_URL = "/assistant/chat"
+
+
+def _fake_run_tool(name, params):
+    """Canned tool runner so orchestrator tests stay pure (no DB)."""
+    return {"ran": name, "params": params}
 
 
 # ── orchestrator (pure, no DB) ───────────────────────────────────────────────
@@ -116,3 +126,92 @@ class TestAssistantApi:
 
         r = APIClient().get(TOOLS_URL)
         assert r.status_code == 401
+
+
+# ── orchestrator factory + LLM orchestrator (pure, no DB) ────────────────────
+class TestLLMOrchestrator:
+    def test_factory_defaults_to_rule_based_without_key(self, settings):
+        settings.AI_API_KEY = ""
+        assert isinstance(get_orchestrator(), RuleBasedOrchestrator)
+
+    def test_factory_uses_llm_when_key_set(self, settings):
+        from apps.assistant.llm import LLMOrchestrator
+
+        settings.AI_API_KEY = "test-key"
+        assert isinstance(get_orchestrator(), LLMOrchestrator)
+
+    def test_tool_schemas_are_openai_shaped(self):
+        from apps.assistant.llm import _tool_schemas
+
+        schemas = _tool_schemas()
+        names = {s["function"]["name"] for s in schemas}
+        assert {"get_sitemap", "get_farm_status"} <= names
+        for s in schemas:
+            assert s["type"] == "function"
+            assert "parameters" in s["function"]
+        farm = next(s for s in schemas if s["function"]["name"] == "get_farm_status")
+        assert "zone_id" in farm["function"]["parameters"]["properties"]
+
+    def test_falls_back_to_rule_based_on_api_error(self):
+        from apps.assistant.llm import LLMOrchestrator
+
+        orch = LLMOrchestrator(fallback=RuleBasedOrchestrator())
+        with mock.patch("apps.assistant.llm._post", side_effect=RuntimeError("boom")):
+            res = orch.respond("/sitemap", run_tool=_fake_run_tool)
+        # Fell back: rule-based mapped /sitemap → get_sitemap with a reply_key.
+        assert res.intent == "sitemap"
+        assert res.tool == "get_sitemap"
+        assert res.reply_key == "misc.chatbot.sitemap.intro"
+
+    def test_runs_tool_and_returns_model_reply(self):
+        from apps.assistant.llm import LLMOrchestrator
+
+        orch = LLMOrchestrator(fallback=RuleBasedOrchestrator())
+        tool_call_resp = {
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": "c1",
+                                "function": {
+                                    "name": "get_farm_status",
+                                    "arguments": "{}",
+                                },
+                            }
+                        ],
+                    }
+                }
+            ]
+        }
+        final_resp = {
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": "Your soil moisture is low.",
+                    }
+                }
+            ]
+        }
+        with mock.patch(
+            "apps.assistant.llm._post", side_effect=[tool_call_resp, final_resp]
+        ):
+            res = orch.respond("how is my farm?", run_tool=_fake_run_tool)
+        assert res.intent == "llm"
+        assert res.tool == "get_farm_status"
+        assert res.data == {"ran": "get_farm_status", "params": {}}
+        assert res.reply == "Your soil moisture is low."
+
+    def test_direct_answer_without_tool(self):
+        from apps.assistant.llm import LLMOrchestrator
+
+        orch = LLMOrchestrator(fallback=RuleBasedOrchestrator())
+        resp = {"choices": [{"message": {"role": "assistant", "content": "Hello!"}}]}
+        with mock.patch("apps.assistant.llm._post", return_value=resp):
+            res = orch.respond("hi", run_tool=_fake_run_tool)
+        assert res.intent == "llm"
+        assert res.tool is None
+        assert res.reply == "Hello!"

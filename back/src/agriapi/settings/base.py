@@ -237,6 +237,16 @@ EMAIL_TIMEOUT = int(os.getenv("EMAIL_TIMEOUT", "10") or 10)
 # deployed container can run under dev settings depending on DJANGO_ENV.
 RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
 
+# ── AI assistant (LLM orchestrator) ──────────────────────────────────────────
+# Provider-agnostic: any OpenAI-compatible chat-completions API with tool
+# calling works (Groq, OpenRouter, Together, OpenAI, …). When AI_API_KEY is set
+# the assistant uses the LLM orchestrator; otherwise it falls back to the
+# deterministic rule-based one. Defaults point at Groq's free tier.
+AI_API_KEY = os.getenv("AI_API_KEY", "")
+AI_API_BASE_URL = os.getenv("AI_API_BASE_URL", "https://api.groq.com/openai/v1")
+AI_MODEL = os.getenv("AI_MODEL", "llama-3.3-70b-versatile")
+AI_TIMEOUT = int(os.getenv("AI_TIMEOUT", "20") or 20)
+
 SCHEDULE_MODE = os.getenv("CELERY_SCHEDULE_MODE", "test").lower()
 
 # The sensor SIMULATOR fabricates random readings — a local-dev aid for working

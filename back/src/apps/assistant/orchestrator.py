@@ -12,7 +12,10 @@ touching the tools or the HTTP surface.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
+
+# Injected by the router: invoke a registered tool by name and return its data.
+RunTool = Callable[[str, dict], dict]
 
 
 @dataclass(frozen=True)
@@ -25,8 +28,25 @@ class Decision:
     params: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass
+class AssistantResponse:
+    """The full result the router serializes to the client.
+
+    `reply_key` is an i18n key (rule-based, localized on the frontend); `reply`
+    is free text (LLM-generated). Exactly one is typically set.
+    """
+
+    intent: str
+    tool: str | None = None
+    data: dict | None = None
+    reply_key: str | None = None
+    reply: str | None = None
+
+
 class Orchestrator(Protocol):
-    def decide(self, message: str, *, context: str | None = None) -> Decision: ...
+    def respond(
+        self, message: str, *, run_tool: RunTool, context: str | None = None
+    ) -> AssistantResponse: ...
 
 
 # ── rule-based v1 ────────────────────────────────────────────────────────────
@@ -129,12 +149,29 @@ class RuleBasedOrchestrator:
                     return Decision(rule.intent, rule.reply_key, rule.tool)
         return _FALLBACK
 
+    def respond(
+        self, message: str, *, run_tool: RunTool, context: str | None = None
+    ) -> AssistantResponse:
+        d = self.decide(message, context=context)
+        data: dict | None = None
+        if d.tool:
+            data = run_tool(d.tool, d.params)
+        elif d.intent == "commands":
+            from .tools import registry
+
+            data = {"commands": registry.catalog()}
+        return AssistantResponse(
+            intent=d.intent, tool=d.tool, data=data, reply_key=d.reply_key
+        )
+
 
 def get_orchestrator() -> Orchestrator:
-    """Factory — returns the active orchestrator.
+    """Factory — LLM orchestrator when AI_API_KEY is configured (with the
+    rule-based one as its fallback), otherwise the rule-based orchestrator."""
+    from django.conf import settings
 
-    Swap this for an LLM-backed implementation (Claude tool-use fed
-    `tools.registry.catalog()`) when an ANTHROPIC_API_KEY is configured; the
-    rule-based one stays the offline/default fallback.
-    """
+    if getattr(settings, "AI_API_KEY", ""):
+        from .llm import LLMOrchestrator
+
+        return LLMOrchestrator(fallback=RuleBasedOrchestrator())
     return RuleBasedOrchestrator()
