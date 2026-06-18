@@ -20,7 +20,7 @@ jobs:
           # local changes while the job still reported success).
           script_stop: true
           script: |
-            set -euo pipefail
+            set -eu
             # The public API (back.agrogo-datafarm.com -> :8000 -> agri-api-web)
             # is served from /root/agri-api. The old DO_APP_PATH pointed at the
             # legacy /root/agrilogy-back stack, so deploys never reached the API.
@@ -35,18 +35,22 @@ jobs:
             NEW=$(git rev-parse HEAD)
             # Rebuild ONLY when dependencies changed. The venv is baked into the
             # image but the app code is bind-mounted (./back:/code), so a
-            # code-only change needs no rebuild — and rebuilding pulls the
-            # private agri-db dep, which requires AGRI_DB_RO_TOKEN. Skipping the
-            # build on code-only deploys keeps them working without that token.
-            # Build BEFORE swapping: on a bad build, set -e stops here and the
-            # running containers keep serving the old image (no downtime).
-            if git diff --name-only "$PREV" "$NEW" \
-                 | grep -qE '^back/(uv\.lock|pyproject\.toml)$'; then
-              echo "Dependencies changed -> rebuilding image"
-              docker compose build
-            else
-              echo "No dependency change -> skipping build"
-            fi
+            # code-only change needs no rebuild, and rebuilding pulls the private
+            # agri-db dep which requires AGRI_DB_RO_TOKEN. Skipping the build on
+            # code-only deploys keeps them working without that token. Build
+            # BEFORE swapping: on a bad build, set -e stops here and the running
+            # containers keep serving the old image (no downtime).
+            # (case glob, no pipe/grep, so it is robust under the SSH shell.)
+            CHANGED=$(git diff --name-only "$PREV" "$NEW")
+            case "$CHANGED" in
+              *back/uv.lock*|*back/pyproject.toml*)
+                echo "Dependencies changed -> rebuilding image"
+                docker compose build
+                ;;
+              *)
+                echo "No dependency change -> skipping build"
+                ;;
+            esac
             # Ensure containers exist / pick up any compose changes.
             docker compose up -d
             # Bind-mounted code does NOT hot-reload in the Celery worker/beat
