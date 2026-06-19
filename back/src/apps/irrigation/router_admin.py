@@ -24,6 +24,8 @@ import logging
 from typing import Any
 
 from django.contrib.auth import get_user_model
+from django.db.models import Count, Max
+from django.db.models.functions import TruncWeek
 from django.forms.models import model_to_dict
 from django.utils import timezone
 from ninja import Router, Schema
@@ -31,6 +33,7 @@ from ninja.responses import Response
 
 from agriapi.api.auth import JwtAuth
 from analytics.models import ActiveGraph, Alert, Zone
+from apps.lorawan.chirpstack.models import LoraUplink
 
 router = Router()
 log = logging.getLogger(__name__)
@@ -143,6 +146,100 @@ def overview(request):
         "staff_total": User.objects.filter(is_staff=True).count(),
         "zones_total": Zone.objects.count(),
         "alerts_24h": Alert.objects.filter(last_triggered_at__gte=since).count(),
+    }
+
+
+@router.get("/admin/analytics", auth=JwtAuth(), summary="Admin: business analytics")
+def analytics(request):
+    """Aggregate business KPIs for the admin dashboard (read-only, no new table).
+
+    "Customers" = non-staff, non-technician users, so staff/technician logins
+    don't skew the commercial numbers.
+    """
+    guard = _require_admin(request)
+    if guard is not None:
+        return guard
+
+    now = timezone.now()
+    customers = User.objects.filter(is_staff=False, is_technician=False)
+
+    # Payment status split (actif / suspended / …).
+    payment_status = {
+        row["payement_status"] or "unknown": row["n"]
+        for row in customers.values("payement_status").annotate(n=Count("id"))
+    }
+
+    # Signups per week over the last 12 weeks.
+    signups_by_week = [
+        {"week": row["w"].date().isoformat(), "count": row["n"]}
+        for row in (
+            customers.filter(date_joined__gte=now - timezone.timedelta(weeks=12))
+            .annotate(w=TruncWeek("date_joined"))
+            .values("w")
+            .annotate(n=Count("id"))
+            .order_by("w")
+        )
+        if row["w"] is not None
+    ]
+
+    active_users = customers.filter(is_active=True).count()
+    inactive_users = customers.filter(is_active=False).count()
+
+    # Zones-per-customer distribution, bucketed.
+    buckets = {"0": 0, "1": 0, "2-3": 0, "4+": 0}
+    users_with_zones = 0
+    for row in (
+        Zone.objects.filter(user__is_staff=False, user__is_technician=False)
+        .values("user")
+        .annotate(n=Count("id"))
+    ):
+        users_with_zones += 1
+        n = row["n"]
+        if n == 1:
+            buckets["1"] += 1
+        elif n <= 3:
+            buckets["2-3"] += 1
+        else:
+            buckets["4+"] += 1
+    buckets["0"] = max(customers.count() - users_with_zones, 0)
+
+    alerts_by_type = [
+        {"type": row["type"], "count": row["n"]}
+        for row in (
+            Alert.objects.filter(created_at__gte=now - timezone.timedelta(days=30))
+            .values("type")
+            .annotate(n=Count("id"))
+            .order_by("-n")
+        )
+    ]
+
+    # LoRaWAN device fleet health summary (distinct dev_eui, stale > 24h).
+    # Best-effort: the uplink table may be absent in some envs/test DBs.
+    stale_cutoff = now - timezone.timedelta(hours=24)
+    devices_total = 0
+    devices_stale = 0
+    try:
+        for row in LoraUplink.objects.values("dev_eui").annotate(
+            last=Max("received_at")
+        ):
+            devices_total += 1
+            if row["last"] is None or row["last"] < stale_cutoff:
+                devices_stale += 1
+    except Exception:  # noqa: BLE001 — table missing / db unavailable
+        devices_total = devices_stale = 0
+
+    return {
+        "payment_status": payment_status,
+        "signups_by_week": signups_by_week,
+        "active_users": active_users,
+        "inactive_users": inactive_users,
+        "zones_per_user": buckets,
+        "alerts_by_type": alerts_by_type,
+        "devices": {
+            "total": devices_total,
+            "stale": devices_stale,
+            "online": max(devices_total - devices_stale, 0),
+        },
     }
 
 
@@ -460,6 +557,96 @@ def delete_alert(request, pk: int):
         return Response({"detail": "Not found."}, status=404)
     a.delete()
     return Response(None, status=204)
+
+
+# ---------------------------------------------------------------------------
+# Global alerts console (cross-user list + distributions)
+# ---------------------------------------------------------------------------
+
+
+def _serialize_alert_row(a: Alert) -> dict[str, Any]:
+    """Alert + the owner's username, for the cross-user console table."""
+    row = _serialize_alert(a)
+    row["username"] = a.user.username if a.user_id else None
+    return row
+
+
+@router.get("/admin/alerts", auth=JwtAuth(), summary="Admin: all alerts (filtered)")
+def list_all_alerts(
+    request,
+    username: str | None = None,
+    type: str | None = None,
+    sensor_key: str | None = None,
+    is_active: bool | None = None,
+    zone_id: int | None = None,
+):
+    guard = _require_admin(request)
+    if guard is not None:
+        return guard
+    qs = Alert.objects.select_related("user").order_by("-id")
+    if username:
+        qs = qs.filter(user__username=username)
+    if type:
+        qs = qs.filter(type=type)
+    if sensor_key:
+        qs = qs.filter(sensor_key=sensor_key)
+    if is_active is not None:
+        qs = qs.filter(is_active=is_active)
+    if zone_id is not None:
+        qs = qs.filter(zone_id=zone_id)
+    return [_serialize_alert_row(a) for a in qs[:500]]
+
+
+@router.get(
+    "/admin/alert-analytics",
+    auth=JwtAuth(),
+    summary="Admin: alert distributions",
+)
+def alerts_analytics(request):
+    """Type/sensor distributions + recently-triggered alerts.
+
+    NB: there is no per-alert trigger counter in the schema — ``last_triggered_at``
+    is the first-ever fire (chart-overlay marker). So we report by-type / by-sensor
+    counts, the triggered-ever total, and the alerts fired in the last 7 days,
+    rather than a fabricated trigger frequency.
+    """
+    guard = _require_admin(request)
+    if guard is not None:
+        return guard
+    now = timezone.now()
+    total = Alert.objects.count()
+    active = Alert.objects.filter(is_active=True).count()
+    by_type = [
+        {"type": row["type"], "count": row["n"]}
+        for row in Alert.objects.values("type").annotate(n=Count("id")).order_by("-n")
+    ]
+    by_sensor = [
+        {"sensor_key": row["sensor_key"], "count": row["n"]}
+        for row in (
+            Alert.objects.values("sensor_key")
+            .annotate(n=Count("id"))
+            .order_by("-n")[:15]
+        )
+    ]
+    recently_triggered = [
+        _serialize_alert_row(a)
+        for a in (
+            Alert.objects.filter(
+                last_triggered_at__gte=now - timezone.timedelta(days=7)
+            )
+            .select_related("user")
+            .order_by("-last_triggered_at")[:10]
+        )
+    ]
+    return {
+        "total": total,
+        "active": active,
+        "inactive": total - active,
+        "triggered_ever": Alert.objects.filter(last_triggered_at__isnull=False).count(),
+        "by_type": by_type,
+        "by_sensor": by_sensor,
+        "recently_triggered": recently_triggered,
+    }
 
 
 # ---------------------------------------------------------------------------
