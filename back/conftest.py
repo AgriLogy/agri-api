@@ -147,6 +147,31 @@ def _create_irrigation_automation_tables(django_db_setup, django_db_blocker):
     yield
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _create_monitoring_tables(django_db_setup, django_db_blocker):
+    """The monitoring tables (analytics_taskrun / _notificationdeliverylog /
+    _loginevent) are unmanaged (self-deployed in prod via
+    scripts/ensure_monitoring_tables.py). Create them once for the whole test DB
+    so flush-based TransactionTestCases across all apps don't choke on a missing
+    table.
+    """
+    from django.db import connection
+
+    from apps.irrigation.models import (
+        LoginEvent,
+        NotificationDeliveryLog,
+        TaskRun,
+    )
+
+    with django_db_blocker.unblock():
+        existing = connection.introspection.table_names()
+        with connection.schema_editor() as editor:
+            for model in (TaskRun, NotificationDeliveryLog, LoginEvent):
+                if model._meta.db_table not in existing:
+                    editor.create_model(model)
+    yield
+
+
 def _bearer_client(user) -> APIClient:
     from rest_framework_simplejwt.tokens import AccessToken
 
