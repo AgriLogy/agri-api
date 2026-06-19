@@ -45,6 +45,7 @@ from apps.users.router_technicians import router as technicians_router
 from apps.irrigation.router_billing import router as billing_router
 from apps.irrigation.router_audit import router as audit_router
 from apps.irrigation.router_settings import router as settings_router
+from apps.irrigation.router_impersonation import router as impersonation_router
 from apps.irrigation.router_admin_kc import router as admin_kc_router
 from apps.sensors.router_sensor_data import router as sensor_data_router
 from apps.irrigation.router_records import router as records_router
@@ -119,6 +120,9 @@ api.add_router("/admin/monitoring", monitoring_router, tags=["admin-monitoring"]
 # Admin records: notifications, assistant conversations, proactive notices,
 # and a global view over technician grants (across all owners).
 api.add_router("/admin", records_router, tags=["admin-records"])
+
+# Read-only "view-as" impersonation (mints a short-lived readonly token).
+api.add_router("/admin/impersonate", impersonation_router, tags=["admin-impersonate"])
 
 # AI assistant — tool catalog, per-tool invoke, and the orchestrated /chat.
 api.add_router("/assistant", assistant_router, tags=["assistant"])
