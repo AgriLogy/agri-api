@@ -127,6 +127,26 @@ def _create_device_table(django_db_setup, django_db_blocker):
     yield
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _create_irrigation_automation_tables(django_db_setup, django_db_blocker):
+    """The irrigation-automation tables (analytics_irrigationprogram /
+    analytics_outputcommand) are unmanaged (self-deployed in prod via
+    scripts/ensure_irrigation_tables.py). Create them once for the test DB so
+    flush-based TransactionTestCases don't choke on a missing table.
+    """
+    from django.db import connection
+
+    from apps.irrigation.models import IrrigationProgram, OutputCommand
+
+    with django_db_blocker.unblock():
+        existing = connection.introspection.table_names()
+        with connection.schema_editor() as editor:
+            for model in (IrrigationProgram, OutputCommand):
+                if model._meta.db_table not in existing:
+                    editor.create_model(model)
+    yield
+
+
 def _bearer_client(user) -> APIClient:
     from rest_framework_simplejwt.tokens import AccessToken
 

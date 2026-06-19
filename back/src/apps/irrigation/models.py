@@ -566,3 +566,110 @@ class Device(_IrrigationBase):
 
     def __str__(self):
         return f"{self.device_type}:{self.serial}"
+
+
+class IrrigationProgram(_IrrigationBase):
+    """A scheduled irrigation program for a zone: fire on the chosen weekdays at
+    a start time, for a duration (or target volume). The beat task
+    ``run_due_irrigation_programs`` turns due programs into OutputCommands.
+    """
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="irrigation_programs",
+        db_constraint=False,
+    )
+    zone = models.ForeignKey(
+        "analytics.Zone",
+        on_delete=models.CASCADE,
+        related_name="irrigation_programs",
+        db_constraint=False,
+    )
+    name = models.CharField(max_length=120)
+    enabled = models.BooleanField(default=True)
+    start_time = models.TimeField()
+    # Comma-separated ISO weekday numbers the program runs on (1=Mon … 7=Sun),
+    # e.g. "1,3,5". Empty = every day.
+    weekdays = models.CharField(max_length=32, blank=True, default="")
+    duration_min = models.PositiveIntegerField(null=True, blank=True)
+    target_volume_m3 = models.FloatField(null=True, blank=True)
+    # Last window this program fired in, so the scan doesn't re-fire it within
+    # the same start-time window (dedup, see tasks.py).
+    last_run_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True, null=True, blank=True)
+
+    class Meta:
+        app_label = "analytics"
+        db_table = "analytics_irrigationprogram"
+        # Schema-of-record in agri-db; self-deploys on prod via
+        # scripts/ensure_irrigation_tables.py and is created session-wide in the
+        # test DB by conftest. managed=False + db_constraint=False mirror the
+        # device/technician models so the postgres CI flush can TRUNCATE.
+        managed = False
+
+    def __str__(self):
+        return f"IrrigationProgram({self.name} · zone {self.zone_id})"
+
+
+class OutputCommand(_IrrigationBase):
+    """A command to an output device (valve/pump) for a zone, created manually
+    (Open/Close button) or by the scheduler. Physical dispatch is gated by
+    settings.IRRIGATION_DISPATCH_ENABLED — when off (the default) commands are
+    recorded as ``simulated`` and never actuate hardware.
+    """
+
+    OPEN = "open"
+    CLOSE = "close"
+    ACTION_CHOICES = [(OPEN, "Open"), (CLOSE, "Close")]
+
+    MANUAL = "manual"
+    SCHEDULED = "scheduled"
+    SOURCE_CHOICES = [(MANUAL, "Manual"), (SCHEDULED, "Scheduled")]
+
+    PENDING = "pending"
+    SIMULATED = "simulated"
+    SENT = "sent"
+    FAILED = "failed"
+    STATUS_CHOICES = [
+        (PENDING, "Pending"),
+        (SIMULATED, "Simulated"),
+        (SENT, "Sent"),
+        (FAILED, "Failed"),
+    ]
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="output_commands",
+        db_constraint=False,
+    )
+    zone = models.ForeignKey(
+        "analytics.Zone",
+        on_delete=models.CASCADE,
+        related_name="output_commands",
+        db_constraint=False,
+    )
+    device = models.ForeignKey(
+        "analytics.Device",
+        on_delete=models.SET_NULL,
+        related_name="output_commands",
+        null=True,
+        blank=True,
+        db_constraint=False,
+    )
+    action = models.CharField(max_length=8, choices=ACTION_CHOICES)
+    source = models.CharField(max_length=12, choices=SOURCE_CHOICES, default=MANUAL)
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default=PENDING)
+    detail = models.CharField(max_length=255, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)
+    dispatched_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        app_label = "analytics"
+        db_table = "analytics_outputcommand"
+        managed = False
+
+    def __str__(self):
+        return f"OutputCommand({self.action} zone {self.zone_id} · {self.status})"

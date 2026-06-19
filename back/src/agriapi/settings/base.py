@@ -269,6 +269,7 @@ if SCHEDULE_MODE == "test":
     _sim_schedule = crontab(minute="*/2")
     _device_health_schedule = crontab(minute="*/10")
     _proactive_schedule = crontab(minute="*/10")
+    _irrigation_run_schedule = crontab(minute="*/2")
 else:
     _et0_schedule = crontab(minute=0)
     # Every 5 min so per-user notify_every cadences down to 10 min are
@@ -280,6 +281,17 @@ else:
     # Proactive irrigation nudges: a couple of times a day is plenty (deduped
     # per user with a 24h cooldown anyway).
     _proactive_schedule = crontab(minute=30, hour="*/8")
+    # Scheduled irrigation programs: check every 5 min so a program's start_time
+    # window is caught promptly.
+    _irrigation_run_schedule = crontab(minute="*/5")
+
+# SAFETY: physical valve/pump actuation is OFF by default. While False, output
+# commands are recorded as "simulated" and never reach hardware. Turn on only
+# after a real downlink backend is wired + hardware-tested (see
+# apps/irrigation/output_dispatch.py).
+IRRIGATION_DISPATCH_ENABLED = os.environ.get(
+    "IRRIGATION_DISPATCH_ENABLED", "false"
+).lower() in ("1", "true", "yes")
 
 CELERY_BEAT_SCHEDULE = {
     "compute_et0": {
@@ -301,6 +313,12 @@ CELERY_BEAT_SCHEDULE = {
     "proactive_scan": {
         "task": "agriapi.tasks.scan_proactive_insights",
         "schedule": _proactive_schedule,
+    },
+    # Same DatabaseScheduler caveat: needs a PeriodicTask row on prod. Fires due
+    # irrigation programs (simulated dispatch unless IRRIGATION_DISPATCH_ENABLED).
+    "irrigation_run": {
+        "task": "agriapi.tasks.run_due_irrigation_programs",
+        "schedule": _irrigation_run_schedule,
     },
 }
 if ENABLE_SENSOR_SIMULATOR:
