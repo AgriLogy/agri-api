@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v1.52.0 (2026-06-19)
+
+### Features
+
+- **kc**: Crop-calendar CRUD endpoints (/kc) ([#220](https://github.com/AgriLogy/agri-api/pull/220),
+  [`d16de28`](https://github.com/AgriLogy/agri-api/commit/d16de2891cf7b2bbdb8e40bf61385adb9cad56a2))
+
+Closes #219
+
+Per-user `/kc` CRUD over the existing **Kc/KcPeriod/KcPeriodAssignment** models (already in the
+  agri-db schema, migration 0028 — **no self-deploy needed**, managed tables).
+
+**Endpoints** (JwtAuth, caller-scoped, technicians blocked): - `GET /kc?zone_id=` → list
+  `[{id,name,plant_name,zone_id,zone_name,number_of_periods,periods:[{id,period_name,start_date,end_date,kc_value}]}]`
+  - `POST /kc` → create (name, plant_name, zone_id?, periods[]) → 201 - `GET/PUT/DELETE /kc/{id}` —
+  PUT replaces fields + periods; DELETE cleans up periods
+
+**Decision:** direct CRUD (not affirmation-gated) — the affirmation `_decide` only records status
+  with an opaque payload, it doesn't apply changes, so gating Kc through it would add a no-op
+  governance layer.
+
+**Verify:** 6 tests pass · ruff clean · `manage.py check` clean.
+
+
 ## v1.51.0 (2026-06-19)
 
 ### Features
