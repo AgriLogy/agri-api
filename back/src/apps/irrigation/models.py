@@ -396,3 +396,118 @@ def create_graph_names(sender, instance, created, **kwargs):
     if created:
         GraphName.objects.create(user=instance)
         SensorColor.objects.create(user=instance)
+
+
+# ---------------------------------------------------------------------------
+# Business-admin models (billing / audit / settings).
+#
+# Schema-of-record lives in agri-db; Django doesn't run migrate on boot, so
+# these tables are unmanaged and self-deploy on prod via
+# scripts/ensure_admin_tables.py (created session-wide in the test DB by the
+# root conftest). managed=False keeps them out of the migration graph and
+# db_constraint=False on every FK lets the postgres CI flush TRUNCATE freely
+# (the assistant/technician lesson).
+# ---------------------------------------------------------------------------
+
+
+class Plan(_IrrigationBase):
+    """A billable subscription plan."""
+
+    name = models.CharField(max_length=100)
+    price_dh = models.FloatField(default=0)
+    interval = models.CharField(max_length=16, default="monthly")  # monthly|yearly
+    features = models.JSONField(default=list, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)
+
+    class Meta:
+        app_label = "analytics"
+        db_table = "analytics_plan"
+        managed = False
+
+
+class Subscription(_IrrigationBase):
+    """A customer's subscription to a plan."""
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="subscriptions",
+        db_constraint=False,
+    )
+    plan = models.ForeignKey(
+        "analytics.Plan",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="subscriptions",
+        db_constraint=False,
+    )
+    status = models.CharField(
+        max_length=16, default="active"
+    )  # active|cancelled|expired
+    period_start = models.DateField(null=True, blank=True)
+    period_end = models.DateField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)
+
+    class Meta:
+        app_label = "analytics"
+        db_table = "analytics_subscription"
+        managed = False
+
+
+class Invoice(_IrrigationBase):
+    """An invoice issued against a subscription."""
+
+    subscription = models.ForeignKey(
+        "analytics.Subscription",
+        on_delete=models.CASCADE,
+        related_name="invoices",
+        db_constraint=False,
+    )
+    amount_dh = models.FloatField(default=0)
+    status = models.CharField(max_length=16, default="unpaid")  # paid|unpaid
+    issued_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)
+    paid_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        app_label = "analytics"
+        db_table = "analytics_invoice"
+        managed = False
+
+
+class AuditEvent(_IrrigationBase):
+    """An admin-action audit record (who changed what, when)."""
+
+    actor = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="audit_events",
+        db_constraint=False,
+    )
+    action = models.CharField(max_length=64)
+    target_type = models.CharField(max_length=64, blank=True, default="")
+    target_id = models.CharField(max_length=64, blank=True, default="")
+    changes = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)
+
+    class Meta:
+        app_label = "analytics"
+        db_table = "analytics_auditevent"
+        managed = False
+
+
+class SystemSetting(_IrrigationBase):
+    """A categorized key/value system setting."""
+
+    key = models.CharField(max_length=100, unique=True)
+    value = models.JSONField(default=dict, blank=True)
+    category = models.CharField(max_length=64, blank=True, default="general")
+    updated_at = models.DateTimeField(auto_now=True, null=True, blank=True)
+
+    class Meta:
+        app_label = "analytics"
+        db_table = "analytics_systemsetting"
+        managed = False
