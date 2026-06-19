@@ -1,6 +1,49 @@
 # CHANGELOG
 
 
+## v1.48.0 (2026-06-19)
+
+### Features
+
+- **technician**: Scoped read-only RBAC backend (/technicians)
+  ([#212](https://github.com/AgriLogy/agri-api/pull/212),
+  [`cfb288d`](https://github.com/AgriLogy/agri-api/commit/cfb288d8facee211eff949c28a93d1f708661303))
+
+Closes #211
+
+## What Ships the owner-facing **technician management** backend the admin Technicians UI
+  (agri-admin PR #10) is written against. Mounted at `/technicians` (JwtAuth): - `GET /technicians`
+  → list (id, username, firstname, lastname, email, is_active, scope[{zone_id, allowed_graphs}]) -
+  `POST /technicians` → create scoped login (username, password, names, email, scope) - `PUT
+  /technicians/{id}/scope` → replace zone+graph scope - `POST /technicians/{id}/reset-password` →
+  {status, password} - `DELETE /technicians/{id}` → revoke
+
+A technician is a read-only login that sees **only granted zones**, and within a zone only the
+  **granted ActiveGraph keys** (∩ what the owner enabled); it cannot mutate alerts/technicians/etc.
+  Adds `TechnicianGrant` + `TechnicianZoneGrant` + `CustomUser.is_technician` and scope enforcement
+  on the read/alert routers. Shape matches `agri-admin/lib/technicianApi.ts` exactly.
+
+## How it was isolated The RBAC lived on the unpushed `feat/battery-signal-metrics` branch (commit
+  3d77c6e), bundled with battery/signal sensor work. Cherry-picked **only** the technician RBAC; the
+  dropped `api/__init__.py` conflict re-added a `/devices` mount (a separate unmerged feature) —
+  excluded. A stray e2e assertion expecting `/users/me` to return email/phone (a different feature)
+  was reverted.
+
+## CI + prod-DB (the hard part) The two grant tables follow the proven **unmanaged template**
+  (`managed=False` + FK `db_constraint=False`) — a real FK table broke the postgres CI flush before
+  (the assistant model). They're created session-wide for tests in root `conftest.py`, and
+  **self-deploy on prod** via `scripts/ensure_technician_tables.py` (creates both tables + the
+  `is_technician` column idempotently on web boot, wired into `docker-entrypoint.sh`) — no manual
+  migration. `is_technician` keeps its column-add migration for CI parity. The original `0064`
+  migration (depended on a non-existent `0063_device`) was dropped.
+
+## Verify - `pytest`: 8 technician tests + 126-test flush-heavy slice (users/alerts/assistant) green
+  on sqlite; ruff lint + format clean; `manage.py check` clean. - The one failing e2e test
+  (`test_workflow`) is **pre-existing & Postgres-only** (agri-core `AGRI_DB_URL` unset on sqlite) —
+  fails identically on clean main; passes on CI Postgres. - After deploy: `ensure-technician-tables`
+  line in boot logs; `/technicians` live via `/auth/sessions` JWT.
+
+
 ## v1.47.0 (2026-06-18)
 
 ### Features
