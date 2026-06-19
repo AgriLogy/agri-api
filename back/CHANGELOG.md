@@ -1,6 +1,38 @@
 # CHANGELOG
 
 
+## v1.55.0 (2026-06-19)
+
+### Features
+
+- **irrigation**: Scheduled programs + manual valve/pump commands (simulated)
+  ([#226](https://github.com/AgriLogy/agri-api/pull/226),
+  [`42fdddd`](https://github.com/AgriLogy/agri-api/commit/42fdddd2016447dda6abc2c3d52618b0a1a4f4b7))
+
+Closes #225
+
+The software half of irrigation automation. **No hardware is actuated** — there is no downlink path
+  in the codebase, so physical dispatch is gated behind `IRRIGATION_DISPATCH_ENABLED` (default
+  **false**): commands are recorded as `simulated` and only logged. The real ChirpStack/Bivocom
+  command path is a deliberate `NotImplementedError` seam to wire + hardware-test before the flag is
+  turned on.
+
+## Backend - `IrrigationProgram` + `OutputCommand` models (managed=False self-deploy template:
+  `ensure_irrigation_tables.py` wired in `docker-entrypoint.sh` + root conftest + analytics
+  re-export). - `/irrigation` router (JwtAuth, caller-scoped, technicians blocked from writes):
+  programs CRUD; `POST /commands` (manual open/close → dispatch); `GET /commands` history; `GET
+  /config` (exposes `dispatch_enabled` so the UI shows a simulation banner). -
+  `output_dispatch.dispatch_command()` — the safety seam (simulate, or raise if
+  enabled-but-unwired). - `run_due_irrigation_programs` beat task — fires due programs once per
+  window (weekday + start_time), atomic per-window dedup. Beat entry `irrigation_run` (needs a
+  `PeriodicTask` row on prod, like `email_ping`).
+
+## Verify `pytest src/analytics/tests/test_irrigation_automation.py` **8 passed** (programs CRUD +
+  isolation, manual command simulated, bad-action, technician-block, config, scheduler
+  due/dedup/disabled/weekday) · ruff + format + `manage.py check` clean. Postgres CI pending on this
+  PR.
+
+
 ## v1.54.0 (2026-06-19)
 
 ### Features
