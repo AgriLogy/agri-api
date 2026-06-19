@@ -32,7 +32,7 @@ from ninja import Router, Schema
 from ninja.responses import Response
 
 from agriapi.api.auth import JwtAuth
-from analytics.models import ActiveGraph, Alert, Zone
+from analytics.models import ActiveGraph, Alert, GraphName, SensorColor, Zone
 from apps.irrigation.audit import record_audit
 from apps.lorawan.chirpstack.models import LoraUplink
 
@@ -128,6 +128,18 @@ class ZoneWriteIn(Schema):
 
 class AlertAdminPatchIn(Schema):
     is_active: bool | None = None
+
+
+class AlertAdminCreateIn(Schema):
+    username: str
+    name: str
+    type: str
+    condition: str
+    condition_nbr: float
+    sensor_key: str = ""
+    description: str = ""
+    zone_id: int | None = None
+    is_active: bool = True
 
 
 # ---------------------------------------------------------------------------
@@ -534,6 +546,104 @@ def patch_active_graph(request, username: str, zone_id: int):
 
 
 # ---------------------------------------------------------------------------
+# GraphName + SensorColor admin (per-user, per-zone display config)
+# ---------------------------------------------------------------------------
+
+
+def _serialize_config(obj) -> dict[str, Any]:
+    d = model_to_dict(obj)
+    d.pop("id", None)
+    d.pop("user", None)
+    d.pop("zone", None)
+    return d
+
+
+def _resolve_zone(username: str, zone_id: int):
+    user = _resolve_user(username)
+    if user is None:
+        return (
+            None,
+            None,
+            Response({"detail": f"User '{username}' not found."}, status=404),
+        )
+    z = Zone.objects.filter(pk=zone_id, user=user).first()
+    if z is None:
+        return (
+            None,
+            None,
+            Response({"detail": "Zone not found for this user."}, status=404),
+        )
+    return user, z, None
+
+
+def _patch_config(request, obj):
+    """Apply a free-form {field: value} body to a config row (known fields only)."""
+    import json as _json
+
+    try:
+        body = _json.loads(request.body or b"{}")
+    except ValueError:
+        return Response({"detail": "Invalid JSON body."}, status=400)
+    for k, v in (body or {}).items():
+        if hasattr(obj, k) and k not in ("id", "user", "zone"):
+            setattr(obj, k, v)
+    obj.save()
+    return _serialize_config(obj)
+
+
+@router.get("/users/{username}/zones/{zone_id}/graph-names", auth=JwtAuth())
+def get_graph_names(request, username: str, zone_id: int):
+    guard = _require_admin(request)
+    if guard is not None:
+        return guard
+    user, z, err = _resolve_zone(username, zone_id)
+    if err is not None:
+        return err
+    obj, _ = GraphName.objects.get_or_create(user=user, zone=z)
+    return _serialize_config(obj)
+
+
+@router.patch("/users/{username}/zones/{zone_id}/graph-names", auth=JwtAuth())
+def patch_graph_names(request, username: str, zone_id: int):
+    guard = _require_admin(request)
+    if guard is not None:
+        return guard
+    user, z, err = _resolve_zone(username, zone_id)
+    if err is not None:
+        return err
+    obj, _ = GraphName.objects.get_or_create(user=user, zone=z)
+    result = _patch_config(request, obj)
+    record_audit(request.auth, "graph_names.update", "graph_names", obj.id)
+    return result
+
+
+@router.get("/users/{username}/zones/{zone_id}/sensor-colors", auth=JwtAuth())
+def get_sensor_colors(request, username: str, zone_id: int):
+    guard = _require_admin(request)
+    if guard is not None:
+        return guard
+    user, z, err = _resolve_zone(username, zone_id)
+    if err is not None:
+        return err
+    obj, _ = SensorColor.objects.get_or_create(user=user, zone=z)
+    return _serialize_config(obj)
+
+
+@router.patch("/users/{username}/zones/{zone_id}/sensor-colors", auth=JwtAuth())
+def patch_sensor_colors(request, username: str, zone_id: int):
+    guard = _require_admin(request)
+    if guard is not None:
+        return guard
+    user, z, err = _resolve_zone(username, zone_id)
+    if err is not None:
+        return err
+    obj, _ = SensorColor.objects.get_or_create(user=user, zone=z)
+    result = _patch_config(request, obj)
+    record_audit(request.auth, "sensor_colors.update", "sensor_colors", obj.id)
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Alerts admin override
 # ---------------------------------------------------------------------------
 
@@ -666,6 +776,43 @@ def list_all_alerts(
     if zone_id is not None:
         qs = qs.filter(zone_id=zone_id)
     return [_serialize_alert_row(a) for a in qs[:500]]
+
+
+@router.post("/admin/alerts", auth=JwtAuth(), summary="Admin: create an alert")
+def create_alert(request, payload: AlertAdminCreateIn):
+    guard = _require_admin(request)
+    if guard is not None:
+        return guard
+    user = _resolve_user(payload.username)
+    if user is None:
+        return Response({"detail": f"User '{payload.username}' not found."}, status=404)
+    zone = None
+    if payload.zone_id is not None:
+        zone = Zone.objects.filter(id=payload.zone_id, user=user).first()
+        if zone is None:
+            return Response(
+                {"detail": f"Zone {payload.zone_id} not found for this user."},
+                status=404,
+            )
+    alert = Alert.objects.create(
+        user=user,
+        zone=zone,
+        name=payload.name,
+        type=payload.type,
+        description=payload.description or "",
+        condition=payload.condition,
+        condition_nbr=payload.condition_nbr,
+        sensor_key=payload.sensor_key or "",
+        is_active=payload.is_active,
+    )
+    record_audit(
+        request.auth,
+        "alert.create",
+        "alert",
+        alert.id,
+        {"username": payload.username, "name": payload.name},
+    )
+    return _serialize_alert_row(alert)
 
 
 @router.get(

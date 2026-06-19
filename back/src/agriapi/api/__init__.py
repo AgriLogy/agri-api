@@ -46,6 +46,10 @@ from apps.irrigation.router_billing import router as billing_router
 from apps.irrigation.router_audit import router as audit_router
 from apps.irrigation.router_settings import router as settings_router
 from apps.irrigation.router_impersonation import router as impersonation_router
+from apps.irrigation.router_admin_kc import router as admin_kc_router
+from apps.sensors.router_sensor_data import router as sensor_data_router
+from apps.irrigation.router_records import router as records_router
+from apps.irrigation.router_monitoring import router as monitoring_router
 
 api = NinjaAPI(
     title="Agrilogy API",
@@ -105,6 +109,17 @@ api.add_router("", analytics_admin_router, tags=["admin"])
 api.add_router("/admin/billing", billing_router, tags=["admin-billing"])
 api.add_router("/admin/audit", audit_router, tags=["admin-audit"])
 api.add_router("/admin/settings", settings_router, tags=["admin-settings"])
+api.add_router("/admin/kc", admin_kc_router, tags=["admin-kc"])
+
+# Generic sensor-data explorer: browse / correct / range-delete raw readings.
+api.add_router("/admin/sensor-data", sensor_data_router, tags=["admin-sensor-data"])
+
+# Monitoring/observability: task runs + schedule, delivery log, sign-in events.
+api.add_router("/admin/monitoring", monitoring_router, tags=["admin-monitoring"])
+
+# Admin records: notifications, assistant conversations, proactive notices,
+# and a global view over technician grants (across all owners).
+api.add_router("/admin", records_router, tags=["admin-records"])
 
 # Read-only "view-as" impersonation (mints a short-lived readonly token).
 api.add_router("/admin/impersonate", impersonation_router, tags=["admin-impersonate"])
