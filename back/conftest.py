@@ -47,13 +47,14 @@ def _create_assistant_history_table(django_db_setup, django_db_blocker):
     """
     from django.db import connection
 
-    from apps.assistant.models import AssistantConversation
+    from apps.assistant.models import AssistantConversation, ProactiveNotice
 
-    table = AssistantConversation._meta.db_table
     with django_db_blocker.unblock():
-        if table not in connection.introspection.table_names():
-            with connection.schema_editor() as editor:
-                editor.create_model(AssistantConversation)
+        existing = set(connection.introspection.table_names())
+        for model in (AssistantConversation, ProactiveNotice):
+            if model._meta.db_table not in existing:
+                with connection.schema_editor() as editor:
+                    editor.create_model(model)
     yield
 
 
