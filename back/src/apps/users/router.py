@@ -157,7 +157,30 @@ def signup(request, payload: SignUpIn):
     return Response({"status": "Account created successfully"}, status=201)
 
 
-def _signin_core(payload: SignInIn) -> Response:
+def _record_login(request, username: str, user, success: bool) -> None:
+    """Best-effort sign-in event recording for the monitoring back-office.
+
+    Never raises — the (unmanaged, self-deployed) analytics_loginevent table
+    may be absent and must not break authentication.
+    """
+    try:
+        from apps.irrigation.models import LoginEvent
+
+        meta = getattr(request, "META", {}) or {}
+        ip = meta.get("HTTP_X_FORWARDED_FOR", "") or meta.get("REMOTE_ADDR", "") or ""
+        ip = ip.split(",")[0].strip()
+        LoginEvent.objects.create(
+            username=(username or "")[:150],
+            user=user if getattr(user, "pk", None) else None,
+            success=success,
+            ip=ip[:64],
+            user_agent=(meta.get("HTTP_USER_AGENT", "") or "")[:255],
+        )
+    except Exception:  # pragma: no cover - fail-soft
+        pass
+
+
+def _signin_core(request, payload: SignInIn) -> Response:
     if not payload.username or not payload.password:
         return Response(
             {"error": "Username and password are required."},
@@ -175,8 +198,10 @@ def _signin_core(payload: SignInIn) -> Response:
     user = authenticate(None, username=payload.username, password=payload.password)
     if user is None:
         cache.set(cache_key, attempts + 1, timeout=_LOGIN_LOCKOUT_TIMEOUT_S)
+        _record_login(request, payload.username, None, success=False)
         return Response({"error": "Invalid credentials"}, status=401)
     cache.delete(cache_key)
+    _record_login(request, payload.username, user, success=True)
     refresh = RefreshToken.for_user(user)
     return Response(
         {
@@ -191,7 +216,7 @@ def _signin_core(payload: SignInIn) -> Response:
 
 @router.post("/sessions", auth=None, summary="Public user sign-in (issue JWT)")
 def signin(request, payload: SignInIn):
-    response = _signin_core(payload)
+    response = _signin_core(request, payload)
     # The legacy DRF view called Django's login() to set a session cookie too.
     # Mirror that for parity with the frontend's "remember me" behaviour.
     if response.status_code == 200:
@@ -207,7 +232,7 @@ def admin_signin(request, payload: SignInIn):
     """Same flow as ``/signin/`` but the response omits ``is_staff``. Matches
     the legacy ``AdminSignInAPIView`` shape so the admin login page keeps
     parsing the response unchanged."""
-    response = _signin_core(payload)
+    response = _signin_core(request, payload)
     if response.status_code == 200:
         body = response.content
         # Strip is_staff out for the admin endpoint's response shape.
