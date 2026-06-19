@@ -8,6 +8,7 @@ from django.contrib.auth import get_user_model
 from django.core.mail import get_connection, send_mail
 from django.utils.timezone import now
 
+from agriapi.delivery_log import record_delivery
 from apps.users.notification_helper import perform_calculations, should_notify
 
 logger = logging.getLogger(__name__)
@@ -49,8 +50,23 @@ def send_periodic_notifications():
                     fail_silently=False,
                 )
                 sent += 1
-            except Exception:
+                record_delivery(
+                    channel="email",
+                    kind="periodic",
+                    recipient=recipient,
+                    user=user,
+                    status="sent",
+                )
+            except Exception as exc:
                 failed += 1
+                record_delivery(
+                    channel="email",
+                    kind="periodic",
+                    recipient=recipient,
+                    user=user,
+                    status="failed",
+                    error=str(exc),
+                )
                 logger.exception(
                     "Failed to send periodic notification to %s", recipient
                 )
@@ -134,10 +150,21 @@ def send_alert_email(*, alert_id: int, value: float, timestamp_iso: str) -> dict
             recipient_list=[recipient],
             fail_silently=False,
         )
-    except Exception:
+    except Exception as exc:
+        record_delivery(
+            channel="email",
+            kind="alert",
+            recipient=recipient,
+            user=user,
+            status="failed",
+            error=str(exc),
+        )
         logger.exception("Failed to send alert email for alert %s", alert_id)
         return {"sent": 0, "reason": "smtp_error"}
 
+    record_delivery(
+        channel="email", kind="alert", recipient=recipient, user=user, status="sent"
+    )
     return {"sent": 1, "alert_id": alert_id}
 
 
@@ -163,10 +190,20 @@ def send_zone_outbound_email(*, recipient: str, subject: str, message: str) -> d
             recipient_list=[recipient],
             fail_silently=False,
         )
-    except Exception:
+    except Exception as exc:
+        record_delivery(
+            channel="email",
+            kind="outbound",
+            recipient=recipient,
+            status="failed",
+            error=str(exc),
+        )
         logger.exception("send_zone_outbound_email: failed for %s", recipient)
         return {"sent": 0, "reason": "send_error"}
 
+    record_delivery(
+        channel="email", kind="outbound", recipient=recipient, status="sent"
+    )
     logger.info("send_zone_outbound_email: sent to %s", recipient)
     return {"sent": 1, "recipient": recipient}
 
@@ -184,6 +221,12 @@ def send_zone_outbound_sms(*, to_phone: str, body: str) -> dict:
     if not to_phone:
         return {"sent": 0, "reason": "no_recipient"}
     ok = send_sms(to_phone, body)
+    record_delivery(
+        channel="sms",
+        kind="outbound",
+        recipient=to_phone,
+        status="sent" if ok else "failed",
+    )
     if ok:
         logger.info("send_zone_outbound_sms: sent to %s", to_phone)
     return {"sent": 1 if ok else 0, "recipient": to_phone}
@@ -198,6 +241,12 @@ def send_zone_outbound_whatsapp(*, to_phone: str, body: str) -> dict:
     if not to_phone:
         return {"sent": 0, "reason": "no_recipient"}
     ok = send_whatsapp(to_phone, body)
+    record_delivery(
+        channel="whatsapp",
+        kind="outbound",
+        recipient=to_phone,
+        status="sent" if ok else "failed",
+    )
     if ok:
         logger.info("send_zone_outbound_whatsapp: sent to %s", to_phone)
     return {"sent": 1 if ok else 0, "recipient": to_phone}
@@ -1038,12 +1087,27 @@ def scan_device_health():
                     fail_silently=False,
                 )
                 notified += 1
-            except Exception:
+                record_delivery(
+                    channel="email",
+                    kind="device_health",
+                    recipient=recipient,
+                    user=device.user,
+                    status="sent",
+                )
+            except Exception as exc:
                 # Roll back the claim so a later tick can retry the send.
                 Device.objects.filter(pk=device.pk).update(
                     last_health_notified=device.last_health_notified
                 )
                 skipped += 1
+                record_delivery(
+                    channel="email",
+                    kind="device_health",
+                    recipient=recipient,
+                    user=device.user,
+                    status="failed",
+                    error=str(exc),
+                )
                 logger.exception("Failed to send device-health alert to %s", recipient)
 
     return {
@@ -1127,10 +1191,25 @@ def scan_proactive_insights():
                     fail_silently=False,
                 )
                 notified += 1
-            except Exception:
+                record_delivery(
+                    channel="email",
+                    kind="proactive",
+                    recipient=recipient,
+                    user=user,
+                    status="sent",
+                )
+            except Exception as exc:
                 # Roll back the claim so a later tick can retry the send.
                 ProactiveNotice.objects.filter(user=user).update(last_sent=prev_sent)
                 skipped += 1
+                record_delivery(
+                    channel="email",
+                    kind="proactive",
+                    recipient=recipient,
+                    user=user,
+                    status="failed",
+                    error=str(exc),
+                )
                 logger.exception("proactive: send failed for %s", recipient)
 
     return {

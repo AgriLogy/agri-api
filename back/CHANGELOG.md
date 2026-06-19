@@ -1,6 +1,73 @@
 # CHANGELOG
 
 
+## v1.57.0 (2026-06-19)
+
+### Features
+
+- **admin**: Records CRUD — notifications, conversations, proactive, grants
+  ([`3fff8fa`](https://github.com/AgriLogy/agri-api/commit/3fff8fade0eac18f3d23edb686b330d4b70e17d9))
+
+New router_records mounted at /admin (JWT + is_staff, all audited):
+
+- notifications: GET (filter by user) + DELETE - conversations: GET list + GET {pk} (with
+  transcript) + DELETE - proactive-notices: GET + DELETE (reset a user's cooldown) -
+  technician-grants: GLOBAL GET across all owners (the /technicians router is owner-scoped) + GET
+  {pk} (+scope) + PATCH (enable/disable) + DELETE.
+
+No new tables — all back existing models. test_admin_records.py covers 403-gating, list/filter,
+  detail, delete and grant patch/revoke.
+
+Closes #231
+
+- **admin**: Records CRUD — notifications, conversations, proactive, grants
+  ([#232](https://github.com/AgriLogy/agri-api/pull/232),
+  [`4de4511`](https://github.com/AgriLogy/agri-api/commit/4de45119fcdd8223f7f11d1eb62c5fb1dee62eb3))
+
+
+## v1.56.0 (2026-06-19)
+
+### Features
+
+- **admin**: Create global alerts (POST /admin/alerts)
+  ([`b69aef6`](https://github.com/AgriLogy/agri-api/commit/b69aef6a1c425edfcc168bfb9fb0d6aabf422bcf))
+
+Completes the global alerts console CRUD — it could list/toggle/delete but not create. Adds POST
+  /admin/alerts (is_staff, audited): resolves the target user, validates the optional zone belongs
+  to them, and creates the alert
+  (name/type/condition/condition_nbr/sensor_key/description/zone/is_active).
+
+The manager-affirmation approve/reject workflow already exists (router_manager_affirmation), so no
+  backend change there.
+
+Closes #229
+
+- **admin**: Create global alerts (POST /admin/alerts)
+  ([#230](https://github.com/AgriLogy/agri-api/pull/230),
+  [`d808f57`](https://github.com/AgriLogy/agri-api/commit/d808f578467264b4e3cfe20c1019ba7599705ec3))
+
+- **monitoring**: Task-run, delivery & login history + /admin/monitoring API
+  ([`91e25ae`](https://github.com/AgriLogy/agri-api/commit/91e25ae7178e4068e6cb27560a68e7bc6822db1d))
+
+Adds the observability foundation for the admin back-office. Three new unmanaged tables
+  (self-deployed via ensure_monitoring_tables.py):
+
+- TaskRun: one row per Celery task execution, captured centrally from task_postrun/task_failure
+  signals in agriapi.celery (no per-task edits). - NotificationDeliveryLog: one row per
+  email/SMS/WhatsApp delivery attempt, recorded by the senders in agriapi.tasks via a fail-soft
+  record_delivery(). - LoginEvent: one row per sign-in attempt, recorded in the /auth/sessions path.
+
+New router_monitoring (JWT + is_staff) mounted at /admin/monitoring: overview (24h KPIs + recent
+  failures + fleet), tasks (history + 7d aggregates + beat schedule), deliveries, logins — all
+  filterable.
+
+Closes #227
+
+- **monitoring**: Task-run, delivery & login history + /admin/monitoring API
+  ([#228](https://github.com/AgriLogy/agri-api/pull/228),
+  [`b2415e9`](https://github.com/AgriLogy/agri-api/commit/b2415e9eb251a4330a90f580be21c3f6ca74a372))
+
+
 ## v1.55.0 (2026-06-19)
 
 ### Features

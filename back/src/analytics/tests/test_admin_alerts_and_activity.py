@@ -43,6 +43,78 @@ class TestAdminUserAlerts:
 
 
 @pytest.mark.django_db
+class TestAdminAlertCreate:
+    URL = "/admin/alerts"
+
+    def test_user_is_403(self, user_bearer, normal_user):
+        resp = user_bearer.post(
+            self.URL,
+            {
+                "username": normal_user.username,
+                "name": "X",
+                "type": "Humidity",
+                "condition": ">",
+                "condition_nbr": 50,
+            },
+            format="json",
+        )
+        assert resp.status_code == 403
+
+    def test_admin_creates_alert(self, admin_bearer, normal_user, zone_factory):
+        zone = zone_factory(normal_user)
+        resp = admin_bearer.post(
+            self.URL,
+            {
+                "username": normal_user.username,
+                "name": "Heat",
+                "type": "Weather Temperature",
+                "condition": ">",
+                "condition_nbr": 30,
+                "sensor_key": "temperature_weather",
+                "zone_id": zone.id,
+            },
+            format="json",
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["name"] == "Heat"
+        assert body["username"] == normal_user.username
+        assert body["zone"] == zone.id
+
+    def test_unknown_user_is_404(self, admin_bearer):
+        resp = admin_bearer.post(
+            self.URL,
+            {
+                "username": "ghost",
+                "name": "X",
+                "type": "Humidity",
+                "condition": ">",
+                "condition_nbr": 50,
+            },
+            format="json",
+        )
+        assert resp.status_code == 404
+
+    def test_foreign_zone_is_404(
+        self, admin_bearer, normal_user, other_user, zone_factory
+    ):
+        foreign = zone_factory(other_user)
+        resp = admin_bearer.post(
+            self.URL,
+            {
+                "username": normal_user.username,
+                "name": "X",
+                "type": "Humidity",
+                "condition": ">",
+                "condition_nbr": 50,
+                "zone_id": foreign.id,
+            },
+            format="json",
+        )
+        assert resp.status_code == 404
+
+
+@pytest.mark.django_db
 class TestAdminAlertDetail:
     def test_admin_can_toggle_active(self, admin_bearer, normal_user, alert_factory):
         alert = alert_factory(normal_user)
