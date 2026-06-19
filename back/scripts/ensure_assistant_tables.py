@@ -23,18 +23,19 @@ django.setup()
 
 from django.db import connection  # noqa: E402
 
-from apps.assistant.models import AssistantConversation  # noqa: E402
+from apps.assistant.models import AssistantConversation, ProactiveNotice  # noqa: E402
 
 
 def ensure() -> None:
-    table = AssistantConversation._meta.db_table
     existing = set(connection.introspection.table_names())
-    if table in existing:
-        print(f"[ensure-assistant-tables] {table} already exists — nothing to do.")
-        return
-    with connection.schema_editor() as editor:
-        editor.create_model(AssistantConversation)
-    print(f"[ensure-assistant-tables] created {table}.")
+    for model in (AssistantConversation, ProactiveNotice):
+        table = model._meta.db_table
+        if table in existing:
+            print(f"[ensure-assistant-tables] {table} already exists — nothing to do.")
+            continue
+        with connection.schema_editor() as editor:
+            editor.create_model(model)
+        print(f"[ensure-assistant-tables] created {table}.")
 
 
 if __name__ == "__main__":

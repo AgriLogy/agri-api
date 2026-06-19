@@ -30,12 +30,17 @@ class Tool:
     handler: ToolHandler
     # JSON-schema-ish param description, surfaced in the catalog (and to an LLM).
     params: dict[str, Any] = field(default_factory=dict)
+    # Whether the tool changes state. Read tools are the default; mutating tools
+    # (create_alert, set_notification_cadence) write as the calling user and
+    # MUST only be invoked when the user's message clearly asks for the action.
+    mutating: bool = False
 
     def to_catalog(self) -> dict[str, Any]:
         return {
             "name": self.name,
             "description": self.description,
             "params": self.params,
+            "mutating": self.mutating,
         }
 
 
@@ -679,6 +684,126 @@ registry.register(
                 "type": "integer",
                 "required": False,
                 "description": "Max notifications to return (default 5, max 50).",
+            }
+        },
+    )
+)
+
+
+# ── write tools (mutating) ───────────────────────────────────────────────────
+# Both execute as the calling user (run_tool passes request.auth) and are
+# scoped to that user. Technicians are read-only and blocked. Changes are
+# reversible and the returned data states what changed so the assistant can
+# tell the user how to undo it.
+
+_CONDITIONS = {">", "<", "="}
+
+
+def _create_alert(user, params: dict) -> dict:
+    """Create an alert for the caller. Reversible — returns the new id so the
+    user can be told how to delete it."""
+    if getattr(user, "is_technician", False):
+        return {"error": "Technicians cannot create alerts.", "created": None}
+    name = (params.get("name") or "").strip()
+    sensor_key = (params.get("sensor_key") or "").strip()
+    condition = (params.get("condition") or "").strip()
+    threshold = params.get("condition_nbr")
+    if not name or not sensor_key or condition not in _CONDITIONS or threshold is None:
+        return {
+            "error": "name, sensor_key, condition (>,<,=) and condition_nbr are "
+            "required.",
+            "created": None,
+        }
+    if sensor_key not in SENSOR_SOURCES:
+        return {"error": f"Unknown sensor_key '{sensor_key}'.", "created": None}
+    alert = Alert(
+        user=user,
+        name=name[:120],
+        sensor_key=sensor_key,
+        condition=condition,
+        condition_nbr=float(threshold),
+        is_active=True,
+    )
+    if params.get("zone_id") is not None:
+        alert.zone_id = params["zone_id"]
+    alert.save()
+    return {
+        "created": {
+            "id": alert.id,
+            "name": alert.name,
+            "sensor_key": alert.sensor_key,
+            "condition": alert.condition,
+            "condition_nbr": _round(alert.condition_nbr),
+            "is_active": alert.is_active,
+        }
+    }
+
+
+def _set_notification_cadence(user, params: dict) -> dict:
+    """Update how often (minutes) the caller receives periodic notifications."""
+    if getattr(user, "is_technician", False):
+        return {"error": "Technicians cannot change notification settings."}
+    minutes = params.get("minutes")
+    try:
+        minutes = int(minutes)
+    except (TypeError, ValueError):
+        return {"error": "minutes must be an integer (>= 10)."}
+    if minutes < 10:
+        return {"error": "Cadence must be at least 10 minutes."}
+    previous = user.notify_every
+    user.notify_every = minutes
+    user.save(update_fields=["notify_every"])
+    return {"notify_every": minutes, "previous": previous}
+
+
+registry.register(
+    Tool(
+        name="create_alert",
+        description="Create a threshold alert for the caller on a sensor. Only call "
+        "this when the user clearly asks to create/add an alert. Returns the new "
+        "alert id. Reversible (the user can delete it).",
+        handler=_create_alert,
+        mutating=True,
+        params={
+            "name": {"type": "string", "required": True, "description": "Alert name."},
+            "sensor_key": {
+                "type": "string",
+                "required": True,
+                "description": "Sensor to watch. One of: "
+                + ", ".join(SENSOR_SOURCES.keys())
+                + ".",
+            },
+            "condition": {
+                "type": "string",
+                "required": True,
+                "description": "Comparison: '>', '<' or '='.",
+            },
+            "condition_nbr": {
+                "type": "number",
+                "required": True,
+                "description": "Threshold value the reading is compared against.",
+            },
+            "zone_id": {
+                "type": "integer",
+                "required": False,
+                "description": "Restrict the alert to one zone.",
+            },
+        },
+    )
+)
+registry.register(
+    Tool(
+        name="set_notification_cadence",
+        description="Set how often (in minutes) the caller receives periodic "
+        "notifications. Only call this when the user asks to change their "
+        "notification frequency.",
+        handler=_set_notification_cadence,
+        mutating=True,
+        params={
+            "minutes": {
+                "type": "integer",
+                "required": True,
+                "description": "Notification interval in minutes (>= 10).",
             }
         },
     )

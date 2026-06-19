@@ -53,3 +53,32 @@ class AssistantConversation(models.Model):
 
     def __str__(self) -> str:
         return f"Conversation({self.client_id} · user {self.user_id})"
+
+
+class ProactiveNotice(models.Model):
+    """Dedup ledger for the proactive-insight scan — one row per user holding
+    the last time we pushed a proactive notification, so the beat task emails a
+    given user at most once per cooldown window (atomic-claim on ``last_sent``).
+
+    Unmanaged/out-of-band like ``AssistantConversation`` (created on web boot by
+    ``scripts/ensure_assistant_tables.py`` / a test fixture); schema-of-record
+    lives in agri-db.
+    """
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="assistant_proactive_notice",
+        # No DB-level FK constraint (same reason as AssistantConversation): keep
+        # the user-table TRUNCATE unblocked during the test flush.
+        db_constraint=False,
+    )
+    last_sent = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        app_label = "assistant"
+        db_table = "assistant_proactive_notice"
+        managed = False
+
+    def __str__(self) -> str:
+        return f"ProactiveNotice(user {self.user_id} · {self.last_sent})"

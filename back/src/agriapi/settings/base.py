@@ -268,6 +268,7 @@ if SCHEDULE_MODE == "test":
     _email_schedule = crontab(minute="*/4")
     _sim_schedule = crontab(minute="*/2")
     _device_health_schedule = crontab(minute="*/10")
+    _proactive_schedule = crontab(minute="*/10")
 else:
     _et0_schedule = crontab(minute=0)
     # Every 5 min so per-user notify_every cadences down to 10 min are
@@ -276,6 +277,9 @@ else:
     _sim_schedule = crontab(minute="*/15")
     # Device health is slow-moving (offline > hours); an hourly scan is plenty.
     _device_health_schedule = crontab(minute=15)
+    # Proactive irrigation nudges: a couple of times a day is plenty (deduped
+    # per user with a 24h cooldown anyway).
+    _proactive_schedule = crontab(minute=30, hour="*/8")
 
 CELERY_BEAT_SCHEDULE = {
     "compute_et0": {
@@ -292,6 +296,11 @@ CELERY_BEAT_SCHEDULE = {
     "device_health_scan": {
         "task": "agriapi.tasks.scan_device_health",
         "schedule": _device_health_schedule,
+    },
+    # Same DatabaseScheduler caveat as above: needs a PeriodicTask row on prod.
+    "proactive_scan": {
+        "task": "agriapi.tasks.scan_proactive_insights",
+        "schedule": _proactive_schedule,
     },
 }
 if ENABLE_SENSOR_SIMULATOR:

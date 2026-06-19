@@ -1052,3 +1052,90 @@ def scan_device_health():
         "healthy": healthy,
         "skipped": skipped,
     }
+
+
+PROACTIVE_COOLDOWN_HOURS = 24
+
+
+@shared_task
+def scan_proactive_insights():
+    """Per active customer, compute one high-value irrigation insight via the
+    assistant's agronomy tool and email an actionable nudge when a zone needs
+    water. Deduped to at most once per cooldown window per user (atomic claim on
+    ProactiveNotice.last_sent). Per-user failures don't abort the batch.
+    """
+    from datetime import timedelta
+
+    from django.db.models import Q
+
+    from apps.assistant.models import ProactiveNotice
+    from apps.assistant.tools import _get_irrigation_advice
+
+    user_model = get_user_model()
+    reference = now()
+    cooldown_cutoff = reference - timedelta(hours=PROACTIVE_COOLDOWN_HOURS)
+    scanned = notified = quiet = skipped = 0
+
+    customers = user_model.objects.filter(
+        is_active=True, is_staff=False, is_technician=False
+    )
+    with get_connection() as connection:
+        for user in customers.iterator(chunk_size=200):
+            scanned += 1
+            recipient = (getattr(user, "email", "") or "").strip()
+            if not recipient:
+                skipped += 1
+                continue
+            try:
+                advice = _get_irrigation_advice(user, {})
+            except Exception:
+                skipped += 1
+                logger.exception("proactive: advice failed for %s", recipient)
+                continue
+            if advice.get("recommendation") != "irrigate":
+                quiet += 1
+                continue
+
+            # Atomic dedup claim: ensure a ledger row, capture the prior stamp,
+            # then only the update that flips last_sent from never/expired wins.
+            notice, _ = ProactiveNotice.objects.get_or_create(user=user)
+            prev_sent = notice.last_sent
+            claimed = (
+                ProactiveNotice.objects.filter(user=user)
+                .filter(Q(last_sent__isnull=True) | Q(last_sent__lt=cooldown_cutoff))
+                .update(last_sent=reference)
+            )
+            if not claimed:
+                skipped += 1
+                continue
+
+            zone = advice.get("zone_name") or "votre parcelle"
+            reason = advice.get("reason") or ""
+            water = advice.get("estimated_water_m3")
+            extra = f" (~{water} m³ recommandés)" if water else ""
+            try:
+                send_mail(
+                    subject=f"Conseil d'irrigation : {zone}",
+                    message=(
+                        f"Votre assistant Agrilogy recommande d'irriguer "
+                        f"« {zone} »{extra}.\n\n{reason}\n\n"
+                        f"Ouvrez l'application pour le détail."
+                    ),
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    recipient_list=[recipient],
+                    connection=connection,
+                    fail_silently=False,
+                )
+                notified += 1
+            except Exception:
+                # Roll back the claim so a later tick can retry the send.
+                ProactiveNotice.objects.filter(user=user).update(last_sent=prev_sent)
+                skipped += 1
+                logger.exception("proactive: send failed for %s", recipient)
+
+    return {
+        "scanned": scanned,
+        "notified": notified,
+        "quiet": quiet,
+        "skipped": skipped,
+    }
