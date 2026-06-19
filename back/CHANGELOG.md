@@ -1,6 +1,40 @@
 # CHANGELOG
 
 
+## v1.53.0 (2026-06-19)
+
+### Features
+
+- **devices**: Device registry + device-health alerts
+  ([#222](https://github.com/AgriLogy/agri-api/pull/222),
+  [`043f405`](https://github.com/AgriLogy/agri-api/commit/043f405489121013162f4f6d30abd8659b9e9b0c))
+
+Closes #221
+
+## Device registry (revives the dead admin page) `/devices` admin CRUD (`GET`/`POST`,
+  `PATCH`/`DELETE /{pk}`, `is_staff`) over a new `Device` model. The agri-admin
+  `adminDeviceApi`/`DevicesMain` page already calls these exact paths but had **no backend on main**
+  (the registry was stranded on the unpushed `feat/battery-signal-metrics` branch) — this revives it
+  with **no UI change**. - Isolated from the battery/signal work; the **ingest-routing** edits
+  (bivocom/chirpstack webhooks) were intentionally trimmed to keep the diff to the registry CRUD +
+  model. - New table uses the proven self-deploy template: `managed=False` + `db_constraint=False`
+  FKs + `scripts/ensure_device_tables.py` (wired in `docker-entrypoint.sh`) + session-wide
+  `conftest` creation. No prod-DB migration needed.
+
+## Device-health alerts (net-new) - `scan_device_health` Celery task + a pure
+  `classify_device_health` helper: flags **offline** (no uplink > 24h) and **low-battery** (< 3.4V)
+  from each device's latest LoRaWAN uplink and emails the owner. - **Dedup** via an atomic
+  `last_health_notified` claim (cooldown 24h) so a device is emailed at most once per window even
+  across concurrent beat ticks (mirrors the periodic-notification claim pattern). On send failure
+  the claim is rolled back to retry next tick. - Beat entry `device_health_scan` added (hourly in
+  prod). NOTE: prod beat runs the **DatabaseScheduler**, so a `django_celery_beat` PeriodicTask row
+  must be created to activate it (same as `email_ping`) — the task is otherwise complete + testable.
+
+## Verify - 15 device tests (CRUD + classifier + scan dedup) green; 37-test
+  device+technician+lorawan slice green (no flush regression). ruff + format + `manage.py check`
+  clean. Postgres CI gates the flush.
+
+
 ## v1.52.0 (2026-06-19)
 
 ### Features
