@@ -21,6 +21,7 @@ from ninja import Router
 from ninja.responses import Response
 
 from agriapi.api.auth import JwtAuth
+from agriapi.api.scope import resolve_read_scope
 from analytics.models import ActiveGraph, Zone
 from apps.users.models import CustomUser
 
@@ -51,7 +52,11 @@ def _active_graph_dict(ag: ActiveGraph) -> dict[str, Any]:
     summary="Caller's zones (id + name)",
 )
 def list_my_zones(request):
-    qs = Zone.objects.filter(user_id=request.auth.id)
+    # Technicians see the owner's zones, narrowed to their granted subset.
+    scope = resolve_read_scope(request.auth)
+    qs = Zone.objects.filter(user_id=scope.owner_id)
+    if scope.zone_ids is not None:
+        qs = qs.filter(id__in=scope.zone_ids)
     return [_zone_short(z) for z in qs]
 
 
@@ -61,11 +66,20 @@ def list_my_zones(request):
     summary="Caller's ActiveGraph config for one zone",
 )
 def get_my_active_graph(request, zone_id: int):
+    scope = resolve_read_scope(request.auth)
+    if not scope.zone_allowed(zone_id):
+        return Response({"detail": "ActiveGraph not found."}, status=404)
     try:
-        ag = ActiveGraph.objects.get(user=request.auth, zone_id=zone_id)
+        ag = ActiveGraph.objects.get(user_id=scope.owner_id, zone_id=zone_id)
     except ActiveGraph.DoesNotExist:
         return Response({"detail": "ActiveGraph not found."}, status=404)
-    return _active_graph_dict(ag)
+    d = _active_graph_dict(ag)
+    if scope.is_read_only:
+        # Mask any graph the technician isn't granted for this zone.
+        for key in list(d.keys()):
+            if key.endswith("_status") and not scope.graph_allowed(zone_id, key):
+                d[key] = False
+    return d
 
 
 # Legacy URL-pattern endpoints removed in the REST-aligned rewrite. The

@@ -56,6 +56,77 @@ class Zone(_IrrigationBase):
     )
 
 
+class TechnicianGrant(_IrrigationBase):
+    """Links a technician login to the farm owner whose data it may read."""
+
+    technician = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="technician_grants",
+        db_constraint=False,
+    )
+    owner = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="granted_technicians",
+        db_constraint=False,
+    )
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)
+
+    class Meta:
+        app_label = "analytics"
+        db_table = "analytics_techniciangrant"
+        # Schema-of-record lives in agri-db; this table self-deploys on prod via
+        # scripts/ensure_technician_tables.py and is created session-wide in the
+        # test DB by conftest. managed=False keeps it out of the migration graph
+        # (a real FK table broke the postgres CI flush — see the assistant model);
+        # db_constraint=False above drops the DB-level FK so flush can TRUNCATE.
+        managed = False
+        constraints = [
+            models.UniqueConstraint(
+                fields=["technician", "owner"], name="uniq_technician_owner"
+            )
+        ]
+
+    def __str__(self):
+        return f"grant {self.technician_id}->{self.owner_id}"
+
+
+class TechnicianZoneGrant(_IrrigationBase):
+    """Per-zone scope under a grant: which zone + which graph keys are visible.
+
+    ``allowed_graphs`` is a whitelist of ActiveGraph status keys (e.g.
+    ``water_flow_status``); effective visibility = granted ∩ owner-enabled.
+    """
+
+    grant = models.ForeignKey(
+        TechnicianGrant,
+        on_delete=models.CASCADE,
+        related_name="zone_grants",
+        db_constraint=False,
+    )
+    zone = models.ForeignKey(
+        "analytics.Zone",
+        on_delete=models.CASCADE,
+        related_name="technician_grants",
+        db_constraint=False,
+    )
+    allowed_graphs = models.JSONField(default=list)
+
+    class Meta:
+        app_label = "analytics"
+        db_table = "analytics_technicianzonegrant"
+        # See TechnicianGrant.Meta — unmanaged, self-deployed, FK constraints off.
+        managed = False
+        constraints = [
+            models.UniqueConstraint(fields=["grant", "zone"], name="uniq_grant_zone")
+        ]
+
+    def __str__(self):
+        return f"zonegrant grant={self.grant_id} zone={self.zone_id}"
+
+
 class KcPeriod(_IrrigationBase):
     period_name = models.CharField(max_length=100)
     start_date = models.DateField()

@@ -23,6 +23,8 @@ from apps.irrigation.models import (
     KcPeriod,
     KcPeriodAssignment,
     ManagerAffirmation,
+    TechnicianGrant,
+    TechnicianZoneGrant,
     Zone,
 )
 from apps.sensors.models import (
@@ -76,6 +78,8 @@ __all__ = [
     "KcPeriod",
     "KcPeriodAssignment",
     "ManagerAffirmation",
+    "TechnicianGrant",
+    "TechnicianZoneGrant",
     "Zone",
     # alerts
     "Alert",

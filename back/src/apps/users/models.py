@@ -44,6 +44,9 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     )
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
+    # A technician is a real login whose read scope is another user's (the
+    # owner's) data, narrowed to granted zones + graphs. They never write.
+    is_technician = models.BooleanField(default=False)
 
     # Notification cadence: how often (in minutes) to send the periodic
     # field-status email, and when it last went out. Stored in minutes so

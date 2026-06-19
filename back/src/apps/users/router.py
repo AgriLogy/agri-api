@@ -87,6 +87,7 @@ class SignInOut(Schema):
     refresh: str
     access: str
     is_staff: bool
+    is_technician: bool = False
 
 
 class AdminSignInOut(Schema):
@@ -182,6 +183,7 @@ def _signin_core(payload: SignInIn) -> Response:
             "refresh": str(refresh),
             "access": str(refresh.access_token),
             "is_staff": user.is_staff,
+            "is_technician": getattr(user, "is_technician", False),
         },
         status=200,
     )
