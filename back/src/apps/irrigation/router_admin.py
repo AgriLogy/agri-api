@@ -130,6 +130,18 @@ class AlertAdminPatchIn(Schema):
     is_active: bool | None = None
 
 
+class AlertAdminCreateIn(Schema):
+    username: str
+    name: str
+    type: str
+    condition: str
+    condition_nbr: float
+    sensor_key: str = ""
+    description: str = ""
+    zone_id: int | None = None
+    is_active: bool = True
+
+
 # ---------------------------------------------------------------------------
 # Overview
 # ---------------------------------------------------------------------------
@@ -666,6 +678,43 @@ def list_all_alerts(
     if zone_id is not None:
         qs = qs.filter(zone_id=zone_id)
     return [_serialize_alert_row(a) for a in qs[:500]]
+
+
+@router.post("/admin/alerts", auth=JwtAuth(), summary="Admin: create an alert")
+def create_alert(request, payload: AlertAdminCreateIn):
+    guard = _require_admin(request)
+    if guard is not None:
+        return guard
+    user = _resolve_user(payload.username)
+    if user is None:
+        return Response({"detail": f"User '{payload.username}' not found."}, status=404)
+    zone = None
+    if payload.zone_id is not None:
+        zone = Zone.objects.filter(id=payload.zone_id, user=user).first()
+        if zone is None:
+            return Response(
+                {"detail": f"Zone {payload.zone_id} not found for this user."},
+                status=404,
+            )
+    alert = Alert.objects.create(
+        user=user,
+        zone=zone,
+        name=payload.name,
+        type=payload.type,
+        description=payload.description or "",
+        condition=payload.condition,
+        condition_nbr=payload.condition_nbr,
+        sensor_key=payload.sensor_key or "",
+        is_active=payload.is_active,
+    )
+    record_audit(
+        request.auth,
+        "alert.create",
+        "alert",
+        alert.id,
+        {"username": payload.username, "name": payload.name},
+    )
+    return _serialize_alert_row(alert)
 
 
 @router.get(

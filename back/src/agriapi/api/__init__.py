@@ -46,6 +46,7 @@ from apps.irrigation.router_billing import router as billing_router
 from apps.irrigation.router_audit import router as audit_router
 from apps.irrigation.router_settings import router as settings_router
 from apps.irrigation.router_records import router as records_router
+from apps.irrigation.router_monitoring import router as monitoring_router
 
 api = NinjaAPI(
     title="Agrilogy API",
@@ -105,6 +106,9 @@ api.add_router("", analytics_admin_router, tags=["admin"])
 api.add_router("/admin/billing", billing_router, tags=["admin-billing"])
 api.add_router("/admin/audit", audit_router, tags=["admin-audit"])
 api.add_router("/admin/settings", settings_router, tags=["admin-settings"])
+
+# Monitoring/observability: task runs + schedule, delivery log, sign-in events.
+api.add_router("/admin/monitoring", monitoring_router, tags=["admin-monitoring"])
 
 # Admin records: notifications, assistant conversations, proactive notices,
 # and a global view over technician grants (across all owners).
