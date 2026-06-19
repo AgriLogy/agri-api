@@ -1,6 +1,40 @@
 # CHANGELOG
 
 
+## v1.51.0 (2026-06-19)
+
+### Features
+
+- **admin**: Billing, audit log, and system settings backend (Wave 4)
+  ([#218](https://github.com/AgriLogy/agri-api/pull/218),
+  [`c0603c0`](https://github.com/AgriLogy/agri-api/commit/c0603c0852b2bcc307de1f280f5e75a80614bc3b))
+
+Closes #217
+
+Wave 4 of the business-admin console — three modules, no new Django apps (unmanaged tables in the
+  analytics namespace, the proven assistant/technician template).
+
+## Billing (E) `Plan`/`Subscription`/`Invoice` + `/admin/billing/{plans,subscriptions,invoices}`
+  CRUD (is_staff). Assigning/cancelling a subscription mirrors `CustomUser.payement_status`
+  (active→actif, else suspended). Invoices support create + mark-paid.
+
+## Audit (F) `AuditEvent` + a fail-soft `record_audit()` helper, wired into billing, settings,
+  **zone create/delete**, and **technician create/revoke**. `GET /admin/audit` with
+  actor/action/target filters.
+
+## Settings (G) `SystemSetting` key/value store, `GET/PATCH /admin/settings` grouped by category,
+  defaults seeded lazily on first GET.
+
+## Schema handling All three tables are `managed=False` + `db_constraint=False` FKs (keeps the
+  postgres CI flush green), **self-deploy on prod** via `scripts/ensure_admin_tables.py` (wired into
+  `docker-entrypoint.sh` after the technician one), and are created session-wide in the test DB by
+  the root conftest.
+
+## Verify 17 new tests (billing CRUD + payment sync, audit record + filter, settings seed + upsert,
+  all 403-gated) + technician/analytics suites pass · ruff + format clean · `manage.py check` clean.
+  Postgres CI pending below.
+
+
 ## v1.50.0 (2026-06-19)
 
 ### Features
