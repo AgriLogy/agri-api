@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v1.57.0 (2026-06-19)
+
+### Features
+
+- **admin**: Records CRUD — notifications, conversations, proactive, grants
+  ([`3fff8fa`](https://github.com/AgriLogy/agri-api/commit/3fff8fade0eac18f3d23edb686b330d4b70e17d9))
+
+New router_records mounted at /admin (JWT + is_staff, all audited):
+
+- notifications: GET (filter by user) + DELETE - conversations: GET list + GET {pk} (with
+  transcript) + DELETE - proactive-notices: GET + DELETE (reset a user's cooldown) -
+  technician-grants: GLOBAL GET across all owners (the /technicians router is owner-scoped) + GET
+  {pk} (+scope) + PATCH (enable/disable) + DELETE.
+
+No new tables — all back existing models. test_admin_records.py covers 403-gating, list/filter,
+  detail, delete and grant patch/revoke.
+
+Closes #231
+
+- **admin**: Records CRUD — notifications, conversations, proactive, grants
+  ([#232](https://github.com/AgriLogy/agri-api/pull/232),
+  [`4de4511`](https://github.com/AgriLogy/agri-api/commit/4de45119fcdd8223f7f11d1eb62c5fb1dee62eb3))
+
+
 ## v1.56.0 (2026-06-19)
 
 ### Features
