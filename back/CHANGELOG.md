@@ -1,6 +1,41 @@
 # CHANGELOG
 
 
+## v1.54.0 (2026-06-19)
+
+### Features
+
+- **assistant**: Write-actions + proactive irrigation nudges
+  ([#224](https://github.com/AgriLogy/agri-api/pull/224),
+  [`7ab9534`](https://github.com/AgriLogy/agri-api/commit/7ab953495b4ee85edbf18aa8cb009ba53656ec08))
+
+Closes #223
+
+Completes Feature 3 (the page-aware half shipped separately in agrilogy-front #228).
+
+## Write-actions (mutating tools) - `create_alert` and `set_notification_cadence` added to the
+  assistant ToolRegistry with a `mutating` flag. Both execute as the calling user (run_tool passes
+  request.auth), are caller-scoped, **block technicians**, validate input, and are reversible — the
+  result states what changed so the assistant can tell the user how to undo it. Auto-exposed to the
+  LLM tool-calling loop.
+
+## Proactive insights - `scan_proactive_insights` Celery task: per active customer, reuses
+  `_get_irrigation_advice` and emails a nudge when the recommendation is *irrigate*. **Dedup** =
+  atomic `ProactiveNotice.last_sent` claim with a 24h cooldown (rolled back on send failure to
+  retry). Beat entry `proactive_scan`. - `ProactiveNotice` is a `managed=False` model
+  (db_constraint=False FK) that **self-deploys** via `ensure_assistant_tables.py` (already
+  entrypoint-wired) and is created session-wide in `conftest.py` — no prod migration.
+
+## Activation note Prod beat runs the DatabaseScheduler, so `proactive_scan` (and
+  `device_health_scan`) need a `django_celery_beat` PeriodicTask row to fire on prod — same as
+  `email_ping`.
+
+## Verify `pytest src/apps/assistant/` **82 passed** (new write-tool + proactive tests incl. dedup,
+  hold=no-email, staff/technician skip) · analytics flush slice 197 passed (the 5
+  `TestZoneNotificationOutbound` failures are pre-existing env/Celery, not regressions) · ruff +
+  format + `manage.py check` clean.
+
+
 ## v1.53.0 (2026-06-19)
 
 ### Features
