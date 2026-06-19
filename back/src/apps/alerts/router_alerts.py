@@ -22,6 +22,7 @@ from ninja.responses import Response
 
 from agri.core.alerts import SENSOR_KEY_REGISTRY
 from agriapi.api.auth import JwtAuth
+from agriapi.api.scope import block_if_technician
 from apps.alerts.engine import recent_triggers_for_user, suggest_alert
 from analytics.models import Alert, Zone
 
@@ -138,6 +139,9 @@ def list_alerts(
 
 @router.post("", auth=JwtAuth(), summary="Create an alert for the caller")
 def create_alert(request, payload: AlertWriteIn):
+    blocked = block_if_technician(request)
+    if blocked is not None:
+        return blocked
     if not payload.name or not payload.condition or payload.condition_nbr is None:
         return Response(
             {"detail": "name, condition, and condition_nbr are required."},
@@ -226,6 +230,9 @@ def get_alert(request, pk: int):
 
 @router.put("/{pk}", auth=JwtAuth(), summary="Replace one of the caller's alerts")
 def replace_alert(request, pk: int, payload: AlertWriteIn):
+    blocked = block_if_technician(request)
+    if blocked is not None:
+        return blocked
     alert = _get_owned(request, pk)
     if alert is None:
         return Response({"detail": "Not found."}, status=404)
@@ -239,6 +246,9 @@ def replace_alert(request, pk: int, payload: AlertWriteIn):
 
 @router.patch("/{pk}", auth=JwtAuth(), summary="Patch one of the caller's alerts")
 def patch_alert(request, pk: int, payload: AlertWriteIn):
+    blocked = block_if_technician(request)
+    if blocked is not None:
+        return blocked
     alert = _get_owned(request, pk)
     if alert is None:
         return Response({"detail": "Not found."}, status=404)
@@ -252,6 +262,9 @@ def patch_alert(request, pk: int, payload: AlertWriteIn):
 
 @router.delete("/{pk}", auth=JwtAuth(), summary="Delete one of the caller's alerts")
 def delete_alert(request, pk: int):
+    blocked = block_if_technician(request)
+    if blocked is not None:
+        return blocked
     alert = _get_owned(request, pk)
     if alert is None:
         return Response({"detail": "Not found."}, status=404)

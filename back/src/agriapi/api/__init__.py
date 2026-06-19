@@ -36,6 +36,7 @@ from apps.lorawan.chirpstack.router import router as chirpstack_router
 from apps.users.router import router as users_auth_router
 from apps.users.router_admin import router as users_router
 from apps.assistant.router import router as assistant_router
+from apps.users.router_technicians import router as technicians_router
 
 api = NinjaAPI(
     title="Agrilogy API",
@@ -73,6 +74,9 @@ api.add_router(
 
 # Sensor-key catalog (GET /sensors) + per-sensor readings (GET, PATCH /sensors/<slug>).
 api.add_router("/sensors", sensors_router, tags=["sensors"])
+
+# Owner-facing technician management (scoped read-only logins).
+api.add_router("/technicians", technicians_router, tags=["technicians"])
 
 # Device-ingest webhooks. Each declares ``auth=None`` per-route because the
 # gateway authenticates with a shared-secret header (TODO).
