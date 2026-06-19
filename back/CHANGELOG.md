@@ -1,6 +1,38 @@
 # CHANGELOG
 
 
+## v1.58.0 (2026-06-19)
+
+### Features
+
+- **admin**: Global Kc CRUD, system-setting create/delete, per-user display config
+  ([#236](https://github.com/AgriLogy/agri-api/pull/236),
+  [`59ad656`](https://github.com/AgriLogy/agri-api/commit/59ad656b1de028f4f37e5784deeae71415748c43))
+
+- **admin**: Read-only view-as impersonation (token + mutation block)
+  ([#238](https://github.com/AgriLogy/agri-api/pull/238),
+  [`7fef989`](https://github.com/AgriLogy/agri-api/commit/7fef98952630b86ec0d3f3a8107fffd195c2a8da))
+
+- **admin**: Sensor-data explorer API + device-health tables
+  ([`292b297`](https://github.com/AgriLogy/agri-api/commit/292b297ac55db90a27d6b4700387156f18274ee7))
+
+Generic admin surface over the 45 sensor models (resolved via SENSOR_MODELS) so the back-office can
+  browse/correct/clean raw time-series for any user/zone without 45 CRUD pages:
+
+- router_sensor_data @ /admin/sensor-data (is_staff, audited): GET /catalog, GET list
+  (sensor/username/zone/from/to/limit), PATCH {sensor}/{id} value, DELETE {sensor}/{id}, DELETE
+  {sensor} range (guarded: zone_id + time bound). - ensure_sensor_health_tables.py self-deploys
+  BatterySensor/SignalSensor on boot (migration 0060 exists but agri-db baseline may predate them).
+
+NpkSensor appears in the catalog but is read-only here (no single value field).
+
+Closes #233
+
+- **admin**: Sensor-data explorer API + device-health tables
+  ([#234](https://github.com/AgriLogy/agri-api/pull/234),
+  [`1f5c662`](https://github.com/AgriLogy/agri-api/commit/1f5c662ef064e574bc22a14f52f90e51efe87f46))
+
+
 ## v1.57.0 (2026-06-19)
 
 ### Features
@@ -45,6 +77,33 @@ Closes #229
 - **admin**: Create global alerts (POST /admin/alerts)
   ([#230](https://github.com/AgriLogy/agri-api/pull/230),
   [`d808f57`](https://github.com/AgriLogy/agri-api/commit/d808f578467264b4e3cfe20c1019ba7599705ec3))
+
+- **admin**: Global Kc CRUD, system-setting create/delete, per-user display config
+  ([`7a90188`](https://github.com/AgriLogy/agri-api/commit/7a90188e8baf06a9c29d6bbcba2c2ccd7d38ffb0))
+
+- router_admin_kc: /admin/kc list (filter by username/zone) + create-for-user + detail + replace +
+  delete, reusing the owner router's serialize/period helpers. Cross-user management for staff (the
+  /kc router stays owner-scoped). - router_settings: add POST (create key, 409 on dup) + DELETE
+  /{key} alongside the existing GET/PATCH. - router_admin: add GET/PATCH for per-user/zone
+  graph-names + sensor-colors (mirrors the existing active-graph admin endpoints).
+
+All is_staff-gated + audited; no new tables. 8 new tests; analytics suite green.
+
+Closes #235
+
+- **admin**: Read-only view-as impersonation (token + mutation block)
+  ([`981bfcd`](https://github.com/AgriLogy/agri-api/commit/981bfcd28fc1cee705c8cec779c388be356c52d2))
+
+Lets a staff user start a short-lived read-only session as any user so the admin can see what that
+  user sees without being able to change anything.
+
+- POST /admin/impersonate/{username} (is_staff, audited): mints a 30-min simplejwt access token
+  authenticating AS the target user with a readonly claim + impersonator metadata. -
+  ImpersonationReadOnlyMiddleware: rejects any non-safe HTTP method made with a readonly token
+  (403), before routing — covers django-ninja and DRF alike, and blocks chaining a new impersonation
+  from a readonly token.
+
+Closes #237
 
 - **monitoring**: Task-run, delivery & login history + /admin/monitoring API
   ([`91e25ae`](https://github.com/AgriLogy/agri-api/commit/91e25ae7178e4068e6cb27560a68e7bc6822db1d))
