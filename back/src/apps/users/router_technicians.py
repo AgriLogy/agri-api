@@ -17,6 +17,7 @@ from ninja.responses import Response
 
 from agriapi.api.auth import JwtAuth
 from analytics.models import TechnicianGrant, TechnicianZoneGrant, Zone
+from apps.irrigation.audit import record_audit
 from apps.users.models import CustomUser
 
 router = Router()
@@ -149,6 +150,13 @@ def create_technician(request, payload: TechnicianCreateIn):
     if err is not None:
         return err
     grant = _grant_for(request.auth, tech.id)
+    record_audit(
+        request.auth,
+        "technician.create",
+        "technician",
+        tech.id,
+        {"username": tech.username},
+    )
     return Response(_serialize(grant), status=201)
 
 
@@ -217,4 +225,5 @@ def revoke_technician(request, technician_id: int):
     tech = grant.technician
     tech.is_active = False
     tech.save(update_fields=["is_active"])
+    record_audit(request.auth, "technician.revoke", "technician", technician_id)
     return {"status": "revoked"}

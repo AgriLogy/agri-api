@@ -77,6 +77,33 @@ def _create_technician_tables(django_db_setup, django_db_blocker):
     yield
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _create_admin_tables(django_db_setup, django_db_blocker):
+    """The business-admin tables (analytics_plan / _subscription / _invoice /
+    _auditevent / _systemsetting) are unmanaged (self-deployed in prod via
+    scripts/ensure_admin_tables.py). Create them once for the whole test DB so
+    flush-based TransactionTestCases across all apps don't choke on a missing
+    table.
+    """
+    from django.db import connection
+
+    from apps.irrigation.models import (
+        AuditEvent,
+        Invoice,
+        Plan,
+        Subscription,
+        SystemSetting,
+    )
+
+    with django_db_blocker.unblock():
+        existing = connection.introspection.table_names()
+        with connection.schema_editor() as editor:
+            for model in (Plan, Subscription, Invoice, AuditEvent, SystemSetting):
+                if model._meta.db_table not in existing:
+                    editor.create_model(model)
+    yield
+
+
 def _bearer_client(user) -> APIClient:
     from rest_framework_simplejwt.tokens import AccessToken
 

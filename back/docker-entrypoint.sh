@@ -91,6 +91,8 @@ case "$ROLE" in
     python scripts/ensure_assistant_tables.py || log "  (assistant table ensure skipped/failed; continuing)"
     log "Ensuring technician RBAC tables exist (idempotent)"
     python scripts/ensure_technician_tables.py || log "  (technician table ensure skipped/failed; continuing)"
+    log "Ensuring business-admin tables exist (idempotent)"
+    python scripts/ensure_admin_tables.py || log "  (admin table ensure skipped/failed; continuing)"
     if [[ "$DJANGO_ENV" == "prod" ]]; then
       # Production: no dev seeders; serve via gunicorn with collected static
       # (WhiteNoise serves them since DEBUG=False).

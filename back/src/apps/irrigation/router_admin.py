@@ -33,6 +33,7 @@ from ninja.responses import Response
 
 from agriapi.api.auth import JwtAuth
 from analytics.models import ActiveGraph, Alert, Zone
+from apps.irrigation.audit import record_audit
 from apps.lorawan.chirpstack.models import LoraUplink
 
 router = Router()
@@ -348,6 +349,7 @@ def create_user_zone(request, username: str, payload: ZoneWriteIn):
     if err is not None:
         return Response(err, status=400)
     z = Zone.objects.create(user=user, **data)
+    record_audit(request.auth, "zone.create", "zone", z.id, {"username": username})
     return Response(_serialize_zone(z), status=201)
 
 
@@ -412,6 +414,7 @@ def delete_user_zone(request, username: str, pk: int):
     if err is not None:
         return err
     z.delete()
+    record_audit(request.auth, "zone.delete", "zone", pk, {"username": username})
     return Response(None, status=204)
 
 
