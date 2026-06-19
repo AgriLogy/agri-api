@@ -104,6 +104,28 @@ def _create_admin_tables(django_db_setup, django_db_blocker):
     yield
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _create_device_table(django_db_setup, django_db_blocker):
+    """The device registry table (analytics_device) is unmanaged (self-deployed
+    in prod via scripts/ensure_device_tables.py). Create it once for the whole
+    test DB so flush-based TransactionTestCases don't choke on a missing table.
+    The ``lora_uplink`` table (also unmanaged) is created here too so non-
+    chirpstack tests — e.g. the device-health scan — can write uplinks.
+    """
+    from django.db import connection
+
+    from apps.irrigation.models import Device
+    from apps.lorawan.chirpstack.models import LoraUplink
+
+    with django_db_blocker.unblock():
+        existing = connection.introspection.table_names()
+        with connection.schema_editor() as editor:
+            for model in (Device, LoraUplink):
+                if model._meta.db_table not in existing:
+                    editor.create_model(model)
+    yield
+
+
 def _bearer_client(user) -> APIClient:
     from rest_framework_simplejwt.tokens import AccessToken
 

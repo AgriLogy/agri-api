@@ -511,3 +511,58 @@ class SystemSetting(_IrrigationBase):
         app_label = "analytics"
         db_table = "analytics_systemsetting"
         managed = False
+
+
+class Device(_IrrigationBase):
+    """A registered hardware router/gateway/node.
+
+    Maps a hardware identifier (LoRaWAN DevEUI, Bivocom device_id, …) to the
+    owner + zone its readings belong to, so the fleet view and health alerts
+    can attribute uplinks to a customer.
+    """
+
+    DRAGON = "dragon"
+    LORA = "lora"
+    BIVOCOM = "bivocom"
+    DEVICE_TYPE_CHOICES = [
+        (DRAGON, "Dragon"),
+        (LORA, "LoRa"),
+        (BIVOCOM, "Bivocom"),
+    ]
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="devices",
+        db_constraint=False,
+    )
+    zone = models.ForeignKey(
+        "analytics.Zone",
+        on_delete=models.SET_NULL,
+        related_name="devices",
+        null=True,
+        blank=True,
+        db_constraint=False,
+    )
+    device_type = models.CharField(max_length=20, choices=DEVICE_TYPE_CHOICES)
+    # Hardware identifier: LoRaWAN DevEUI / Bivocom device_id / serial number.
+    serial = models.CharField(max_length=128, unique=True)
+    name = models.CharField(max_length=120, blank=True, default="")
+    is_active = models.BooleanField(default=True)
+    # Last time the owner was emailed about a health issue for this device, so
+    # the device-health beat task doesn't re-notify every tick (see tasks.py).
+    last_health_notified = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)
+
+    class Meta:
+        app_label = "analytics"
+        db_table = "analytics_device"
+        # Schema-of-record in agri-db; self-deploys on prod via
+        # scripts/ensure_device_tables.py and is created session-wide in the
+        # test DB by conftest. managed=False keeps it out of the migration
+        # graph; db_constraint=False on the FKs drops the DB-level constraint
+        # so the postgres CI flush can TRUNCATE (see the technician models).
+        managed = False
+
+    def __str__(self):
+        return f"{self.device_type}:{self.serial}"

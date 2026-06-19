@@ -24,6 +24,7 @@ from ninja import NinjaAPI
 from agriapi.api.auth import JwtAuth
 from apps.irrigation.router_admin import router as analytics_admin_router
 from apps.irrigation.router_kc import router as kc_router
+from apps.irrigation.router_devices import router as devices_router
 from apps.alerts.router_alerts import router as alerts_router
 from apps.irrigation.router_manager_affirmation import (
     router as manager_affirmation_router,
@@ -82,6 +83,9 @@ api.add_router("/sensors", sensors_router, tags=["sensors"])
 
 # Owner-facing technician management (scoped read-only logins).
 api.add_router("/technicians", technicians_router, tags=["technicians"])
+
+# Admin device/router registry (CRUD).
+api.add_router("/devices", devices_router, tags=["devices"])
 
 # Device-ingest webhooks. Each declares ``auth=None`` per-route because the
 # gateway authenticates with a shared-secret header (TODO).
