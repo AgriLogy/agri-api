@@ -929,3 +929,126 @@ def simulate_sensor_ingest():
         results.append(dict(zone_id=zone.id, ts=slot_utc.isoformat()))
 
     return {"slots": results}
+
+
+# -----------------------------------------------------------------------------
+# Device health monitoring
+# -----------------------------------------------------------------------------
+# Default thresholds (kept as constants; could move to SystemSetting later).
+DEVICE_LOW_BATTERY_V = 3.4
+DEVICE_OFFLINE_HOURS = 24
+DEVICE_HEALTH_COOLDOWN_HOURS = 24
+
+
+def classify_device_health(
+    last_seen,
+    battery_v,
+    *,
+    reference,
+    low_battery_v: float = DEVICE_LOW_BATTERY_V,
+    offline_hours: int = DEVICE_OFFLINE_HOURS,
+) -> list[str]:
+    """Pure health check for one device. Returns a list of issue codes
+    (``"offline"`` and/or ``"low_battery"``); empty list means healthy.
+
+    ``last_seen`` is the latest uplink time (or None if never), ``battery_v`` the
+    latest battery voltage (or None), ``reference`` the "now" to compare against.
+    """
+    from datetime import timedelta
+
+    issues: list[str] = []
+    if last_seen is None or (reference - last_seen) > timedelta(hours=offline_hours):
+        issues.append("offline")
+    if battery_v is not None and battery_v < low_battery_v:
+        issues.append("low_battery")
+    return issues
+
+
+@shared_task
+def scan_device_health():
+    """Scan registered devices for health problems (offline / low battery) and
+    email the owner once per cooldown window. Health is derived from the latest
+    LoRaWAN uplink matching the device serial (DevEUI). Per-device failures
+    don't abort the batch.
+    """
+    from datetime import timedelta
+
+    from django.db.models import Q
+
+    from apps.irrigation.models import Device
+    from apps.lorawan.chirpstack.models import LoraUplink
+
+    reference = now()
+    cooldown_cutoff = reference - timedelta(hours=DEVICE_HEALTH_COOLDOWN_HOURS)
+    scanned = notified = healthy = skipped = 0
+
+    devices = Device.objects.filter(is_active=True).select_related("user")
+    with get_connection() as connection:
+        for device in devices.iterator(chunk_size=200):
+            scanned += 1
+            latest = (
+                LoraUplink.objects.filter(dev_eui=device.serial)
+                .order_by("-received_at")
+                .first()
+            )
+            last_seen = latest.received_at if latest else None
+            battery_v = latest.battery_v if latest else None
+            issues = classify_device_health(last_seen, battery_v, reference=reference)
+            if not issues:
+                healthy += 1
+                continue
+
+            recipient = (getattr(device.user, "email", "") or "").strip()
+            if not recipient:
+                skipped += 1
+                continue
+
+            # Atomic dedup claim: only the update that flips last_health_notified
+            # from never/expired wins, so a device is emailed at most once per
+            # cooldown window even across concurrent beat ticks.
+            claimed = (
+                Device.objects.filter(pk=device.pk)
+                .filter(
+                    Q(last_health_notified__isnull=True)
+                    | Q(last_health_notified__lt=cooldown_cutoff)
+                )
+                .update(last_health_notified=reference)
+            )
+            if not claimed:
+                skipped += 1
+                continue
+
+            label = device.name or device.serial
+            problems = ", ".join(
+                {"offline": "hors ligne", "low_battery": "batterie faible"}[i]
+                for i in issues
+            )
+            try:
+                send_mail(
+                    subject=f"Alerte appareil : {label}",
+                    message=(
+                        f"Votre appareil « {label} » présente un problème : "
+                        f"{problems}.\n\n"
+                        f"Dernière communication : "
+                        f"{last_seen.isoformat() if last_seen else 'jamais'}."
+                    ),
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    recipient_list=[recipient],
+                    connection=connection,
+                    fail_silently=False,
+                )
+                notified += 1
+            except Exception:
+                # Roll back the claim so a later tick can retry the send.
+                Device.objects.filter(pk=device.pk).update(
+                    last_health_notified=device.last_health_notified
+                )
+                skipped += 1
+                logger.exception("Failed to send device-health alert to %s", recipient)
+
+    return {
+        "scanned": scanned,
+        "notified": notified,
+        "healthy": healthy,
+        "skipped": skipped,
+    }

@@ -267,12 +267,15 @@ if SCHEDULE_MODE == "test":
     _et0_schedule = crontab(minute="*/4")
     _email_schedule = crontab(minute="*/4")
     _sim_schedule = crontab(minute="*/2")
+    _device_health_schedule = crontab(minute="*/10")
 else:
     _et0_schedule = crontab(minute=0)
     # Every 5 min so per-user notify_every cadences down to 10 min are
     # honoured (should_notify gates each user; this is just the check tick).
     _email_schedule = crontab(minute="*/5")
     _sim_schedule = crontab(minute="*/15")
+    # Device health is slow-moving (offline > hours); an hourly scan is plenty.
+    _device_health_schedule = crontab(minute=15)
 
 CELERY_BEAT_SCHEDULE = {
     "compute_et0": {
@@ -282,6 +285,13 @@ CELERY_BEAT_SCHEDULE = {
     "email_ping": {
         "task": "agriapi.tasks.send_periodic_notifications",
         "schedule": _email_schedule,
+    },
+    # NOTE: prod beat runs the DatabaseScheduler, so this entry is a no-op there
+    # until a matching django_celery_beat PeriodicTask row exists (same as
+    # email_ping). It IS used under the default scheduler + in CI.
+    "device_health_scan": {
+        "task": "agriapi.tasks.scan_device_health",
+        "schedule": _device_health_schedule,
     },
 }
 if ENABLE_SENSOR_SIMULATOR:
