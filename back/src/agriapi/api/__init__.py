@@ -45,6 +45,7 @@ from apps.users.router_technicians import router as technicians_router
 from apps.irrigation.router_billing import router as billing_router
 from apps.irrigation.router_audit import router as audit_router
 from apps.irrigation.router_settings import router as settings_router
+from apps.sensors.router_sensor_data import router as sensor_data_router
 
 api = NinjaAPI(
     title="Agrilogy API",
@@ -104,6 +105,9 @@ api.add_router("", analytics_admin_router, tags=["admin"])
 api.add_router("/admin/billing", billing_router, tags=["admin-billing"])
 api.add_router("/admin/audit", audit_router, tags=["admin-audit"])
 api.add_router("/admin/settings", settings_router, tags=["admin-settings"])
+
+# Generic sensor-data explorer: browse / correct / range-delete raw readings.
+api.add_router("/admin/sensor-data", sensor_data_router, tags=["admin-sensor-data"])
 
 # AI assistant — tool catalog, per-tool invoke, and the orchestrated /chat.
 api.add_router("/assistant", assistant_router, tags=["assistant"])
