@@ -673,3 +673,103 @@ class OutputCommand(_IrrigationBase):
 
     def __str__(self):
         return f"OutputCommand({self.action} zone {self.zone_id} · {self.status})"
+
+
+# ---------------------------------------------------------------------------
+# Monitoring / observability (Wave 1 back-office)
+# ---------------------------------------------------------------------------
+# All three tables are unmanaged (self-deployed on prod via
+# scripts/ensure_monitoring_tables.py) and live in the ``analytics`` namespace
+# like the rest of the back-office models. They give the admin console history
+# for automated actions (TaskRun), notification deliveries
+# (NotificationDeliveryLog) and user sign-ins (LoginEvent) — none of which were
+# persisted anywhere before.
+
+
+class TaskRun(_IrrigationBase):
+    """One Celery task execution. Written centrally from Celery signals
+    (agriapi.celery), so every task is captured without per-task edits."""
+
+    SUCCESS = "success"
+    FAILURE = "failure"
+
+    task_name = models.CharField(max_length=128)
+    status = models.CharField(max_length=16, default=SUCCESS)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    runtime_ms = models.IntegerField(null=True, blank=True)
+    result = models.JSONField(default=dict, blank=True)
+    error = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)
+
+    class Meta:
+        app_label = "analytics"
+        db_table = "analytics_taskrun"
+        managed = False
+
+    def __str__(self):
+        return f"TaskRun({self.task_name} · {self.status})"
+
+
+class NotificationDeliveryLog(_IrrigationBase):
+    """One notification delivery attempt (email / SMS / WhatsApp), recorded by
+    the senders in agriapi.tasks via agriapi.delivery_log.record_delivery."""
+
+    EMAIL = "email"
+    SMS = "sms"
+    WHATSAPP = "whatsapp"
+
+    SENT = "sent"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+    channel = models.CharField(max_length=16)
+    kind = models.CharField(max_length=24, blank=True, default="")
+    recipient = models.CharField(max_length=255, blank=True, default="")
+    user = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="delivery_logs",
+        db_constraint=False,
+    )
+    status = models.CharField(max_length=12, default=SENT)
+    error = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)
+
+    class Meta:
+        app_label = "analytics"
+        db_table = "analytics_notificationdeliverylog"
+        managed = False
+
+    def __str__(self):
+        return f"Delivery({self.channel}->{self.recipient} · {self.status})"
+
+
+class LoginEvent(_IrrigationBase):
+    """One user sign-in attempt (success or failure), recorded in the
+    /auth/sessions sign-in path so the admin can monitor user behaviour."""
+
+    username = models.CharField(max_length=150, blank=True, default="")
+    user = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="login_events",
+        db_constraint=False,
+    )
+    success = models.BooleanField(default=False)
+    ip = models.CharField(max_length=64, blank=True, default="")
+    user_agent = models.CharField(max_length=255, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)
+
+    class Meta:
+        app_label = "analytics"
+        db_table = "analytics_loginevent"
+        managed = False
+
+    def __str__(self):
+        state = "ok" if self.success else "fail"
+        return f"LoginEvent({self.username} · {state})"
