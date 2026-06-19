@@ -25,6 +25,9 @@ from agriapi.api.auth import JwtAuth
 from apps.irrigation.router_admin import router as analytics_admin_router
 from apps.irrigation.router_kc import router as kc_router
 from apps.irrigation.router_devices import router as devices_router
+from apps.irrigation.router_irrigation_automation import (
+    router as irrigation_automation_router,
+)
 from apps.alerts.router_alerts import router as alerts_router
 from apps.irrigation.router_manager_affirmation import (
     router as manager_affirmation_router,
@@ -67,6 +70,7 @@ api.add_router("", analytics_reads_router, tags=["self"])
 # Alerts CRUD + sub-collections (/alerts, /alerts/for-graph, /alerts/suggest).
 api.add_router("/alerts", alerts_router, tags=["alerts"])
 api.add_router("/kc", kc_router, tags=["kc"])
+api.add_router("/irrigation", irrigation_automation_router, tags=["irrigation"])
 
 # Notification feed + outbound trigger.
 api.add_router("/notifications", notifications_router, tags=["notifications"])

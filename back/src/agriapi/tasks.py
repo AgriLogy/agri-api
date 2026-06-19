@@ -1139,3 +1139,83 @@ def scan_proactive_insights():
         "quiet": quiet,
         "skipped": skipped,
     }
+
+
+# How long a program's start_time "due" window stays open (minutes). The scan
+# runs more often than this; the per-window dedup keeps it to one fire.
+IRRIGATION_RUN_WINDOW_MIN = 15
+
+
+@shared_task
+def run_due_irrigation_programs():
+    """Fire enabled irrigation programs whose start_time falls in the current
+    window today, once per window. Each due program creates a scheduled
+    OutputCommand and dispatches it (simulated unless IRRIGATION_DISPATCH_ENABLED).
+    """
+    from datetime import datetime, timedelta
+
+    from apps.irrigation.models import IrrigationProgram, OutputCommand
+    from apps.irrigation.output_dispatch import dispatch_command
+
+    reference = now()
+    today_iso = reference.isoweekday()  # 1=Mon … 7=Sun
+    window_start = reference - timedelta(minutes=IRRIGATION_RUN_WINDOW_MIN)
+    fired = skipped = 0
+
+    programs = IrrigationProgram.objects.filter(enabled=True).select_related(
+        "user", "zone"
+    )
+    for program in programs.iterator(chunk_size=200):
+        # Weekday filter (empty weekdays = every day).
+        if program.weekdays.strip():
+            allowed = {
+                int(d) for d in program.weekdays.split(",") if d.strip().isdigit()
+            }
+            if today_iso not in allowed:
+                continue
+
+        # Is start_time within the just-passed window?
+        start_dt = datetime.combine(
+            reference.date(), program.start_time, tzinfo=reference.tzinfo
+        )
+        if not (window_start <= start_dt <= reference):
+            continue
+
+        # Per-window dedup: skip if already fired since the window opened.
+        if program.last_run_at and program.last_run_at >= window_start:
+            skipped += 1
+            continue
+
+        claimed = (
+            IrrigationProgram.objects.filter(pk=program.pk)
+            .filter(last_run_at__isnull=True)
+            .update(last_run_at=reference)
+        )
+        if not claimed:
+            claimed = (
+                IrrigationProgram.objects.filter(pk=program.pk)
+                .filter(last_run_at__lt=window_start)
+                .update(last_run_at=reference)
+            )
+        if not claimed:
+            skipped += 1
+            continue
+
+        cmd = OutputCommand.objects.create(
+            user=program.user,
+            zone=program.zone,
+            action=OutputCommand.OPEN,
+            source=OutputCommand.SCHEDULED,
+            status=OutputCommand.PENDING,
+            detail=f"Programme « {program.name} »",
+        )
+        try:
+            dispatch_command(cmd)
+            fired += 1
+        except Exception:
+            cmd.status = OutputCommand.FAILED
+            cmd.save(update_fields=["status"])
+            logger.exception("irrigation: dispatch failed for program %s", program.pk)
+            skipped += 1
+
+    return {"fired": fired, "skipped": skipped}
