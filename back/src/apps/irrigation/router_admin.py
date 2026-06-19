@@ -244,6 +244,74 @@ def analytics(request):
 
 
 # ---------------------------------------------------------------------------
+# Device fleet health (LoRaWAN uplinks)
+# ---------------------------------------------------------------------------
+@router.get(
+    "/admin/devices/health", auth=JwtAuth(), summary="Admin: device fleet health"
+)
+def device_fleet_health(request):
+    """Per-device health from LoRaWAN uplinks, grouped by ``dev_eui``.
+
+    For each device: latest name, last-seen, battery, signal (rssi/snr) and a
+    24h uplink count, plus a status (online < 24h, stale < 72h, else offline).
+    Best-effort: the uplink table may be absent in some envs/test DBs, so the
+    whole aggregation is guarded and degrades to an empty fleet rather than 500.
+    """
+    guard = _require_admin(request)
+    if guard is not None:
+        return guard
+
+    now = timezone.now()
+    online_cutoff = now - timezone.timedelta(hours=24)
+    stale_cutoff = now - timezone.timedelta(hours=72)
+
+    devices: list[dict[str, Any]] = []
+    try:
+        dev_euis = list(
+            LoraUplink.objects.order_by("dev_eui")
+            .values_list("dev_eui", flat=True)
+            .distinct()
+        )
+        for eui in dev_euis:
+            latest = (
+                LoraUplink.objects.filter(dev_eui=eui).order_by("-received_at").first()
+            )
+            if latest is None:
+                continue
+            last_seen = latest.received_at
+            if last_seen is None or last_seen < stale_cutoff:
+                status = "offline"
+            elif last_seen < online_cutoff:
+                status = "stale"
+            else:
+                status = "online"
+            devices.append(
+                {
+                    "dev_eui": eui,
+                    "device_name": latest.device_name or "",
+                    "last_seen": last_seen.isoformat() if last_seen else None,
+                    "battery_v": latest.battery_v,
+                    "rssi": latest.rssi,
+                    "snr": latest.snr,
+                    "uplinks_24h": LoraUplink.objects.filter(
+                        dev_eui=eui, received_at__gte=online_cutoff
+                    ).count(),
+                    "status": status,
+                }
+            )
+    except Exception:  # noqa: BLE001 — table missing / db unavailable
+        devices = []
+
+    summary = {
+        "total": len(devices),
+        "online": sum(1 for d in devices if d["status"] == "online"),
+        "stale": sum(1 for d in devices if d["status"] == "stale"),
+        "offline": sum(1 for d in devices if d["status"] == "offline"),
+    }
+    return {"devices": devices, "summary": summary}
+
+
+# ---------------------------------------------------------------------------
 # Zones CRUD per user
 # ---------------------------------------------------------------------------
 
