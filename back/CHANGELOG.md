@@ -1,6 +1,35 @@
 # CHANGELOG
 
 
+## v1.49.0 (2026-06-19)
+
+### Features
+
+- **admin**: Business analytics + global alerts endpoints
+  ([#214](https://github.com/AgriLogy/agri-api/pull/214),
+  [`f4bf22a`](https://github.com/AgriLogy/agri-api/commit/f4bf22a48226f3d221df25a30219aa79a1fc47b3))
+
+Closes #213
+
+Read-only, is_staff-gated admin aggregation endpoints for the new console dashboard + alerts console
+  (Wave 2, module B+C). No new tables.
+
+## Endpoints - **GET /admin/analytics** — `{payment_status, signups_by_week, active_users,
+  inactive_users, zones_per_user, alerts_by_type, devices:{total,stale,online}}`. Customers =
+  non-staff, non-technician users. Device health is best-effort (tolerates a missing `lora_uplink`
+  table). - **GET /admin/alerts?username&type&sensor_key&is_active&zone_id** — cross-user alert
+  list, each row + owner `username`. - **GET /admin/alert-analytics** — `{total, active, inactive,
+  triggered_ever, by_type[], by_sensor[], recently_triggered[]}`.
+
+## Notes - The schema has **no per-alert trigger counter** (`last_triggered_at` is the first-ever
+  fire for chart overlays), so distributions report by-type/by-sensor counts + last-7-days
+  triggered, not a fabricated frequency. - Path is `/admin/alert-analytics` (not
+  `/admin/alerts/analytics`) to avoid the greedy `/admin/alerts/{pk}` route.
+
+## Verify 17 tests pass (`src/analytics/tests/test_admin_analytics.py` + existing overview/alerts) ·
+  ruff + format clean · `manage.py check` clean.
+
+
 ## v1.48.0 (2026-06-19)
 
 ### Features
