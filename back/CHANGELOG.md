@@ -1,6 +1,32 @@
 # CHANGELOG
 
 
+## v1.50.0 (2026-06-19)
+
+### Features
+
+- **admin**: Device fleet health endpoint (LoRaWAN uplinks)
+  ([#216](https://github.com/AgriLogy/agri-api/pull/216),
+  [`702cf8d`](https://github.com/AgriLogy/agri-api/commit/702cf8d8e5ceb68d99b1c1b858b73078dc75baf8))
+
+Closes #215
+
+Adds `GET /api/admin/devices/health` (JwtAuth + is_staff): aggregates `LoraUplink` by `dev_eui` →
+  latest device_name, last-seen, battery_v, rssi/snr, 24h uplink count, and an online (<24h) / stale
+  (<72h) / offline status, plus a fleet summary {total, online, stale, offline}.
+
+Read-only, no new table; the LoRaWAN aggregation is best-effort (returns an empty fleet rather than
+  500 when the `lora_uplink` table is absent, e.g. the sqlite test DB).
+
+**Deviation:** no `/devices` registry/Device model exists on agri-api `main` (that's part of the
+  unmerged device-registration work, like the technician backend was), so dev_eui can't be joined to
+  an assigned user/zone yet — the endpoint surfaces uplink-derived identity (dev_eui + device_name)
+  only.
+
+Verify: 2 tests pass (non-staff 403 + admin fleet shape) on sqlite; ruff + format clean; manage.py
+  check clean.
+
+
 ## v1.49.0 (2026-06-19)
 
 ### Features
