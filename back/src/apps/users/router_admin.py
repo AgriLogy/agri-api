@@ -19,8 +19,10 @@ from typing import Any
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Count, Q
+from django.utils import timezone
 from ninja import Router, Schema
 from ninja.responses import Response
+from rest_framework_simplejwt.settings import api_settings as simplejwt_settings
 
 from agriapi.api.auth import JwtAuth
 from apps.users.models import CustomUser
@@ -77,7 +79,53 @@ def _serialize_detail(user: CustomUser) -> dict[str, Any]:
         ),
         "date_joined": user.date_joined.isoformat() if user.date_joined else None,
         "last_login": user.last_login.isoformat() if user.last_login else None,
+        "sessions_revoked_at": (
+            user.sessions_revoked_at.isoformat() if user.sessions_revoked_at else None
+        ),
         "zones_count": getattr(user, "zones_count", 0),
+    }
+
+
+def _serialize_sessions(user: CustomUser) -> dict[str, Any]:
+    """Derived auth-token status for the admin panel.
+
+    We don't keep a per-token table, so status is inferred from the account
+    flag, the last login (≈ when the user's current token was issued) and the
+    session kill switch. ``status`` is the headline the UI shows.
+    """
+    last_login = user.last_login
+    revoked_at = user.sessions_revoked_at
+    access_lifetime = simplejwt_settings.ACCESS_TOKEN_LIFETIME
+
+    # The current presumed session is revoked if the kill switch fired at or
+    # after the last login (i.e. it covers the token issued at that login).
+    revoked = revoked_at is not None and (
+        last_login is None or revoked_at >= last_login
+    )
+
+    if not user.is_active:
+        status = "disabled"
+    elif revoked:
+        status = "revoked"
+    elif last_login is not None:
+        status = "active"
+    else:
+        status = "never_logged_in"
+
+    # Best-effort expiry of the access token from the last login. Only
+    # meaningful while the session is genuinely active.
+    expires_at = None
+    if status == "active":
+        expires_at = (last_login + access_lifetime).isoformat()
+
+    return {
+        "username": user.username,
+        "is_active": user.is_active,
+        "status": status,
+        "last_login": last_login.isoformat() if last_login else None,
+        "sessions_revoked_at": revoked_at.isoformat() if revoked_at else None,
+        "access_token_lifetime_minutes": int(access_lifetime.total_seconds() // 60),
+        "current_token_expires_at": expires_at,
     }
 
 
@@ -90,9 +138,7 @@ def _validate_coords(payload: dict) -> dict | None:
         return {"longitude": "Longitude must be between -180 and 180."}
     notify = payload.get("notify_every")
     if notify is not None and (notify < 10 or notify > 10080):
-        return {
-            "notify_every": "notify_every must be between 10 and 10080 minutes."
-        }
+        return {"notify_every": "notify_every must be between 10 and 10080 minutes."}
     return None
 
 
@@ -284,8 +330,10 @@ def delete_user(request, username: str):
             {"detail": "You cannot delete your own admin account."},
             status=400,
         )
+    # Disabling an account also force-logs-out any live sessions.
     user.is_active = False
-    user.save(update_fields=["is_active"])
+    user.sessions_revoked_at = timezone.now()
+    user.save(update_fields=["is_active", "sessions_revoked_at"])
     return Response(None, status=204)
 
 
@@ -311,7 +359,12 @@ def activate_user(request, username: str, payload: AdminActivateIn):
             {"detail": "You cannot deactivate your own admin account."},
             status=400,
         )
-    user.save(update_fields=["is_active"])
+    update_fields = ["is_active"]
+    # Disabling the account immediately force-logs-out its live sessions.
+    if not user.is_active:
+        user.sessions_revoked_at = timezone.now()
+        update_fields.append("sessions_revoked_at")
+    user.save(update_fields=update_fields)
     user = _annotated(CustomUser.objects.filter(pk=user.pk)).first()
     return _serialize_detail(user)
 
@@ -338,3 +391,42 @@ def reset_password(request, username: str, payload: AdminResetPasswordIn):
     user.save(update_fields=["password"])
     log.info("admin %s reset password for %s", request.auth.username, user.username)
     return {"username": user.username, "password": new_password}
+
+
+@router.get(
+    "/{username}/sessions",
+    auth=JwtAuth(),
+    summary="Admin: a user's auth-token / session status",
+)
+def user_sessions(request, username: str):
+    guard = _require_admin(request)
+    if guard is not None:
+        return guard
+    try:
+        user = CustomUser.objects.get(username=username)
+    except CustomUser.DoesNotExist:
+        return Response({"detail": "User not found."}, status=404)
+    return _serialize_sessions(user)
+
+
+@router.post(
+    "/{username}/force-logout",
+    auth=JwtAuth(),
+    summary="Admin: revoke all of a user's sessions (force logout)",
+)
+def force_logout_user(request, username: str):
+    """Invalidate every token issued so far for this user. Their current
+    access token is rejected on the next request and their refresh token can
+    no longer mint a new one, so they are forced to log out (and can log back
+    in with a fresh session). Does not disable the account."""
+    guard = _require_admin(request)
+    if guard is not None:
+        return guard
+    try:
+        user = CustomUser.objects.get(username=username)
+    except CustomUser.DoesNotExist:
+        return Response({"detail": "User not found."}, status=404)
+    user.sessions_revoked_at = timezone.now()
+    user.save(update_fields=["sessions_revoked_at"])
+    log.info("admin %s force-logged-out %s", request.auth.username, user.username)
+    return _serialize_sessions(user)
