@@ -1,6 +1,29 @@
 # CHANGELOG
 
 
+## v1.59.0 (2026-06-21)
+
+### Features
+
+- Admin session revocation (force logout / disable)
+  ([`aa2df18`](https://github.com/AgriLogy/agri-api/commit/aa2df183651d7f5a87670cd8a2c8e3b6608b3458))
+
+Add a per-user session kill switch backed by CustomUser.sessions_revoked_at. Any access or refresh
+  token issued before that timestamp is rejected, so an admin can force a user to log out
+  immediately — the current access token dies on the next request and the refresh token can no
+  longer mint a new one.
+
+- token_session_revoked() enforced in both JwtAuth (django-ninja) and a new
+  RevocationAwareJWTAuthentication (DRF default), plus a revocation-aware token-refresh view. -
+  Admin endpoints: GET /users/{u}/sessions (token status) and POST /users/{u}/force-logout.
+  Disabling an account now also revokes. - Mirrors agri-db column with Django field + migration
+  0008.
+
+- Admin session revocation (force logout / disable)
+  ([#240](https://github.com/AgriLogy/agri-api/pull/240),
+  [`9a76394`](https://github.com/AgriLogy/agri-api/commit/9a76394bca420b97dc1648ffd7b86a9b39763769))
+
+
 ## v1.58.0 (2026-06-19)
 
 ### Features
