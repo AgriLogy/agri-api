@@ -66,6 +66,16 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         help_text="When the user account was created.",
     )
 
+    # Admin session kill switch. Any access/refresh token issued (iat) before
+    # this moment is rejected, forcing the user to log out on the next request.
+    # NULL = sessions have never been revoked. Set by the admin "force logout"
+    # action and whenever the account is disabled.
+    sessions_revoked_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Tokens issued before this time are rejected (forced logout).",
+    )
+
     objects = CustomUserManager()
 
     USERNAME_FIELD = "username"
