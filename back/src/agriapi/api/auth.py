@@ -43,7 +43,10 @@ def token_session_revoked(user, validated_token) -> bool:
     # No iat (shouldn't happen with simplejwt) → fail safe and revoke.
     if iat is None:
         return True
-    return iat < revoked_at.timestamp()
+    # Compare at whole-second resolution: JWT `iat` is an integer second, so a
+    # token minted in the same second as the revocation (a re-login moments
+    # after a force-logout) must not be falsely killed by sub-second precision.
+    return iat < int(revoked_at.timestamp())
 
 
 class JwtAuth(HttpBearer):

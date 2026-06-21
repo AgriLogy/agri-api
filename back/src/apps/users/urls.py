@@ -42,10 +42,11 @@ class RevocationAwareTokenRefreshView(TokenRefreshView):
                         return Response({"detail": "Account is disabled."}, status=401)
                     revoked_at = getattr(user, "sessions_revoked_at", None)
                     iat = refresh.get("iat")
+                    # Whole-second compare — see agriapi.api.auth.token_session_revoked.
                     if (
                         revoked_at is not None
                         and iat is not None
-                        and iat < revoked_at.timestamp()
+                        and iat < int(revoked_at.timestamp())
                     ):
                         return Response(
                             {"detail": "Session has been revoked."}, status=401
