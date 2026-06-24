@@ -1,6 +1,59 @@
 # CHANGELOG
 
 
+## v1.60.0 (2026-06-24)
+
+### Chores
+
+- Remove dead agriapi/api/routers package
+  ([`d15b68b`](https://github.com/AgriLogy/agri-api/commit/d15b68b2026e4a4b0c5b4e959bb2c76268cea404))
+
+agriapi/api/routers/sensors.py was orphaned by the DRF->django-ninja migration: it is never imported
+  (the empty routers/__init__.py doesn't export it) and the live /sensors endpoint is served by
+  apps/sensors/router_sensors.py (mounted in agriapi/api/__init__.py). No tests reference it.
+  Removing the dead package.
+
+- Remove dead agriapi/api/routers package ([#244](https://github.com/AgriLogy/agri-api/pull/244),
+  [`28b8df5`](https://github.com/AgriLogy/agri-api/commit/28b8df5a05cbc5e06be7168000ad317b8848137d))
+
+### Features
+
+- **auth**: Self-service log-out-everywhere endpoint (DELETE /auth/sessions)
+  ([#246](https://github.com/AgriLogy/agri-api/pull/246),
+  [`64bade8`](https://github.com/AgriLogy/agri-api/commit/64bade89fd135dfcbbcb1b24e527af4358ebd2c0))
+
+Closes #245
+
+Adds the user-driven twin of the admin `force-logout`: `DELETE /auth/sessions` bumps the caller's
+  own `CustomUser.sessions_revoked_at`, so every token issued so far is rejected — the current
+  access token fails on its next request and the refresh token can no longer mint a new one. This is
+  what makes one "log out" end the session across every Agrogo app sharing the SSO session, not just
+  the active tab.
+
+No schema change (the column already exists in agri-db). ruff lint + format clean.
+
+Pairs with agri-web #12 / agri-admin #34, which call this best-effort on logout before clearing the
+  shared cookie.
+
+### Testing
+
+- Cover admin session revocation; floor iat comparison
+  ([#242](https://github.com/AgriLogy/agri-api/pull/242),
+  [`2b7f327`](https://github.com/AgriLogy/agri-api/commit/2b7f327820c0ef1edb9f05e45607258dedcda6b6))
+
+- Cover session revocation; floor iat comparison to whole seconds
+  ([`f428d5c`](https://github.com/AgriLogy/agri-api/commit/f428d5c11e4174003d9fe86c7f4def09c6754dbb))
+
+Add a full suite for the admin session kill switch (37 cases): token_session_revoked predicate,
+  JwtAuth (ninja) + RevocationAwareJWTAuthentication (DRF) + the refresh view, GET /sessions status,
+  POST /force-logout, and disable/soft-delete also revoking.
+
+Writing the tests surfaced a sub-second edge: JWT iat is integer-second while sessions_revoked_at
+  has microsecond precision, so a re-login in the same second as a force-logout could be falsely
+  killed. Compare at whole-second resolution (iat < int(revoked_at.timestamp())) in both auth layers
+  to fix it.
+
+
 ## v1.59.0 (2026-06-21)
 
 ### Features
