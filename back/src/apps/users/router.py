@@ -244,6 +244,30 @@ def admin_signin(request, payload: SignInIn):
     return response
 
 
+@router.delete(
+    "/sessions",
+    auth=JwtAuth(),
+    summary="Log out everywhere (revoke all of the caller's own sessions)",
+)
+def logout_everywhere(request):
+    """Self-service global logout — the user-driven twin of the admin
+    ``force-logout``. Bumps the caller's own ``sessions_revoked_at`` so every
+    token issued so far is rejected: the current access token fails on its next
+    request and the refresh token can no longer mint a new one. This is what
+    makes one "log out" take effect across every Agrogo app that shares the SSO
+    session, not just the tab the user clicked in. Clearing the local cookie
+    only stops re-hydration on this browser; revoking here ends the session on
+    the server for siblings too."""
+    user = request.auth
+    user.sessions_revoked_at = now()
+    user.save(update_fields=["sessions_revoked_at"])
+    log.info("user %s logged out everywhere (sessions revoked)", user.username)
+    return {
+        "success": True,
+        "sessions_revoked_at": user.sessions_revoked_at.isoformat(),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Admin signup, admin user list, modify-user moved to apps.users.router_admin
 # which mounts at /users (the unified user-resources surface).
