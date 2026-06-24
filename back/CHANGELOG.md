@@ -1,6 +1,25 @@
 # CHANGELOG
 
 
+## v1.61.0 (2026-06-24)
+
+### Features
+
+- **cors**: Allow admin/identity dev origins + document prod SSO origin list
+  ([#248](https://github.com/AgriLogy/agri-api/pull/248),
+  [`1df4d78`](https://github.com/AgriLogy/agri-api/commit/1df4d78ba71885bb128728f915c474d6b79205d1))
+
+Closes #247
+
+- `settings/dev.py`: adds localhost/127.0.0.1 `:3001` (admin) and `:3002` (identity) to the dev
+  CORS/CSRF defaults. Admin's browser axios genuinely needs `:3001`; the gateway talks to the API
+  server-side so `:3002` is defensive. - `docs/SSO_CORS_ORIGINS.md`: precise prod env checklist
+  (`CORS_ALLOWED_ORIGINS`/`CSRF_TRUSTED_ORIGINS` = app./admin./identity./www.) for the droplet,
+  since prod reads these from env with no committed default.
+
+ruff lint + format clean.
+
+
 ## v1.60.0 (2026-06-24)
 
 ### Chores
