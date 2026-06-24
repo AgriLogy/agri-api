@@ -50,11 +50,20 @@ export_agri_db_url(DATABASES)
 # -----------------------------------------------------------------------------
 # CORS / CSRF
 # -----------------------------------------------------------------------------
+# Local dev ports across the app family: farmer web :3000, admin console :3001,
+# identity SSO gateway :3002. Admin's browser axios calls hit the API directly
+# so :3001 genuinely needs a CORS entry; the gateway talks to the API
+# server-side (route handlers / server components) so :3002 is only defensive,
+# kept here so any future browser-side call from it is allowed too.
 CORS_ALLOWED_ORIGINS = _csv_env(
     "CORS_ALLOWED_ORIGINS",
     (
         "http://localhost:3000,"
         "http://127.0.0.1:3000,"
+        "http://localhost:3001,"
+        "http://127.0.0.1:3001,"
+        "http://localhost:3002,"
+        "http://127.0.0.1:3002,"
         "http://157.245.43.196:3000,"
         "https://157.245.43.196:3000,"
         "https://www.agrogo-datafarm.com"
@@ -66,6 +75,10 @@ CSRF_TRUSTED_ORIGINS = _csv_env(
     (
         "http://localhost:3000,"
         "http://127.0.0.1:3000,"
+        "http://localhost:3001,"
+        "http://127.0.0.1:3001,"
+        "http://localhost:3002,"
+        "http://127.0.0.1:3002,"
         "http://157.245.43.196,"
         "http://157.245.43.196:3000,"
         "https://157.245.43.196,"
