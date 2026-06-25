@@ -97,9 +97,7 @@ SENSOR_SOURCES: dict[str, SensorSource] = {
     "ecSoilMedium": SensorSource(
         "ecSoilMedium", ECSoilMedium, "Soil EC (medium)", "dS/m"
     ),
-    "ecSoilHigh": SensorSource(
-        "ecSoilHigh", ECSoilHigh, "Soil EC (shallow)", "dS/m"
-    ),
+    "ecSoilHigh": SensorSource("ecSoilHigh", ECSoilHigh, "Soil EC (shallow)", "dS/m"),
     "ecSoilLow": SensorSource("ecSoilLow", ECSoilLow, "Soil EC (deep)", "dS/m"),
     # ── plant / canopy ──────────────────────────────────────────────────────
     "leafMoisture": SensorSource(
@@ -122,9 +120,7 @@ SENSOR_SOURCES: dict[str, SensorSource] = {
     "precipitation": SensorSource(
         "precipitation", PrecipitationRate, "Precipitation rate", "mm/h"
     ),
-    "waterLevel": SensorSource(
-        "waterLevel", WaterLevelSensor, "Water level", "cm"
-    ),
+    "waterLevel": SensorSource("waterLevel", WaterLevelSensor, "Water level", "cm"),
 }
 
 

@@ -38,9 +38,7 @@ def _patched(env=ENV, status=201):
     def _fake(req, timeout=None):
         captured["url"] = req.full_url
         captured["auth"] = req.get_header("Authorization")
-        captured["body"] = dict(
-            urllib.parse.parse_qsl(req.data.decode("utf-8"))
-        )
+        captured["body"] = dict(urllib.parse.parse_qsl(req.data.decode("utf-8")))
         return _Resp()
 
     with mock.patch.dict(os.environ, env, clear=False):

@@ -54,9 +54,7 @@ def sms_configured() -> bool:
 
 def whatsapp_configured() -> bool:
     sid, token = _creds()
-    return bool(
-        sid and token and (os.getenv("TWILIO_WHATSAPP_FROM", "") or "").strip()
-    )
+    return bool(sid and token and (os.getenv("TWILIO_WHATSAPP_FROM", "") or "").strip())
 
 
 def _post_message(*, sender: str, to: str, body: str, channel: str) -> bool:
@@ -68,9 +66,9 @@ def _post_message(*, sender: str, to: str, body: str, channel: str) -> bool:
         logger.info("%s: no usable recipient — skipping", channel)
         return False
 
-    data = urllib.parse.urlencode(
-        {"From": sender, "To": to, "Body": body}
-    ).encode("utf-8")
+    data = urllib.parse.urlencode({"From": sender, "To": to, "Body": body}).encode(
+        "utf-8"
+    )
     auth = base64.b64encode(f"{sid}:{token}".encode()).decode()
     req = urllib.request.Request(
         TWILIO_MESSAGES_URL.format(sid=sid),
@@ -97,9 +95,7 @@ def _post_message(*, sender: str, to: str, body: str, channel: str) -> bool:
 def send_sms(to_phone: str, body: str) -> bool:
     """Send one SMS via Twilio. Returns True on a 2xx response."""
     sender = (os.getenv("TWILIO_SMS_FROM", "") or "").strip()
-    return _post_message(
-        sender=sender, to=_to_e164(to_phone), body=body, channel="SMS"
-    )
+    return _post_message(sender=sender, to=_to_e164(to_phone), body=body, channel="SMS")
 
 
 def send_whatsapp(to_phone: str, body: str) -> bool:
@@ -109,6 +105,4 @@ def send_whatsapp(to_phone: str, body: str) -> bool:
         sender = f"whatsapp:{sender}"
     e164 = _to_e164(to_phone)
     to = f"whatsapp:{e164}" if e164 else ""
-    return _post_message(
-        sender=sender, to=to, body=body, channel="WhatsApp"
-    )
+    return _post_message(sender=sender, to=to, body=body, channel="WhatsApp")

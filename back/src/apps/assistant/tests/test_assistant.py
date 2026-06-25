@@ -262,12 +262,17 @@ class TestSnapshotTools:
     @pytest.mark.parametrize(
         "tool,model_path,key",
         [
-            ("get_soil_status", "apps.sensors.models.SoilMoistureMedium",
-             "soilMoistureMedium"),
-            ("get_plant_status", "apps.sensors.models.LeafMoistureSensor",
-             "leafMoisture"),
-            ("get_water_status", "apps.sensors.models.WaterFlowSensor",
-             "waterFlow"),
+            (
+                "get_soil_status",
+                "apps.sensors.models.SoilMoistureMedium",
+                "soilMoistureMedium",
+            ),
+            (
+                "get_plant_status",
+                "apps.sensors.models.LeafMoistureSensor",
+                "leafMoisture",
+            ),
+            ("get_water_status", "apps.sensors.models.WaterFlowSensor", "waterFlow"),
         ],
     )
     def test_snapshot_returns_metric(
@@ -284,9 +289,7 @@ class TestSnapshotTools:
     def test_soil_status_zone_filter(self, assistant_client, assistant_user):
         z = self._zone(assistant_user, "target")
         other_zone = self._zone(assistant_user, "other")
-        self._reading(
-            "apps.sensors.models.SoilMoistureMedium", assistant_user, 10.0, z
-        )
+        self._reading("apps.sensors.models.SoilMoistureMedium", assistant_user, 10.0, z)
         self._reading(
             "apps.sensors.models.SoilMoistureMedium", assistant_user, 90.0, other_zone
         )
@@ -389,9 +392,9 @@ class TestSensorTrendTool:
         z = self._zone(assistant_user)
         self._reading(assistant_user, 99.0, z, 60)  # inside 24h
         self._reading(assistant_user, 1.0, z, 60 * 48)  # 2 days ago, excluded
-        d = self._trend(
-            assistant_client, sensor_key="soilMoisture", hours=24
-        ).json()["data"]
+        d = self._trend(assistant_client, sensor_key="soilMoisture", hours=24).json()[
+            "data"
+        ]
         assert d["count"] == 1 and d["min"] == 99.0
 
     def test_unknown_key_errors_no_500(self, assistant_client):
