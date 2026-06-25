@@ -128,6 +128,26 @@ def _create_device_table(django_db_setup, django_db_blocker):
 
 
 @pytest.fixture(scope="session", autouse=True)
+def _create_notification_zone_tables(django_db_setup, django_db_blocker):
+    """The custom notification-zone tables (analytics_notificationzone /
+    analytics_notificationzonesensor) are unmanaged (self-deployed in prod via
+    scripts/ensure_notification_zone_tables.py). Create them once for the whole
+    test DB so flush-based TransactionTestCases don't choke on a missing table.
+    """
+    from django.db import connection
+
+    from apps.alerts.models import NotificationZone, NotificationZoneSensor
+
+    with django_db_blocker.unblock():
+        existing = connection.introspection.table_names()
+        with connection.schema_editor() as editor:
+            for model in (NotificationZone, NotificationZoneSensor):
+                if model._meta.db_table not in existing:
+                    editor.create_model(model)
+    yield
+
+
+@pytest.fixture(scope="session", autouse=True)
 def _create_irrigation_automation_tables(django_db_setup, django_db_blocker):
     """The irrigation-automation tables (analytics_irrigationprogram /
     analytics_outputcommand) are unmanaged (self-deployed in prod via

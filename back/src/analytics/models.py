@@ -15,7 +15,12 @@ them so existing ``from analytics.models import Zone`` / ``Alert`` / etc.
 imports keep working. New code should import from the domain app directly.
 """
 
-from apps.alerts.models import Alert, Notification
+from apps.alerts.models import (
+    Alert,
+    Notification,
+    NotificationZone,
+    NotificationZoneSensor,
+)
 from apps.irrigation.models import (
     ActiveGraph,
     GraphName,
@@ -87,6 +92,8 @@ __all__ = [
     "Zone",
     # alerts
     "Alert",
+    "NotificationZone",
+    "NotificationZoneSensor",
     "Notification",
     # sensors
     "ECSoilHigh",

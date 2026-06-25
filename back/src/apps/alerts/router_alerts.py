@@ -24,7 +24,7 @@ from agri.core.alerts import SENSOR_KEY_REGISTRY
 from agriapi.api.auth import JwtAuth
 from agriapi.api.scope import block_if_technician
 from apps.alerts.engine import recent_triggers_for_user, suggest_alert
-from analytics.models import Alert, Zone
+from analytics.models import Alert, NotificationZone, Zone
 
 router = Router()
 
@@ -49,9 +49,11 @@ class AlertWriteIn(Schema):
     condition_nbr: float | None = None
     sensor_key: str | None = None
     zone: int | None = None
+    notification_zone: int | None = None
     is_active: bool | None = None
     notify_email: bool | None = None
     notify_whatsapp: bool | None = None
+    notify_sms: bool | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -72,9 +74,11 @@ def _serialize(alert: Alert) -> dict[str, Any]:
             "condition_nbr",
             "sensor_key",
             "zone",
+            "notification_zone",
             "is_active",
             "notify_email",
             "notify_whatsapp",
+            "notify_sms",
         ],
     )
     d["threshold"] = (
@@ -92,10 +96,12 @@ def _serialize(alert: Alert) -> dict[str, Any]:
 
 def _apply(alert: Alert, payload: AlertWriteIn) -> Alert:
     data = payload.model_dump(exclude_unset=True)
-    # `zone` arrives as an FK id; assign it to the *_id column rather than the
-    # relation attribute (which would require a Zone instance).
+    # `zone` / `notification_zone` arrive as FK ids; assign them to the *_id
+    # column rather than the relation attribute (which would need an instance).
     if "zone" in data:
         alert.zone_id = data.pop("zone")
+    if "notification_zone" in data:
+        alert.notification_zone_id = data.pop("notification_zone")
     for k, v in data.items():
         setattr(alert, k, v)
     return alert
@@ -118,6 +124,23 @@ def _validate_write(request, payload: AlertWriteIn) -> Response | None:
     ):
         return Response(
             {"detail": "zone not found or not owned by the caller."}, status=400
+        )
+    if payload.zone is not None and payload.notification_zone is not None:
+        return Response(
+            {
+                "detail": "An alert binds to either a zone or a notification_zone, not both."
+            },
+            status=400,
+        )
+    if (
+        payload.notification_zone is not None
+        and not NotificationZone.objects.filter(
+            id=payload.notification_zone, user=request.auth
+        ).exists()
+    ):
+        return Response(
+            {"detail": "notification_zone not found or not owned by the caller."},
+            status=400,
         )
     return None
 

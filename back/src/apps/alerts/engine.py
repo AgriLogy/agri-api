@@ -161,19 +161,36 @@ def dispatch_alerts_for_reading(
     if sensor_key not in SENSOR_KEY_REGISTRY:
         return 0
 
-    from analytics.models import Alert
+    from django.db.models import Q
+
+    from analytics.models import Alert, NotificationZoneSensor
+
+    # Custom notification zones (agrilogy-front #57): an alert bound to a
+    # notification zone fires only when one of that zone's sensor assignments
+    # feeds this (sensor_key, source_zone) — source_zone NULL = any zone.
+    nz_sensor_q = Q(sensor_key=sensor_key)
+    if zone is not None:
+        nz_sensor_q &= Q(source_zone=zone) | Q(source_zone__isnull=True)
+    else:
+        nz_sensor_q &= Q(source_zone__isnull=True)
+    matching_nz_ids = list(
+        NotificationZoneSensor.objects.filter(nz_sensor_q).values_list(
+            "notification_zone_id", flat=True
+        )
+    )
+
+    # True user-wide alerts: no farm zone AND no notification zone.
+    match = Q(zone__isnull=True, notification_zone__isnull=True)
+    if zone is not None:
+        match |= Q(zone=zone, notification_zone__isnull=True)
+    if matching_nz_ids:
+        match |= Q(notification_zone_id__in=matching_nz_ids)
 
     alerts_qs = Alert.objects.filter(
         user=user,
         sensor_key=sensor_key,
         is_active=True,
-    )
-    if zone is not None:
-        from django.db.models import Q
-
-        alerts_qs = alerts_qs.filter(Q(zone=zone) | Q(zone__isnull=True))
-    else:
-        alerts_qs = alerts_qs.filter(zone__isnull=True)
+    ).filter(match)
 
     now_ts = timezone.now()
     grace_seconds = grace_period_seconds_for(sensor_key)
@@ -194,11 +211,15 @@ def dispatch_alerts_for_reading(
         if not won:
             continue
 
-        from agriapi.tasks import send_alert_email, send_alert_whatsapp
+        from agriapi.tasks import (
+            send_alert_email,
+            send_alert_sms,
+            send_alert_whatsapp,
+        )
 
         # Fan out to the channels this alert opted into. Legacy alerts default
-        # notify_email=True / notify_whatsapp=False, so behaviour is unchanged
-        # unless the user explicitly enables WhatsApp.
+        # notify_email=True / notify_whatsapp=False / notify_sms=False, so
+        # behaviour is unchanged unless the user explicitly enables a channel.
         kwargs = dict(
             alert_id=alert.pk,
             value=float(value),
@@ -208,6 +229,8 @@ def dispatch_alerts_for_reading(
             send_alert_email.delay(**kwargs)
         if getattr(alert, "notify_whatsapp", False):
             send_alert_whatsapp.delay(**kwargs)
+        if getattr(alert, "notify_sms", False):
+            send_alert_sms.delay(**kwargs)
         enqueued += 1
 
     return enqueued
