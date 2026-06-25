@@ -1,6 +1,38 @@
 # CHANGELOG
 
 
+## v1.65.0 (2026-06-25)
+
+### Features
+
+- **alerts**: Custom notification zones + per-alert SMS channel
+  ([#255](https://github.com/AgriLogy/agri-api/pull/255),
+  [`4813337`](https://github.com/AgriLogy/agri-api/commit/4813337bdff444c39286efe308b6e073fdb110c5))
+
+Closes #254 (implements agrilogy-front #57 on the API).
+
+User-owned **notification zones** independent of farm zones. An alert binds to a farm zone **XOR** a
+  notification zone, whose data stream resolves through `(sensor_key, source_zone)` assignments.
+
+- Unmanaged `NotificationZone` + `NotificationZoneSensor` (schema in agri-db 0.7.0; self-deploy via
+  `scripts/ensure_notification_zone_tables.py` + conftest + entrypoint). `Alert` gains
+  `notification_zone` FK + `notify_sms`. - Django migration `0063` (CreateModel state-only for the
+  unmanaged tables + AddField for the alert columns). - `router_notification_zones`: user-scoped
+  CRUD + sensor assign/unassign + `/available-sensors`. `router_alerts` accepts `notification_zone`
+  (XOR `zone`) + `notify_sms` with ownership validation. - `dispatch_alerts_for_reading` matches
+  notification-zone alerts via their sensor assignment (specific `source_zone` or any-zone), **not**
+  as user-wide. - **SMS**: `send_alert_sms` (Twilio via `agriapi.twilio_messaging`) wired into the
+  fan-out gated on `notify_sms` — the agri-web notify_sms toggle is now real. - Bumps agri-core pin
+  `0.14.0→0.15.0`.
+
+11 new tests (zone CRUD, available-sensors, alert binding + XOR validation, dispatch fires for
+  assigned source zone only, SMS fan-out); existing alerts + affirmation suites green against
+  Postgres.
+
+**Deploy:** apply agri-db 0.7.0 (`make upgrade-dev`/`upgrade-prod`) first; set `TWILIO_SMS_FROM` on
+  the droplet for SMS.
+
+
 ## v1.64.0 (2026-06-25)
 
 ### Features
