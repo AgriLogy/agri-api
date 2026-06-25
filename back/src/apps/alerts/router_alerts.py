@@ -50,6 +50,8 @@ class AlertWriteIn(Schema):
     sensor_key: str | None = None
     zone: int | None = None
     is_active: bool | None = None
+    notify_email: bool | None = None
+    notify_whatsapp: bool | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -71,6 +73,8 @@ def _serialize(alert: Alert) -> dict[str, Any]:
             "sensor_key",
             "zone",
             "is_active",
+            "notify_email",
+            "notify_whatsapp",
         ],
     )
     d["threshold"] = (
