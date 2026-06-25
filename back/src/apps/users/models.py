@@ -48,6 +48,19 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     # owner's) data, narrowed to granted zones + graphs. They never write.
     is_technician = models.BooleanField(default=False)
 
+    # Preferred language for outbound notifications (and the web UI). Drives
+    # the FR/AR notification template in agri-core. Schema-of-record in
+    # agri-db (migration f3a4b5c6d7e8).
+    LANG_FR = "fr"
+    LANG_AR = "ar"
+    LANGUAGE_CHOICES = [(LANG_FR, "Français"), (LANG_AR, "العربية")]
+    preferred_language = models.CharField(
+        max_length=8,
+        choices=LANGUAGE_CHOICES,
+        default=LANG_FR,
+        help_text="Language for notification emails (and UI): 'fr' or 'ar'.",
+    )
+
     # Notification cadence: how often (in minutes) to send the periodic
     # field-status email, and when it last went out. Stored in minutes so
     # sub-hour cadences (e.g. every 10 min) are expressible; 240 = 4 h.
