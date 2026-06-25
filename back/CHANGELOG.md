@@ -1,6 +1,26 @@
 # CHANGELOG
 
 
+## v1.72.0 (2026-06-25)
+
+### Features
+
+- **activegraph**: Water_level_status flag to gate the water-level section
+  ([#267](https://github.com/AgriLogy/agri-api/pull/267),
+  [`b0c339c`](https://github.com/AgriLogy/agri-api/commit/b0c339ce8a85d915f9b1940d6329eb06ccb0d3da))
+
+Closes #266
+
+Adds `ActiveGraph.water_level_status` (default `False` = opt-in; water-level is an uncommon
+  basin/tank sensor) so the agri-web water-level dashboard section is toggled per zone like the
+  other `*_status` flags. Reads flow through the existing `model_to_dict` response; the dynamic
+  admin patch (`hasattr`/`setattr`) toggles it with no schema change. Django migration `0065`;
+  schema-of-record in agri-db `b8c9d0e1f2a3` (PR #40). 2 tests (default-false + admin toggle), green
+  vs local Postgres.
+
+agrilogy-front #4 follow-up.
+
+
 ## v1.71.0 (2026-06-25)
 
 ### Features
