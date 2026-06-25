@@ -67,6 +67,7 @@ ZONE_FIELDS = [
     "critical_moisture_threshold",
     "pomp_flow_rate",
     "irrigation_water_quantity",
+    "elevation_m",
 ]
 
 ZONE_PARAMS_FIELDS = [
@@ -124,6 +125,7 @@ class ZoneWriteIn(Schema):
     critical_moisture_threshold: float | None = None
     pomp_flow_rate: float | None = None
     irrigation_water_quantity: float | None = None
+    elevation_m: float | None = None
 
 
 class AlertAdminPatchIn(Schema):

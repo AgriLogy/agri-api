@@ -54,6 +54,10 @@ class Zone(_IrrigationBase):
     irrigation_water_quantity = models.FloatField(
         help_text="Irrigation water quantity in liters.", default=100
     )
+    elevation_m = models.FloatField(
+        default=0,
+        help_text="Elevation above sea level in metres (for clear-sky radiation Rso).",
+    )
 
 
 class TechnicianGrant(_IrrigationBase):
