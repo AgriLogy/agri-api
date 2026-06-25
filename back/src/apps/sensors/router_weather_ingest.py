@@ -18,10 +18,11 @@ payload).
 
 from __future__ import annotations
 
+import datetime as _dt
 import logging
 
 from django.utils import timezone
-from ninja import Router
+from ninja import Router, Schema
 from ninja.responses import Response
 
 from apps.alerts.engine import (
@@ -123,3 +124,76 @@ def weather_ingest(request):
             )
 
     return Response({"inserted": inserted}, status=201)
+
+
+# ---------------------------------------------------------------------------
+# Single-sensor ingest (POST /ingest/sensor)
+# ---------------------------------------------------------------------------
+#
+# A typed, one-reading-at-a-time device webhook — the clean contract for
+# standalone sensors (water level / tank / basin probes, etc.) that don't
+# speak the multi-metric weather-bridge payload. ``sensor_key`` must be a
+# registry key with a single ``value`` model (NPK is excluded — it has three
+# value fields). Like ``/ingest/weather`` it identifies the user via the
+# ``client`` field and persists to that user's first zone, then pushes the
+# reading through ``dispatch_alerts_for_reading`` so threshold alerts fire.
+
+
+class SensorReadingIn(Schema):
+    client: str
+    sensor_key: str
+    value: float
+    timestamp: _dt.datetime | None = None
+
+
+@router.post(
+    "/sensor",
+    auth=None,
+    summary="Single-sensor ingest webhook (POST /ingest/sensor)",
+)
+def sensor_ingest(request, payload: SensorReadingIn):
+    sensor_key = (payload.sensor_key or "").strip()
+    if sensor_key not in SENSOR_KEY_REGISTRY or sensor_key in _INGEST_SKIP_KEYS:
+        return Response(
+            {"error": f"Unknown or unsupported sensor_key '{sensor_key}'"},
+            status=400,
+        )
+
+    client = (payload.client or "").strip()
+    if not client:
+        return Response({"error": "client is required"}, status=400)
+
+    user = CustomUser.objects.filter(username=client).first()
+    if not user:
+        return Response({"error": f"User not found for client '{client}'"}, status=400)
+
+    zone = Zone.objects.filter(user=user).first()
+    if not zone:
+        return Response(
+            {"error": f"No zone found for user '{user.username}'"}, status=400
+        )
+
+    user = zone.user
+    ts = payload.timestamp or timezone.now()
+
+    model_cls = get_sensor_model(sensor_key)
+    model_cls.objects.create(user=user, zone=zone, value=payload.value, timestamp=ts)
+
+    # Alert dispatch must never fail the ingest: the reading is already saved.
+    try:
+        dispatch_alerts_for_reading(
+            sensor_key=sensor_key,
+            zone=zone,
+            user=user,
+            value=payload.value,
+            timestamp=ts,
+        )
+    except Exception:
+        log.exception(
+            "alert dispatch failed for sensor_key=%s user=%s zone=%s",
+            sensor_key,
+            getattr(user, "username", user),
+            zone.id,
+        )
+
+    return Response({"inserted": 1, "sensor_key": sensor_key}, status=201)
