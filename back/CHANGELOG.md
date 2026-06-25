@@ -1,6 +1,51 @@
 # CHANGELOG
 
 
+## v1.61.1 (2026-06-25)
+
+### Bug Fixes
+
+- **notifications**: Prevent duplicate periodic emails via atomic claim
+  ([#250](https://github.com/AgriLogy/agri-api/pull/250),
+  [`32fd8bb`](https://github.com/AgriLogy/agri-api/commit/32fd8bb55ebcadda84cbf79b89e2ce2606087767))
+
+Closes #160
+
+## Problem `send_periodic_notifications` gated on `should_notify(user)` (reads `last_notified`),
+  then **separately** sent the email and saved `last_notified`. Two concurrent Celery beat runs both
+  read the stale timestamp, both pass the gate, and **both send** the same digest.
+
+## Fix New `claim_notification_slot(user)` runs a single conditional UPDATE that stamps
+  `last_notified = now` only when the cadence window has actually elapsed (`last_notified IS NULL OR
+  < cutoff`). Exactly one concurrent run's UPDATE matches a row and wins; the loser is skipped. The
+  clock is advanced up-front, so a provider failure does not re-attempt the user on every tick —
+  preserving the policy from #180. Mirrors the alert engine's `last_emailed_at` claim.
+
+## Tests (run on Postgres locally — dual-ORM/transaction class) -
+  `test_atomic_claim_prevents_double_send` — two consecutive runs send exactly **one** email. -
+  `test_claim_helper_only_one_winner` — helper returns True then False. - Existing
+  `test_failed_send_still_advances_last_notified` (#180) still green.
+
+Supersedes the stale, conflicting PR #161 (its branch predates the merged #180 and no longer applies
+  to main).
+
+### Continuous Integration
+
+- Enforce ruff format --check ([#249](https://github.com/AgriLogy/agri-api/pull/249),
+  [`1b18713`](https://github.com/AgriLogy/agri-api/commit/1b187132dbdb84e0b1d5245ad43a4ddff4219b8f))
+
+Closes #26
+
+The backend CI lint job ran `ruff check` but skipped `ruff format --check` behind a comment noting
+  the legacy codebase had never been fully formatted. The tree is now clean, so this:
+
+- runs `ruff format` on the 8 residual files (pure line-rewraps, no logic change) - adds a `ruff
+  format check` step right after `ruff check` - removes the stale "intentionally not enforced"
+  comment
+
+Verified locally: `uv run ruff check .` and `uv run ruff format --check .` both pass.
+
+
 ## v1.61.0 (2026-06-24)
 
 ### Features
