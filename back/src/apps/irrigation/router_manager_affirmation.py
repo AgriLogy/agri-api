@@ -14,12 +14,17 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from django.db import transaction
 from django.utils import timezone
 from ninja import Router, Schema
 from ninja.responses import Response
 
 from agriapi.api.auth import JwtAuth
 from analytics.models import ManagerAffirmation
+from apps.irrigation.affirmation_appliers import (
+    AffirmationApplyError,
+    apply_affirmation,
+)
 
 router = Router()
 log = logging.getLogger(__name__)
@@ -134,23 +139,36 @@ def _decide(request, pk: int, action: str, payload):
             status=400,
         )
 
-    a.status = (
-        ManagerAffirmation.STATUS_APPROVED
-        if action == "approve"
-        else ManagerAffirmation.STATUS_REJECTED
-    )
-    a.decided_by = request.auth
-    a.decided_at = timezone.now()
-    a.decision_note = payload.note or ""
-    a.save(
-        update_fields=[
-            "status",
-            "decided_by",
-            "decided_at",
-            "decision_note",
-            "updated_at",
-        ]
-    )
+    def _stamp(status: str) -> None:
+        a.status = status
+        a.decided_by = request.auth
+        a.decided_at = timezone.now()
+        a.decision_note = payload.note or ""
+        a.save(
+            update_fields=[
+                "status",
+                "decided_by",
+                "decided_at",
+                "decision_note",
+                "updated_at",
+            ]
+        )
+
+    if action == "approve":
+        # Apply the payload and flip to approved atomically: if applying fails,
+        # the row stays pending so the admin can fix the payload and retry.
+        try:
+            with transaction.atomic():
+                apply_affirmation(a)
+                _stamp(ManagerAffirmation.STATUS_APPROVED)
+        except AffirmationApplyError as exc:
+            return Response(
+                {"detail": "Could not apply affirmation.", "errors": exc.detail},
+                status=400,
+            )
+    else:
+        _stamp(ManagerAffirmation.STATUS_REJECTED)
+
     log.info(
         "admin %s %sd affirmation #%s",
         request.auth.username,
