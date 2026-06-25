@@ -195,6 +195,7 @@ def dispatch_alerts_for_reading(
     now_ts = timezone.now()
     default_grace = grace_period_seconds_for(sensor_key)
     enqueued = 0
+    email_alert_ids: list[int] = []
 
     for alert in alerts_qs:
         if not evaluate_alert(alert, value):
@@ -217,27 +218,43 @@ def dispatch_alerts_for_reading(
         if not won:
             continue
 
-        from agriapi.tasks import (
-            send_alert_email,
-            send_alert_sms,
-            send_alert_whatsapp,
-        )
+        from agriapi.tasks import send_alert_sms, send_alert_whatsapp
 
         # Fan out to the channels this alert opted into. Legacy alerts default
         # notify_email=True / notify_whatsapp=False / notify_sms=False, so
         # behaviour is unchanged unless the user explicitly enables a channel.
+        # Email is collected and sent once below (digest when several alerts on
+        # the same reading fire); WhatsApp/SMS stay per-alert.
         kwargs = dict(
             alert_id=alert.pk,
             value=float(value),
             timestamp_iso=timestamp.isoformat(),
         )
         if getattr(alert, "notify_email", True):
-            send_alert_email.delay(**kwargs)
+            email_alert_ids.append(alert.pk)
         if getattr(alert, "notify_whatsapp", False):
             send_alert_whatsapp.delay(**kwargs)
         if getattr(alert, "notify_sms", False):
             send_alert_sms.delay(**kwargs)
         enqueued += 1
+
+    # Aggregation digest (#37): when more than one alert on this same reading
+    # opted into email, send ONE combined email instead of N. A single alert
+    # keeps the original per-alert email unchanged. The atomic grace claim above
+    # already ran per alert, so no dedup regression.
+    if email_alert_ids:
+        from agriapi.tasks import send_alert_digest_email, send_alert_email
+
+        value_f = float(value)
+        ts_iso = timestamp.isoformat()
+        if len(email_alert_ids) == 1:
+            send_alert_email.delay(
+                alert_id=email_alert_ids[0], value=value_f, timestamp_iso=ts_iso
+            )
+        else:
+            send_alert_digest_email.delay(
+                alert_ids=email_alert_ids, value=value_f, timestamp_iso=ts_iso
+            )
 
     return enqueued
 
