@@ -865,3 +865,39 @@ class SendAlertEmailTaskTests(TestCase):
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn("High wind", mail.outbox[0].subject)
         self.assertIn(self.user.email, mail.outbox[0].to)
+
+
+class AlertSuggestStrategyEndpointTests(TestCase):
+    """The /alerts/suggest endpoint plumbs the threshold ``strategy`` through to
+    agri-core and validates it. The threshold math per strategy is covered by
+    agri-core's unit tests; here we assert the endpoint echoes the strategy and
+    rejects unknown ones (the empty-readings path still returns the strategy)."""
+
+    def setUp(self):
+        self.user = _user()
+        self.client = _authed_client(self.user)
+
+    def test_default_strategy_is_mean(self):
+        r = self.client.get("/alerts/suggest?sensor_key=temperature_weather")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["strategy"], "mean")
+
+    def test_percentile_strategy_is_echoed(self):
+        r = self.client.get(
+            "/alerts/suggest?sensor_key=temperature_weather&strategy=percentile"
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["strategy"], "percentile")
+
+    def test_sd_strategy_is_echoed(self):
+        r = self.client.get(
+            "/alerts/suggest?sensor_key=temperature_weather&strategy=sd"
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["strategy"], "sd")
+
+    def test_unknown_strategy_is_400(self):
+        r = self.client.get(
+            "/alerts/suggest?sensor_key=temperature_weather&strategy=bogus"
+        )
+        self.assertEqual(r.status_code, 400, r.content)

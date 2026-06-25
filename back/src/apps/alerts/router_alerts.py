@@ -217,13 +217,16 @@ def alerts_for_graph(
 @router.get(
     "/suggest",
     auth=JwtAuth(),
-    summary="Suggested alert payload (mean-based prefill)",
+    summary="Suggested alert payload (mean / percentile / sd prefill)",
 )
 def alerts_suggest(
     request,
     sensor_key: str | None = None,
     zone_id: int | None = None,
+    strategy: str = "mean",
 ):
+    from agri.core.alerts import SUGGEST_STRATEGIES
+
     if not sensor_key:
         return Response({"detail": "sensor_key is required."}, status=400)
     if sensor_key not in SENSOR_KEY_REGISTRY:
@@ -231,7 +234,16 @@ def alerts_suggest(
             {"detail": f"Unknown sensor_key '{sensor_key}'."},
             status=400,
         )
-    payload = suggest_alert(request.auth, sensor_key=sensor_key, zone_id=zone_id)
+    if strategy not in SUGGEST_STRATEGIES:
+        return Response(
+            {
+                "detail": f"Unknown strategy '{strategy}'. Allowed: {list(SUGGEST_STRATEGIES)}."
+            },
+            status=400,
+        )
+    payload = suggest_alert(
+        request.auth, sensor_key=sensor_key, zone_id=zone_id, strategy=strategy
+    )
     if payload is None:
         return Response({"detail": "Unable to build suggestion."}, status=404)
     return payload

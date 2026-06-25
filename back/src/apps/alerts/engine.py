@@ -263,13 +263,19 @@ def dispatch_alerts_for_reading(
 
 
 def suggest_alert(
-    user, *, sensor_key: str, zone_id: int | None = None, sample_size: int = 50
+    user,
+    *,
+    sensor_key: str,
+    zone_id: int | None = None,
+    sample_size: int = 50,
+    strategy: str = "mean",
 ) -> dict[str, Any] | None:
     """Build a sensible default payload for the create-alert form.
 
     Fetches the most-recent ``sample_size`` readings for ``sensor_key``
     (scoped to ``user`` + optional ``zone_id``) and hands them off to
-    ``agri.core.alerts.suggested_alert_payload``. Returns ``None`` when
+    ``agri.core.alerts.suggested_alert_payload``. ``strategy`` selects how
+    the threshold is derived (mean / percentile / sd). Returns ``None`` when
     the sensor key is unknown.
     """
     from agri.core.alerts import suggest_alert_for
@@ -277,7 +283,12 @@ def suggest_alert(
 
     with session_scope() as session:
         return suggest_alert_for(
-            session, user.id, sensor_key, zone_id=zone_id, limit=sample_size
+            session,
+            user.id,
+            sensor_key,
+            zone_id=zone_id,
+            limit=sample_size,
+            strategy=strategy,
         )
 
 
