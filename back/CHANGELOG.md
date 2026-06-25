@@ -1,6 +1,37 @@
 # CHANGELOG
 
 
+## v1.67.0 (2026-06-25)
+
+### Features
+
+- **ingest**: Single-sensor webhook for water-level (and any registry sensor)
+  ([#257](https://github.com/AgriLogy/agri-api/pull/257),
+  [`cf2ce7f`](https://github.com/AgriLogy/agri-api/commit/cf2ce7f209c9250b1b6cbb124f5fa8fb433ded11))
+
+Closes #4 — and resolves the "extend push beyond the 6 weather metrics" item in the #37
+  alerts-hardening parking-lot.
+
+**Finding:** the `water_level` sensor_key, the `WaterLevelSensor` model (agri-api + agri-db mirror),
+  and the alert/threshold path **already existed** — and `/ingest/weather` is already
+  registry-generic. The only real gap was a clean device-facing writer for standalone sensors. **No
+  agri-db change needed.**
+
+**Added:** `POST /ingest/sensor` — a typed, one-reading webhook `{client, sensor_key, value,
+  timestamp?}` (auth=None, same client-identification convention as `/ingest/weather`) for
+  tank/basin/water-level probes that don't speak the multi-metric bridge payload. It validates
+  `sensor_key` against `SENSOR_KEY_REGISTRY` (NPK excluded — three-value model), persists to the
+  caller's zone, and pushes the reading through `dispatch_alerts_for_reading` so low/abnormal-level
+  alerts fire on ingest.
+
+**Acceptance criteria (#4):** data received + stored ✓; alert on threshold breach ✓ (verified by
+  test). "View current water level" is already served by the generic `/admin/sensor-data` explorer
+  (#234); the **end-user dashboard tile is an agri-web follow-up**.
+
+7 tests (stored / fires alert — asserts both `last_emailed_at` + email outbox / above-threshold
+  no-fire / unknown key / npk / unknown client / missing value), green against local Postgres.
+
+
 ## v1.66.0 (2026-06-25)
 
 ### Features
