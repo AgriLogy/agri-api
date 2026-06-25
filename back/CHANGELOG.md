@@ -1,6 +1,35 @@
 # CHANGELOG
 
 
+## v1.63.0 (2026-06-25)
+
+### Features
+
+- **affirmation**: Apply payload to the resource on approve
+  ([#252](https://github.com/AgriLogy/agri-api/pull/252),
+  [`007a9d3`](https://github.com/AgriLogy/agri-api/commit/007a9d3058775df223ae4c10c63d36e198aec28a))
+
+Closes #25
+
+Follow-up to #20: the `ManagerAffirmation` model + create/list/decide endpoints existed, but
+  approving never *applied* the requested change.
+
+Adds `apps.irrigation.affirmation_appliers.apply_affirmation()`, dispatched on `action` from the
+  approve branch of `_decide` inside `transaction.atomic`: - **zone_params_change** `{zone_id,
+  fields}` — validate against the writable param allowlist + `router_admin._validate_zone` + zone
+  ownership (`requested_by`), then update the `Zone`. - **kc_periods_change** `{kc_id, periods[]}` —
+  replace the crop calendar's periods via `router_kc._replace_periods`. - **user_reactivate**
+  `{user_id}` — set the target user active.
+
+A recognised action with no actionable payload is a **no-op approval** (legacy/empty affirmations
+  stay approvable); a non-empty **malformed** payload raises `AffirmationApplyError` → `400` and the
+  affirmation stays `pending` (transaction rolled back).
+
+6 new tests (approve applies / reject leaves unchanged / invalid field 400+pending / cross-user 400
+  / kc periods replaced / user reactivated). Full `test_manager_affirmation.py` suite green (16)
+  against local Postgres.
+
+
 ## v1.62.0 (2026-06-25)
 
 ### Features
