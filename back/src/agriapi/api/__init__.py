@@ -29,6 +29,9 @@ from apps.irrigation.router_irrigation_automation import (
     router as irrigation_automation_router,
 )
 from apps.alerts.router_alerts import router as alerts_router
+from apps.alerts.router_notification_zones import (
+    router as notification_zones_router,
+)
 from apps.irrigation.router_manager_affirmation import (
     router as manager_affirmation_router,
 )
@@ -74,6 +77,9 @@ api.add_router("", analytics_reads_router, tags=["self"])
 
 # Alerts CRUD + sub-collections (/alerts, /alerts/for-graph, /alerts/suggest).
 api.add_router("/alerts", alerts_router, tags=["alerts"])
+api.add_router(
+    "/notification-zones", notification_zones_router, tags=["notification-zones"]
+)
 api.add_router("/kc", kc_router, tags=["kc"])
 api.add_router("/irrigation", irrigation_automation_router, tags=["irrigation"])
 

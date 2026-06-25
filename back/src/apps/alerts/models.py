@@ -168,6 +168,20 @@ class Alert(_AlertBase):
     # c4d8e1f02a37_add_alert_notify_channels).
     notify_email = models.BooleanField(default=True)
     notify_whatsapp = models.BooleanField(default=False)
+    notify_sms = models.BooleanField(default=False)
+    # Custom notification zone (agrilogy-front #57): an alert binds to EITHER a
+    # farm ``zone`` OR a ``notification_zone`` (independent grouping). When set,
+    # the data stream resolves through the zone's sensor assignments. Schema in
+    # agri-db (migration e2f3a4b5c6d7); db_constraint off like the other
+    # unmanaged-target FKs.
+    notification_zone = models.ForeignKey(
+        "analytics.NotificationZone",
+        on_delete=models.SET_NULL,
+        related_name="alerts",
+        null=True,
+        blank=True,
+        db_constraint=False,
+    )
     last_triggered_at = models.DateTimeField(null=True, blank=True)
     # Stamped every time an alert email is actually dispatched. Distinct from
     # ``last_triggered_at`` (which is "first fire ever, for chart overlays")
@@ -187,3 +201,65 @@ class Alert(_AlertBase):
 
     def __str__(self):
         return f"{self.name} - {self.condition}"
+
+
+class NotificationZone(_AlertBase):
+    """A user-owned alert grouping independent of the farm ``Zone`` rows
+    (agrilogy-front #57). Sensors are attached via ``NotificationZoneSensor``;
+    an ``Alert`` may bind here instead of to a farm zone.
+
+    Unmanaged (schema-of-record in agri-db; self-deployed in prod via
+    scripts/ensure_notification_zone_tables.py, created session-wide in the
+    test DB by conftest). ``db_constraint=False`` on the FK like the other
+    unmanaged models so the Postgres CI flush can TRUNCATE.
+    """
+
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True, default="")
+    is_active = models.BooleanField(default=True)
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="notification_zones",
+        db_constraint=False,
+    )
+    created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True, null=True, blank=True)
+
+    class Meta:
+        app_label = "analytics"
+        db_table = "analytics_notificationzone"
+        managed = False
+
+    def __str__(self):
+        return f"{self.name} (user {self.user_id})"
+
+
+class NotificationZoneSensor(_AlertBase):
+    """One sensor stream assigned to a :class:`NotificationZone`: ``sensor_key``
+    read from farm zone ``source_zone`` (null = the user-wide latest)."""
+
+    sensor_key = models.CharField(max_length=64)
+    label = models.CharField(max_length=200, null=True, blank=True)
+    notification_zone = models.ForeignKey(
+        NotificationZone,
+        on_delete=models.CASCADE,
+        related_name="sensors",
+        db_constraint=False,
+    )
+    source_zone = models.ForeignKey(
+        "analytics.Zone",
+        on_delete=models.SET_NULL,
+        related_name="notification_sensor_links",
+        null=True,
+        blank=True,
+        db_constraint=False,
+    )
+
+    class Meta:
+        app_label = "analytics"
+        db_table = "analytics_notificationzonesensor"
+        managed = False
+
+    def __str__(self):
+        return f"{self.sensor_key}@zone{self.source_zone_id} → nz{self.notification_zone_id}"

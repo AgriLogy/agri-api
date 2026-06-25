@@ -204,6 +204,50 @@ def send_alert_whatsapp(*, alert_id: int, value: float, timestamp_iso: str) -> d
 
 
 @shared_task
+def send_alert_sms(*, alert_id: int, value: float, timestamp_iso: str) -> dict:
+    """Send one alert via SMS (Twilio) to the owner's phone_number.
+
+    Same contract as ``send_alert_whatsapp``: enqueued by
+    ``dispatch_alerts_for_reading`` after the grace-period gate has won. No-op
+    (logged) if SMS isn't configured or the user has no phone — never raises.
+    """
+    from apps.alerts.engine import SENSOR_KEY_REGISTRY
+    from analytics.models import Alert
+    from agriapi.twilio_messaging import send_sms
+
+    try:
+        alert = Alert.objects.select_related("user", "zone", "notification_zone").get(
+            pk=alert_id
+        )
+    except Alert.DoesNotExist:
+        return {"sent": 0, "reason": "alert_missing"}
+    if not alert.is_active:
+        return {"sent": 0, "reason": "alert_inactive"}
+
+    user = alert.user
+    phone = (getattr(user, "phone_number", "") or "").strip() if user else ""
+    if not phone:
+        return {"sent": 0, "reason": "no_phone"}
+
+    spec = SENSOR_KEY_REGISTRY.get(alert.sensor_key, {})
+    label = spec.get("label") or alert.sensor_key
+    unit = spec.get("unit") or ""
+    if alert.zone:
+        zone_label = alert.zone.name
+    elif alert.notification_zone:
+        zone_label = alert.notification_zone.name
+    else:
+        zone_label = "votre compte"
+    body = (
+        f"Alerte « {alert.name} » ({zone_label}) — "
+        f"{label}: {value} {unit} (seuil {alert.condition} {alert.condition_nbr}) "
+        f"{timestamp_iso}"
+    )
+    ok = send_sms(phone, body)
+    return {"sent": 1 if ok else 0, "alert_id": alert_id}
+
+
+@shared_task
 def send_zone_outbound_email(*, recipient: str, subject: str, message: str) -> dict:
     """
     Deliver one ad-hoc "notification panel" email (custom recipient).
