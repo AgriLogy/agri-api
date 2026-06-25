@@ -9,7 +9,7 @@ from django.core.mail import get_connection, send_mail
 from django.utils.timezone import now
 
 from agriapi.delivery_log import record_delivery
-from apps.users.notification_helper import perform_calculations, should_notify
+from apps.users.notification_helper import claim_notification_slot, perform_calculations
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,14 @@ def send_periodic_notifications():
             if not recipient:
                 skipped += 1
                 continue
-            if not should_notify(user):
+
+            # Atomically claim the cadence slot BEFORE sending. A single
+            # conditional UPDATE both gates the cadence and stamps
+            # last_notified, so two concurrent beat runs can't both pass the
+            # gate and double-send: only one UPDATE matches, the other gets
+            # False here and skips. The claim also advances the clock up-front,
+            # so a provider failure won't re-attempt the user every tick (#180).
+            if not claim_notification_slot(user):
                 skipped += 1
                 continue
 
@@ -70,16 +77,6 @@ def send_periodic_notifications():
                 logger.exception(
                     "Failed to send periodic notification to %s", recipient
                 )
-            finally:
-                # Advance the cadence clock whether or not the send succeeded.
-                # If we only updated last_notified on success, a persistent
-                # provider failure (e.g. quota / rate-limit) would leave the
-                # user perpetually "due" and re-attempt them on every beat tick,
-                # hammering the email provider. Treating a failed attempt as
-                # "notified for this cycle" trades one missed digest for not
-                # spamming; the next cadence window retries normally.
-                user.last_notified = now()
-                user.save(update_fields=["last_notified"])
 
     logger.info(
         "Periodic notifications: sent=%d, skipped=%d, failed=%d",
