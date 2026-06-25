@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v1.64.0 (2026-06-25)
+
+### Features
+
+- **zone**: Persist elevation_m so Rso is correct away from sea level
+  ([#253](https://github.com/AgriLogy/agri-api/pull/253),
+  [`ade7920`](https://github.com/AgriLogy/agri-api/commit/ade7920ba6b61cef9c72e9749c7a219059e73507))
+
+Closes #15
+
+Final step of the elevation_m chain (agri-db AgriLogy/agri-db#32 → 0.6.0, agri-core
+  AgriLogy/agri-core#36 → 0.14.0).
+
+- `Zone.elevation_m` FloatField (default 0, metres) + Django migration `0062`. - Exposed on the
+  admin zone API: added to `ZoneWriteIn` + `ZONE_FIELDS` so create/update/serialize round-trip it. -
+  Bumps agri-core pin `0.13.0 → 0.14.0` (reads `zone.elevation_m` into `Et0Inputs`; `Rso = (0.75 +
+  2e-5·elevation_m)·Ra`).
+
+64 irrigation+agronomy+affirmation tests green locally against Postgres.
+
+**Deploy:** apply agri-db#32 (`make upgrade-dev`/`upgrade-prod`) — it also merges the 3 diverged
+  alembic heads — before this rolls out.
+
+
 ## v1.63.0 (2026-06-25)
 
 ### Features
