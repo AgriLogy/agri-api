@@ -282,6 +282,7 @@ if SCHEDULE_MODE == "test":
     _device_health_schedule = crontab(minute="*/10")
     _proactive_schedule = crontab(minute="*/10")
     _irrigation_run_schedule = crontab(minute="*/2")
+    _idle_zone_schedule = crontab(minute="*/10")
 else:
     _et0_schedule = crontab(minute=0)
     # Every 5 min so per-user notify_every cadences down to 10 min are
@@ -296,6 +297,9 @@ else:
     # Scheduled irrigation programs: check every 5 min so a program's start_time
     # window is caught promptly.
     _irrigation_run_schedule = crontab(minute="*/5")
+    # Idle-zone liveness: a few times a day is plenty (re-flag is throttled to
+    # the idle window anyway).
+    _idle_zone_schedule = crontab(minute=45, hour="*/6")
 
 # SAFETY: physical valve/pump actuation is OFF by default. While False, output
 # commands are recorded as "simulated" and never reach hardware. Turn on only
@@ -332,6 +336,12 @@ CELERY_BEAT_SCHEDULE = {
         "task": "agriapi.tasks.run_due_irrigation_programs",
         "schedule": _irrigation_run_schedule,
     },
+    # Same DatabaseScheduler caveat: needs a PeriodicTask row on prod. Emails a
+    # zone's owner when no sensor has reported in over ZONE_IDLE_THRESHOLD_HOURS.
+    "idle_zone_scan": {
+        "task": "agriapi.tasks.flag_idle_zones",
+        "schedule": _idle_zone_schedule,
+    },
 }
 if ENABLE_SENSOR_SIMULATOR:
     CELERY_BEAT_SCHEDULE["simulate_sensors"] = {
@@ -347,6 +357,14 @@ if ENABLE_SENSOR_SIMULATOR:
 # reactions, fruit-size readings drift over hours, soil chemistry is slow.
 # Any sensor_key not listed here falls back to DEFAULT_ALERT_GRACE_PERIOD.
 DEFAULT_ALERT_GRACE_PERIOD = 1800  # 30 minutes
+
+# Idle-zone liveness (#37): flag a zone whose newest reading across all sensors
+# is older than this many hours (or that has no readings), and re-flag at most
+# once per window. Overridable via env on the droplet.
+ZONE_IDLE_THRESHOLD_HOURS = int(os.getenv("ZONE_IDLE_THRESHOLD_HOURS", "24"))
+ZONE_IDLE_REFLAG_HOURS = int(
+    os.getenv("ZONE_IDLE_REFLAG_HOURS", str(ZONE_IDLE_THRESHOLD_HOURS))
+)
 
 ALERT_GRACE_PERIODS: dict[str, int] = {
     # Water — high-stakes, fast-changing

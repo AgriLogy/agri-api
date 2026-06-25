@@ -87,6 +87,98 @@ def send_periodic_notifications():
     return {"sent": sent, "skipped": skipped, "failed": failed}
 
 
+@shared_task
+def flag_idle_zones() -> dict:
+    """Email a zone's owner when no sensor has reported in a long time (#37).
+
+    Alerts only fire when a reading arrives on ingest or the dashboard loads a
+    chart — a user whose sensors go quiet and who isn't in the app is never told
+    that "nothing happened". This beat task finds zones whose newest reading
+    across all sensors is older than ``ZONE_IDLE_THRESHOLD_HOURS`` and emails the
+    owner. A cache slot throttles re-flagging to at most once per
+    ``ZONE_IDLE_REFLAG_HOURS`` window so it doesn't repeat every tick. Zones that
+    have NEVER reported are skipped — we only flag a zone that was alive and went
+    silent (a sensor going offline), not an empty/never-configured zone, which
+    would otherwise be emailed forever.
+    """
+    from datetime import timedelta
+
+    from django.core.cache import cache
+
+    from analytics import models as analytics_models
+    from apps.alerts.engine import SENSOR_KEY_REGISTRY
+    from apps.irrigation.models import Zone
+
+    threshold_hours = int(getattr(settings, "ZONE_IDLE_THRESHOLD_HOURS", 24))
+    reflag_hours = int(getattr(settings, "ZONE_IDLE_REFLAG_HOURS", threshold_hours))
+    now_ts = now()
+    cutoff = now_ts - timedelta(hours=threshold_hours)
+
+    models = []
+    for name in {spec["model"] for spec in SENSOR_KEY_REGISTRY.values()}:
+        model = getattr(analytics_models, name, None)
+        if model is not None:
+            models.append(model)
+
+    flagged = 0
+    for zone in Zone.objects.select_related("user").iterator():
+        latest = None
+        for model in models:
+            ts = (
+                model.objects.filter(zone_id=zone.id)
+                .order_by("-timestamp")
+                .values_list("timestamp", flat=True)
+                .first()
+            )
+            if ts and (latest is None or ts > latest):
+                latest = ts
+        # Skip zones that have never reported (empty/demo) and fresh zones.
+        if latest is None or latest >= cutoff:
+            continue
+
+        # Throttle: claim a cache slot so we email at most once per reflag window.
+        if not cache.add(f"zone-idle-flag:{zone.id}", 1, timeout=reflag_hours * 3600):
+            continue
+
+        user = zone.user
+        recipient = (getattr(user, "email", "") or "").strip() if user else ""
+        if not recipient:
+            continue
+
+        last_seen = latest.isoformat() if latest else "aucune donnée"
+        try:
+            send_mail(
+                subject=f"Aucune donnée récente — {zone.name}",
+                message=(
+                    f"Bonjour {getattr(user, 'firstname', '') or user.username},\n\n"
+                    f"La zone « {zone.name} » n'a reçu aucune nouvelle mesure depuis "
+                    f"plus de {threshold_hours} h (dernière donnée : {last_seen}).\n\n"
+                    f"Vérifiez vos capteurs et la connectivité du terrain.\n"
+                ),
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[recipient],
+                fail_silently=False,
+            )
+        except Exception as exc:
+            record_delivery(
+                channel="email",
+                kind="liveness",
+                recipient=recipient,
+                user=user,
+                status="failed",
+                error=str(exc),
+            )
+            logger.exception("Failed to send idle-zone email for zone %s", zone.id)
+            continue
+        record_delivery(
+            channel="email", kind="liveness", recipient=recipient, user=user
+        )
+        flagged += 1
+
+    logger.info("flag_idle_zones: flagged=%d zones", flagged)
+    return {"flagged": flagged}
+
+
 ######################################################################################################
 ######################   Alert email dispatch (triggered from ingest path)         ###################
 ######################################################################################################
