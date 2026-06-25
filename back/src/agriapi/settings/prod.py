@@ -78,9 +78,7 @@ CSRF_TRUSTED_ORIGINS = _csv_env("CSRF_TRUSTED_ORIGINS", "")
 # smtp backend hangs and 504s. Resend's REST API runs over HTTPS/443 (open), so
 # it is the default transport here. Set EMAIL_BACKEND explicitly to override
 # (e.g. back to smtp if the SMTP block is ever lifted).
-EMAIL_BACKEND = os.getenv(
-    "EMAIL_BACKEND", "agriapi.email_backends.ResendEmailBackend"
-)
+EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "agriapi.email_backends.ResendEmailBackend")
 # RESEND_API_KEY is inherited from base settings (read from env there).
 
 # SMTP settings are only consulted (and required) when the smtp backend is

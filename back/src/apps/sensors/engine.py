@@ -107,9 +107,7 @@ def hourly_readings(
         row["id"] = b["last_id"]
         row["zone"] = sample.zone_id
         row["user"] = sample.user_id
-        row["timestamp"] = (
-            ts.strftime("%Y-%m-%dT%H:%M:%SZ") if ts is not None else None
-        )
+        row["timestamp"] = ts.strftime("%Y-%m-%dT%H:%M:%SZ") if ts is not None else None
         for c in cols:
             row[c] = b.get(c)
         row["default_unit"] = default_unit

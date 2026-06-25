@@ -60,10 +60,8 @@ jobs:
       - name: ruff check
         run: uv run ruff check .
 
-      # Format check is intentionally not enforced in CI yet — the legacy
-      # codebase has never been run end-to-end through ruff format. Run
-      # `make format` once the lockfile is in, commit the result in a
-      # dedicated PR, then re-enable here.
+      - name: ruff format check
+        run: uv run ruff format --check .
 
       - name: Django system check
         run: uv run python manage.py check

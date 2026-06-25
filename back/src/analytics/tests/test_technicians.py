@@ -41,9 +41,7 @@ class TestTechnicianFlow:
             {"zone_id": zone.id, "allowed_graphs": ["water_flow_status"]}
         ]
 
-    def test_cannot_scope_foreign_zone(
-        self, user_bearer, other_user, zone_factory
-    ):
+    def test_cannot_scope_foreign_zone(self, user_bearer, other_user, zone_factory):
         foreign = zone_factory(other_user, name="Other")
         r = user_bearer.post(
             URL, _create_payload(foreign.id, ["water_flow_status"]), format="json"
@@ -64,9 +62,7 @@ class TestTechnicianFlow:
         zones = tech_client.get("/zones").json()
         assert {z["id"] for z in zones} == {z1.id}
 
-    def test_active_graph_is_masked(
-        self, user_bearer, normal_user, zone_factory
-    ):
+    def test_active_graph_is_masked(self, user_bearer, normal_user, zone_factory):
         z1 = zone_factory(normal_user, name="Granted")
         user_bearer.post(
             URL, _create_payload(z1.id, ["water_flow_status"]), format="json"
@@ -119,9 +115,7 @@ class TestTechnicianFlow:
         tech = CustomUser.objects.get(username="plumber1")
         assert _bearer(tech).get(URL).status_code == 403
 
-    def test_revoke_hides_everything(
-        self, user_bearer, normal_user, zone_factory
-    ):
+    def test_revoke_hides_everything(self, user_bearer, normal_user, zone_factory):
         z1 = zone_factory(normal_user, name="Granted")
         created = user_bearer.post(
             URL, _create_payload(z1.id, ["water_flow_status"]), format="json"

@@ -94,16 +94,16 @@ def test_workflow():
 
     # --- 3. /auth/header equivalent — analytics /api/header/ -------------
     resp = client.get("/users/me", **_auth_headers(access))
-    assert (
-        resp.status_code == 200
-    ), f"chapter 3 (/api/header/) expected 200 got {resp.status_code}"
+    assert resp.status_code == 200, (
+        f"chapter 3 (/api/header/) expected 200 got {resp.status_code}"
+    )
     assert resp.json() == {"username": USER["username"]}
 
     # --- 4. zones-names-per-user (empty for a brand-new user) ------------
     resp = client.get("/zones", **_auth_headers(access))
-    assert (
-        resp.status_code == 200
-    ), f"chapter 4 (zones-names) expected 200 got {resp.status_code}"
+    assert resp.status_code == 200, (
+        f"chapter 4 (zones-names) expected 200 got {resp.status_code}"
+    )
     assert resp.json() == []
 
     # --- 5. alerts/sensor-keys (registry projection) ---------------------
@@ -120,9 +120,9 @@ def test_workflow():
         "/alerts/suggest?sensor_key=temperature_weather",
         **_auth_headers(access),
     )
-    assert (
-        resp.status_code == 200
-    ), f"chapter 6 (alerts/suggest) expected 200 got {resp.status_code}"
+    assert resp.status_code == 200, (
+        f"chapter 6 (alerts/suggest) expected 200 got {resp.status_code}"
+    )
     suggestion = resp.json()
     assert suggestion["sensor_key"] == "temperature_weather"
     assert {"condition", "condition_nbr", "label", "unit"} <= suggestion.keys()
