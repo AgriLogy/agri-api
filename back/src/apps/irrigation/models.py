@@ -287,6 +287,10 @@ class ActiveGraph(_IrrigationBase):
     water_ec_status = models.BooleanField(
         default=True, help_text="Conductivité électrique de l'eau"
     )
+    # Opt-in (default False): water-level is an uncommon basin/tank sensor, so
+    # the dashboard section stays hidden until a zone enables it. Schema in
+    # agri-db (migration b8c9d0e1f2a3).
+    water_level_status = models.BooleanField(default=False, help_text="Niveau d'eau")
 
     # --- Plant Sensors ---
     leaf_sensor_status = models.BooleanField(
