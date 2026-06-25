@@ -1,6 +1,29 @@
 # CHANGELOG
 
 
+## v1.66.0 (2026-06-25)
+
+### Features
+
+- **users**: Per-user notification language (fr/ar)
+  ([#256](https://github.com/AgriLogy/agri-api/pull/256),
+  [`95cfc3a`](https://github.com/AgriLogy/agri-api/commit/95cfc3a10fdd0088c2e5848c114accc97a4ee005))
+
+Closes #31.
+
+A per-user `preferred_language` (fr|ar, default fr) that drives the daily notification email's
+  language. - `CustomUser.preferred_language` + Django migration `0009` (schema-of-record agri-db
+  0.8.0, migration `f3a4b5c6d7e8`). - Self-service: `GET /users/me` returns it, `PATCH /users/me`
+  lets the caller set it (validated fr/ar). Admin patch `/users/{username}` + the detail serializer
+  carry it too. - The periodic email picks it up automatically: `perform_calculations` → agri-core
+  0.16.0 `compose_notification_for_user` renders FR or AR. agri-core pin bumped 0.15.0→0.16.0. - 6
+  tests (self default/set/invalid, admin set/invalid, anon 401); 16 green incl. existing
+  admin-detail.
+
+⚠️ The Arabic notification copy (in agri-core) is a faithful first draft and needs native-speaker
+  review. The agri-web language-toggle UI is a deliberate follow-up.
+
+
 ## v1.65.0 (2026-06-25)
 
 ### Features
