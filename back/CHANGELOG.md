@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v1.69.0 (2026-06-25)
+
+### Features
+
+- **alerts**: Aggregate same-reading alert emails into one digest
+  ([#261](https://github.com/AgriLogy/agri-api/pull/261),
+  [`215ff8e`](https://github.com/AgriLogy/agri-api/commit/215ff8e2485312e6a99e3a586d6a85244284dd24))
+
+Closes #260 — second item from the #37 parking-lot.
+
+When several alerts on the same `(user, sensor_key, zone)` reading opt into email,
+  `dispatch_alerts_for_reading` now sends **one** combined digest (`send_alert_digest_email`)
+  listing every triggered alert, instead of N separate emails. A single alert keeps the original
+  per-alert email path unchanged; WhatsApp/SMS stay per-alert. The atomic per-alert grace claim
+  (#160/#250) is untouched — emails are just collected and delivered once after the loop, so no
+  dedup regression. 2 new tests; alert + notification-zone + ingest suites green on local Postgres.
+
+
 ## v1.68.0 (2026-06-25)
 
 ### Features
