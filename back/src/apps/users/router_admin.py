@@ -74,6 +74,7 @@ def _serialize_detail(user: CustomUser) -> dict[str, Any]:
         "is_active": user.is_active,
         "is_staff": user.is_staff,
         "notify_every": user.notify_every,
+        "preferred_language": user.preferred_language,
         "last_notified": (
             user.last_notified.isoformat() if user.last_notified else None
         ),
@@ -171,6 +172,7 @@ class AdminUserUpdateIn(Schema):
     is_active: bool | None = None
     is_staff: bool | None = None
     notify_every: int | None = None
+    preferred_language: str | None = None
 
 
 class AdminActivateIn(Schema):
@@ -192,7 +194,35 @@ class AdminResetPasswordIn(Schema):
     summary="Caller's profile (identity)",
 )
 def get_me_top(request):
-    return {"username": request.auth.username}
+    return {
+        "username": request.auth.username,
+        "preferred_language": request.auth.preferred_language,
+        "notify_every": request.auth.notify_every,
+    }
+
+
+class MePreferencesIn(Schema):
+    preferred_language: str | None = None
+
+
+@router.patch(
+    "/me",
+    auth=JwtAuth(),
+    summary="Caller updates their own preferences (language)",
+)
+def patch_me(request, payload: MePreferencesIn):
+    user = request.auth
+    lang = payload.preferred_language
+    if lang is not None:
+        if lang not in dict(CustomUser.LANGUAGE_CHOICES):
+            return Response({"preferred_language": "Must be 'fr' or 'ar'."}, status=400)
+        user.preferred_language = lang
+        user.save(update_fields=["preferred_language"])
+    return {
+        "username": user.username,
+        "preferred_language": user.preferred_language,
+        "notify_every": user.notify_every,
+    }
 
 
 @router.post(
@@ -305,6 +335,10 @@ def patch_user(request, username: str, payload: AdminUserUpdateIn):
     err = _validate_coords(data)
     if err is not None:
         return Response(err, status=400)
+    if data.get("preferred_language") is not None and data[
+        "preferred_language"
+    ] not in dict(CustomUser.LANGUAGE_CHOICES):
+        return Response({"preferred_language": "Must be 'fr' or 'ar'."}, status=400)
     for k, v in data.items():
         setattr(user, k, v)
     user.save()

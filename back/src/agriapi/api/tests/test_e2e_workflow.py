@@ -97,7 +97,10 @@ def test_workflow():
     assert resp.status_code == 200, (
         f"chapter 3 (/api/header/) expected 200 got {resp.status_code}"
     )
-    assert resp.json() == {"username": USER["username"]}
+    body = resp.json()
+    assert body["username"] == USER["username"]
+    # A brand-new user defaults to French notifications.
+    assert body["preferred_language"] == "fr"
 
     # --- 4. zones-names-per-user (empty for a brand-new user) ------------
     resp = client.get("/zones", **_auth_headers(access))
