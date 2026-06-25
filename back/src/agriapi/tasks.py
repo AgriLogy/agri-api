@@ -166,6 +166,82 @@ def send_alert_email(*, alert_id: int, value: float, timestamp_iso: str) -> dict
 
 
 @shared_task
+def send_alert_digest_email(
+    *, alert_ids: list[int], value: float, timestamp_iso: str
+) -> dict:
+    """Send ONE combined email when several alerts fire on the same reading (#37).
+
+    Enqueued by ``dispatch_alerts_for_reading`` when more than one alert on the
+    same (user, sensor_key, zone) reading opted into email — instead of N
+    separate emails. The alerts share one owner and one reading value; the body
+    lists each triggered alert. Skips inactive/deleted alerts defensively; a
+    no-op (logged) if nothing deliverable remains.
+    """
+    from apps.alerts.engine import SENSOR_KEY_REGISTRY
+    from analytics.models import Alert
+
+    alerts = list(
+        Alert.objects.select_related("user", "zone").filter(
+            pk__in=alert_ids, is_active=True
+        )
+    )
+    if not alerts:
+        return {"sent": 0, "reason": "no_active_alerts"}
+
+    user = alerts[0].user
+    recipient = (getattr(user, "email", "") or "").strip() if user else ""
+    if not recipient:
+        return {"sent": 0, "reason": "no_recipient"}
+
+    lines = []
+    for alert in alerts:
+        spec = SENSOR_KEY_REGISTRY.get(alert.sensor_key, {})
+        unit = spec.get("unit") or ""
+        label = spec.get("label") or alert.sensor_key
+        zone_label = alert.zone.name if alert.zone else "votre compte"
+        lines.append(
+            f"• « {alert.name} » sur {zone_label}\n"
+            f"    {label} ({alert.sensor_key}) : {value} {unit} "
+            f"(seuil {alert.condition} {alert.condition_nbr})"
+        )
+
+    subject = f"Alerte — {len(alerts)} déclenchements"
+    body = (
+        f"Bonjour {getattr(user, 'firstname', '') or user.username},\n\n"
+        f"Plusieurs alertes se sont déclenchées sur la même mesure "
+        f"({timestamp_iso}) :\n\n"
+        + "\n".join(lines)
+        + "\n\nVous pouvez ajuster ou désactiver ces alertes depuis votre "
+        "tableau de bord.\n"
+    )
+
+    try:
+        send_mail(
+            subject=subject,
+            message=body,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[recipient],
+            fail_silently=False,
+        )
+    except Exception as exc:
+        record_delivery(
+            channel="email",
+            kind="alert",
+            recipient=recipient,
+            user=user,
+            status="failed",
+            error=str(exc),
+        )
+        logger.exception("Failed to send alert digest email for %s", alert_ids)
+        return {"sent": 0, "reason": "smtp_error"}
+
+    record_delivery(
+        channel="email", kind="alert", recipient=recipient, user=user, status="sent"
+    )
+    return {"sent": 1, "alert_ids": alert_ids}
+
+
+@shared_task
 def send_alert_whatsapp(*, alert_id: int, value: float, timestamp_iso: str) -> dict:
     """Send one alert via WhatsApp (Twilio) to the owner's phone_number.
 

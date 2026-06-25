@@ -525,6 +525,48 @@ class DispatchAlertsForReadingTests(TestCase):
         _, send = self._dispatch(value=25.0)
         send.assert_not_called()
 
+    def test_multiple_alerts_same_reading_send_one_digest(self):
+        # Two email alerts firing on the same reading → one digest, not two
+        # separate emails (#37).
+        second = _alert(
+            self.user,
+            zone=self.zone,
+            condition_nbr=Decimal("15.00"),
+            sensor_key="wind_speed",
+            name="Breeze",
+        )
+        with (
+            patch("agriapi.tasks.send_alert_digest_email.delay") as digest,
+            patch("agriapi.tasks.send_alert_email.delay") as single,
+        ):
+            dispatch_alerts_for_reading(
+                sensor_key="wind_speed",
+                zone=self.zone,
+                user=self.user,
+                value=25.0,
+                timestamp=self.now,
+            )
+        single.assert_not_called()
+        digest.assert_called_once()
+        self.assertCountEqual(
+            digest.call_args.kwargs["alert_ids"], [self.alert.pk, second.pk]
+        )
+
+    def test_single_alert_uses_plain_email_not_digest(self):
+        with (
+            patch("agriapi.tasks.send_alert_digest_email.delay") as digest,
+            patch("agriapi.tasks.send_alert_email.delay") as single,
+        ):
+            dispatch_alerts_for_reading(
+                sensor_key="wind_speed",
+                zone=self.zone,
+                user=self.user,
+                value=25.0,
+                timestamp=self.now,
+            )
+        digest.assert_not_called()
+        single.assert_called_once()
+
     def test_inactive_alert_is_silent(self):
         Alert.objects.filter(pk=self.alert.pk).update(is_active=False)
         count, send = self._dispatch(value=25.0)
