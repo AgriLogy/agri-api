@@ -1,6 +1,25 @@
 # CHANGELOG
 
 
+## v1.70.0 (2026-06-25)
+
+### Features
+
+- **alerts**: Scheduled idle-zone liveness checker
+  ([#263](https://github.com/AgriLogy/agri-api/pull/263),
+  [`bd43011`](https://github.com/AgriLogy/agri-api/commit/bd43011f9bce11f03ce341df9051e373b0fa6b1f))
+
+Closes #262 — third item from the #37 parking-lot.
+
+New beat task `flag_idle_zones`: emails a zone's owner when its newest reading across all sensors is
+  older than `ZONE_IDLE_THRESHOLD_HOURS` (default 24h, env-overridable). A Django-cache slot
+  throttles re-flagging to once per `ZONE_IDLE_REFLAG_HOURS`. **Product call:** zones that have
+  *never* reported are skipped — we only flag a zone that was alive and went silent (a sensor going
+  offline), so empty/demo zones aren't emailed forever. Wired into `CELERY_BEAT_SCHEDULE` as
+  `idle_zone_scan` (prod `DatabaseScheduler` needs a `PeriodicTask` row, same caveat as the other
+  beat tasks). 3 tests; `manage.py check` + celery-routing green.
+
+
 ## v1.69.0 (2026-06-25)
 
 ### Features
