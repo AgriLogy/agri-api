@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v1.68.0 (2026-06-25)
+
+### Features
+
+- **alerts**: Per-alert grace override (grace_override_seconds)
+  ([#259](https://github.com/AgriLogy/agri-api/pull/259),
+  [`cc50624`](https://github.com/AgriLogy/agri-api/commit/cc50624504f31eeca55447a75bb22e5117a1170f))
+
+Closes #258 — first item from the #37 alerts-hardening parking-lot.
+
+`Alert.grace_override_seconds` (nullable) lets one alert override the global
+  `ALERT_GRACE_PERIODS[sensor_key]` re-notify cadence — e.g. ping-every-minute for a critical alert.
+  NULL = global default. Used in `dispatch_alerts_for_reading`'s per-alert grace gate (override
+  computed inside the loop), exposed on `AlertWriteIn` + the serializer. Django migration 0064;
+  schema-of-record in agri-db #38 (`a7b8c9d0e1f2`). 2 new dispatch tests; full alert suite green
+  (61) on local Postgres.
+
+
 ## v1.67.0 (2026-06-25)
 
 ### Features
