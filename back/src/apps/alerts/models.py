@@ -163,6 +163,11 @@ class Alert(_AlertBase):
         blank=True,
     )
     is_active = models.BooleanField(default=True)
+    # Per-alert delivery channels. Email is the legacy default; WhatsApp (via
+    # Twilio) is opt-in. Schema lives in agri-db (migration
+    # c4d8e1f02a37_add_alert_notify_channels).
+    notify_email = models.BooleanField(default=True)
+    notify_whatsapp = models.BooleanField(default=False)
     last_triggered_at = models.DateTimeField(null=True, blank=True)
     # Stamped every time an alert email is actually dispatched. Distinct from
     # ``last_triggered_at`` (which is "first fire ever, for chart overlays")

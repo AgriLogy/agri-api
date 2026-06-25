@@ -166,6 +166,44 @@ def send_alert_email(*, alert_id: int, value: float, timestamp_iso: str) -> dict
 
 
 @shared_task
+def send_alert_whatsapp(*, alert_id: int, value: float, timestamp_iso: str) -> dict:
+    """Send one alert via WhatsApp (Twilio) to the owner's phone_number.
+
+    Enqueued alongside / instead of ``send_alert_email`` by
+    ``dispatch_alerts_for_reading`` after the grace-period gate has already
+    won, so it just delivers. No-op (logged) if WhatsApp isn't configured or
+    the user has no phone number — never raises, so Celery won't retry+dupe.
+    """
+    from apps.alerts.engine import SENSOR_KEY_REGISTRY
+    from analytics.models import Alert
+    from agriapi.whatsapp import send_whatsapp
+
+    try:
+        alert = Alert.objects.select_related("user", "zone").get(pk=alert_id)
+    except Alert.DoesNotExist:
+        return {"sent": 0, "reason": "alert_missing"}
+    if not alert.is_active:
+        return {"sent": 0, "reason": "alert_inactive"}
+
+    user = alert.user
+    phone = (getattr(user, "phone_number", "") or "").strip() if user else ""
+    if not phone:
+        return {"sent": 0, "reason": "no_phone"}
+
+    spec = SENSOR_KEY_REGISTRY.get(alert.sensor_key, {})
+    label = spec.get("label") or alert.sensor_key
+    unit = spec.get("unit") or ""
+    zone_label = alert.zone.name if alert.zone else "votre compte"
+    body = (
+        f"🌱 Alerte « {alert.name} » ({zone_label})\n"
+        f"{label}: {value} {unit} (seuil {alert.condition} {alert.condition_nbr})\n"
+        f"{timestamp_iso}"
+    )
+    ok = send_whatsapp(phone, body)
+    return {"sent": 1 if ok else 0, "alert_id": alert_id}
+
+
+@shared_task
 def send_zone_outbound_email(*, recipient: str, subject: str, message: str) -> dict:
     """
     Deliver one ad-hoc "notification panel" email (custom recipient).
