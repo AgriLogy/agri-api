@@ -1,6 +1,34 @@
 # CHANGELOG
 
 
+## v1.62.0 (2026-06-25)
+
+### Features
+
+- **alerts**: Per-alert email/WhatsApp delivery via Twilio
+  ([#251](https://github.com/AgriLogy/agri-api/pull/251),
+  [`35b3bca`](https://github.com/AgriLogy/agri-api/commit/35b3bca3d0ed464f993773d2cb45b24a2b5b9e77))
+
+Closes #162
+
+Alerts now fan out to the channels the owner opted into.
+
+- New `notify_email` (default `True`) / `notify_whatsapp` (default `False`) fields on `Alert` —
+  Django migration `0061`, schema-of-record in agri-db (`c4d8e1f02a37`, PR AgriLogy/agri-db#30). -
+  ninja write schema (`AlertWriteIn`) + serializer expose both fields. -
+  `dispatch_alerts_for_reading` enqueues `send_alert_email` and/or `send_alert_whatsapp` after the
+  existing atomic grace-period claim, so dedup behaviour is preserved. - WhatsApp delivery via a
+  stdlib-only Twilio sender (`agriapi.whatsapp`, no SDK) to the owner's `phone_number`; creds from
+  `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_WHATSAPP_FROM`. Missing creds or no phone =
+  logged no-op, never raises (Celery won't retry+dupe). - Legacy alerts keep email-only behaviour.
+
+Supersedes #163 (which was stacked on the now-closed #161 and never went green); rebased clean onto
+  main with `0061` chained off `0060` and ruff-format applied.
+
+**Deploy:** apply agri-db#30 (`make upgrade-dev`/`upgrade-prod`) first, then set `TWILIO_*` on the
+  droplet `.env`.
+
+
 ## v1.61.1 (2026-06-25)
 
 ### Bug Fixes
