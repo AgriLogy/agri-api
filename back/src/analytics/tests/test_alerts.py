@@ -505,6 +505,26 @@ class DispatchAlertsForReadingTests(TestCase):
         _, send = self._dispatch(value=25.0)
         send.assert_called_once()
 
+    def test_grace_override_shortens_cadence(self):
+        # A 60s per-alert override re-fires after 90s even though the sensor's
+        # global grace is much longer (#37).
+        Alert.objects.filter(pk=self.alert.pk).update(grace_override_seconds=60)
+        self._dispatch(value=25.0)
+        Alert.objects.filter(pk=self.alert.pk).update(
+            last_emailed_at=timezone.now() - timedelta(seconds=90)
+        )
+        _, send = self._dispatch(value=25.0)
+        send.assert_called_once()
+
+    def test_no_override_still_uses_global_grace(self):
+        # Without an override, the global grace still silences a 90s-later read.
+        self._dispatch(value=25.0)
+        Alert.objects.filter(pk=self.alert.pk).update(
+            last_emailed_at=timezone.now() - timedelta(seconds=90)
+        )
+        _, send = self._dispatch(value=25.0)
+        send.assert_not_called()
+
     def test_inactive_alert_is_silent(self):
         Alert.objects.filter(pk=self.alert.pk).update(is_active=False)
         count, send = self._dispatch(value=25.0)

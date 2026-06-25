@@ -54,6 +54,7 @@ class AlertWriteIn(Schema):
     notify_email: bool | None = None
     notify_whatsapp: bool | None = None
     notify_sms: bool | None = None
+    grace_override_seconds: int | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -79,6 +80,7 @@ def _serialize(alert: Alert) -> dict[str, Any]:
             "notify_email",
             "notify_whatsapp",
             "notify_sms",
+            "grace_override_seconds",
         ],
     )
     d["threshold"] = (

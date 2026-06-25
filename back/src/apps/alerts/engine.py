@@ -193,8 +193,7 @@ def dispatch_alerts_for_reading(
     ).filter(match)
 
     now_ts = timezone.now()
-    grace_seconds = grace_period_seconds_for(sensor_key)
-    cutoff = now_ts - timedelta(seconds=grace_seconds)
+    default_grace = grace_period_seconds_for(sensor_key)
     enqueued = 0
 
     for alert in alerts_qs:
@@ -202,6 +201,13 @@ def dispatch_alerts_for_reading(
             continue
 
         from django.db.models import Q
+
+        # Per-alert grace override (#37): a non-null grace_override_seconds beats
+        # the global per-sensor default so a user can ask for a tighter cadence
+        # on one critical alert. NULL falls back to the sensor's global grace.
+        override = getattr(alert, "grace_override_seconds", None)
+        grace_seconds = override if override is not None else default_grace
+        cutoff = now_ts - timedelta(seconds=grace_seconds)
 
         won = (
             Alert.objects.filter(pk=alert.pk)

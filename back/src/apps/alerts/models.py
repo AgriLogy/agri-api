@@ -182,6 +182,11 @@ class Alert(_AlertBase):
         blank=True,
         db_constraint=False,
     )
+    # Optional per-alert re-notify cadence (seconds). When set, it overrides the
+    # global ``settings.ALERT_GRACE_PERIODS[sensor_key]`` for this one alert —
+    # e.g. "ping me every minute for this critical alert". NULL = use the global
+    # default. Schema in agri-db (migration a7b8c9d0e1f2).
+    grace_override_seconds = models.PositiveIntegerField(null=True, blank=True)
     last_triggered_at = models.DateTimeField(null=True, blank=True)
     # Stamped every time an alert email is actually dispatched. Distinct from
     # ``last_triggered_at`` (which is "first fire ever, for chart overlays")
