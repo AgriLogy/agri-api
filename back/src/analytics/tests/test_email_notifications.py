@@ -329,3 +329,30 @@ class TestSendPeriodicNotificationsTask:
         u.refresh_from_db()
         assert u.last_notified is not None
         assert u.last_notified >= before
+
+    def test_atomic_claim_prevents_double_send(self):
+        # Two consecutive beat runs (simulating the concurrent-beat race) must
+        # send the digest exactly ONCE: the first run's atomic claim stamps
+        # last_notified, so the second run's conditional UPDATE matches no row
+        # and the user is skipped. Without the claim the user would be re-sent.
+        u = self._make_user("racer", email="racer@example.com")
+
+        first = send_periodic_notifications()
+        second = send_periodic_notifications()
+
+        assert first["sent"] == 1
+        assert second["sent"] == 0
+        assert second["skipped"] == 1
+        assert len(mail.outbox) == 1
+        assert mail.outbox[0].to == [u.email]
+
+    def test_claim_helper_only_one_winner(self):
+        # The claim helper itself: the first call for a due user wins (True),
+        # an immediate second call loses (False) because the cadence window was
+        # just reset by the first claim.
+        from apps.users.notification_helper import claim_notification_slot
+
+        u = self._make_user("claimant", email="claimant@example.com")
+
+        assert claim_notification_slot(u) is True
+        assert claim_notification_slot(u) is False

@@ -15,6 +15,9 @@ phrased, edit ``agri.core.notifications.compose_notification_email``.
 
 from __future__ import annotations
 
+from datetime import timedelta
+
+from django.db.models import Q
 from django.utils.timezone import now
 
 from agri.core.notifications import compose_notification_email
@@ -27,6 +30,36 @@ def should_notify(user) -> bool:
         return True
     elapsed = now() - user.last_notified
     return elapsed.total_seconds() >= getattr(user, "notify_every", 240) * 60
+
+
+def claim_notification_slot(user) -> bool:
+    """Atomically claim this user's periodic-notification slot.
+
+    Runs a single conditional UPDATE that stamps ``last_notified = now`` only
+    when the cadence window has actually elapsed (``last_notified IS NULL`` or
+    older than ``notify_every`` minutes). Returns ``True`` when *this* call won
+    the slot (exactly one row updated), ``False`` when another concurrent beat
+    run already claimed it.
+
+    This closes the read-then-write race in ``send_periodic_notifications``:
+    two beat ticks could both pass ``should_notify`` before either wrote
+    ``last_notified``, double-sending the digest. With the claim, only one
+    UPDATE matches the WHERE; the loser gets ``False`` and skips. Mirrors the
+    alert engine's ``last_emailed_at`` claim.
+
+    The stamp is advanced up-front (before the send), so a provider failure
+    does not leave the user perpetually "due" and hammer the provider on every
+    tick — consistent with the cadence-clock policy in #180.
+    """
+    moment = now()
+    minutes = getattr(user, "notify_every", 240) or 240
+    cutoff = moment - timedelta(minutes=minutes)
+    User = type(user)
+    updated = User.objects.filter(
+        Q(last_notified__isnull=True) | Q(last_notified__lt=cutoff),
+        pk=user.pk,
+    ).update(last_notified=moment)
+    return updated == 1
 
 
 def _format_message(user, snapshot: dict) -> str:
