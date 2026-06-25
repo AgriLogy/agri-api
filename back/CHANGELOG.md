@@ -1,6 +1,25 @@
 # CHANGELOG
 
 
+## v1.71.0 (2026-06-25)
+
+### Features
+
+- **alerts**: Strategy param on /alerts/suggest (mean/percentile/sd)
+  ([#265](https://github.com/AgriLogy/agri-api/pull/265),
+  [`d3b956d`](https://github.com/AgriLogy/agri-api/commit/d3b956d373e81b978e8c6aa6dec843930710cf2e))
+
+Closes #264 — final open item of #37 (Item D).
+
+Bumps **agri-core 0.16.0→0.17.0** (PR AgriLogy/agri-core#42, which added the percentile/SD threshold
+  strategies) and adds an optional `?strategy=` query param to `GET /alerts/suggest`: - default
+  `mean` (unchanged behaviour), - `percentile` (direction-aware p90/p10), - `sd` (mean ± 2σ).
+
+Validated against `SUGGEST_STRATEGIES`; threaded through `engine.suggest_alert` →
+  `suggest_alert_for`. 4 endpoint tests (echo per strategy + 400 on unknown); verified against local
+  Postgres. Threshold math covered by agri-core's 11 unit tests.
+
+
 ## v1.70.0 (2026-06-25)
 
 ### Features
