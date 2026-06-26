@@ -1,6 +1,23 @@
 # CHANGELOG
 
 
+## v1.73.0 (2026-06-26)
+
+### Features
+
+- **activegraph**: Default water_level_status to True + backfill
+  ([#269](https://github.com/AgriLogy/agri-api/pull/269),
+  [`1aaf3c6`](https://github.com/AgriLogy/agri-api/commit/1aaf3c636edd8622f9ad3b3ac1f30af76b7a3fdc))
+
+Closes #268
+
+Aligns the water-level dashboard section with every other ActiveGraph `*_status` flag (all default
+  `True`). Model default flipped to `True`; Django migration `0066` does `AlterField(default=True)`
+  + a `RunPython` backfill (`water_level_status=False → True`, no-op reverse). Schema-of-record
+  change in agri-db (migration `c9d0e1f2a3b4`, **release 0.11.0**). Tests updated (new zone → True;
+  admin can toggle off). Verified vs local Postgres.
+
+
 ## v1.72.0 (2026-06-25)
 
 ### Features
