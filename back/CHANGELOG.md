@@ -1,6 +1,28 @@
 # CHANGELOG
 
 
+## v1.74.2 (2026-06-26)
+
+### Bug Fixes
+
+- **deploy**: Rebuild with AGRI_DB_RO_TOKEN instead of restart-only
+  ([#275](https://github.com/AgriLogy/agri-api/pull/275),
+  [`2b5e5c4`](https://github.com/AgriLogy/agri-api/commit/2b5e5c43b14efa552baa47a7cf6cc19d011bdd22))
+
+Closes #274
+
+Root cause of the current prod 502: the deploy workflow restarts containers without rebuilding, so
+  this session's agri-core 0.18.0 bump (adds `agri.core.et_forecast`) left new bind-mounted code on
+  the baked old venv → `ModuleNotFoundError: No module named 'agri.core.et_forecast'`.
+
+Fix: the SSH deploy now rebuilds `agri-api:latest` with `AGRI_DB_RO_TOKEN` (the existing CI secret)
+  as a build secret, then `up -d --no-deps` the three agri-api services. Build is layer-cached so
+  code-only deploys stay fast; `--no-deps` avoids the mailpit/redis container-name conflict.
+
+Merging this triggers a deploy run that rebuilds the droplet → cures the live 502 and establishes
+  durable auto-deploy.
+
+
 ## v1.74.1 (2026-06-26)
 
 ### Bug Fixes
