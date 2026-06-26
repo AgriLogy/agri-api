@@ -206,6 +206,34 @@ class EvaluateAlertTests(TestCase):
         alert = _alert(self.user, zone=self.zone, sensor_key="not_a_thing")
         self.assertIsNone(latest_value_for(alert).value)
 
+    def test_latest_value_for_notification_zone_uses_source_zone(self):
+        # An alert bound to a notification zone reads from its assignment's
+        # source zone, not user-wide (alert-dispatch cleanup).
+        from analytics.models import NotificationZone, NotificationZoneSensor
+
+        source_zone = _zone(self.user, name="basin")
+        other_zone = _zone(self.user, name="elsewhere")
+        nz = NotificationZone.objects.create(user=self.user, name="Tank watch")
+        NotificationZoneSensor.objects.create(
+            notification_zone=nz,
+            sensor_key="temperature_weather",
+            source_zone=source_zone,
+        )
+        alert = _alert(self.user, zone=None, notification_zone=nz)
+        now = timezone.now()
+        # A newer reading in the WRONG zone must be ignored...
+        TemperatureWeather.objects.create(
+            zone=other_zone, user=self.user, value=99.0, timestamp=now
+        )
+        # ...the (older) source-zone reading is the one returned.
+        TemperatureWeather.objects.create(
+            zone=source_zone,
+            user=self.user,
+            value=21.0,
+            timestamp=now - timedelta(minutes=1),
+        )
+        self.assertEqual(latest_value_for(alert).value, 21.0)
+
 
 # ---------------------------------------------------------------------------
 # 4. recent_triggers_for_user fan-out
@@ -488,6 +516,19 @@ class DispatchAlertsForReadingTests(TestCase):
         self.alert.refresh_from_db()
         self.assertIsNotNone(self.alert.last_emailed_at)
         self.assertIsNotNone(self.alert.last_triggered_at)
+
+    def test_channel_less_alert_does_not_win_claim(self):
+        # All delivery channels off → triggered but nothing sent, and the grace
+        # claim must NOT be consumed (no stamp, not counted).
+        Alert.objects.filter(pk=self.alert.pk).update(
+            notify_email=False, notify_whatsapp=False, notify_sms=False
+        )
+        count, send = self._dispatch(value=25.0)
+        self.assertEqual(count, 0)
+        send.assert_not_called()
+        self.alert.refresh_from_db()
+        self.assertIsNone(self.alert.last_emailed_at)
+        self.assertIsNone(self.alert.last_triggered_at)
 
     def test_grace_period_blocks_second_dispatch(self):
         # First reading wins, second (right after) must be silenced.
