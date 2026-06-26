@@ -16,6 +16,7 @@ blocked from writes like the other owner-facing routers.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from ninja import Router, Schema
@@ -26,6 +27,8 @@ from agriapi.api.auth import JwtAuth
 from agriapi.api.scope import block_if_technician
 from apps.alerts.engine import get_sensor_model
 from analytics.models import NotificationZone, NotificationZoneSensor, Zone
+
+log = logging.getLogger(__name__)
 
 router = Router()
 
@@ -167,6 +170,15 @@ def available_sensors(request):
                         }
                     )
             except Exception:
+                # A model-resolution / query error for one sensor key must not
+                # sink the whole listing, but log it so it's diagnosable rather
+                # than silently dropped.
+                log.warning(
+                    "available_sensors: skipping sensor_key %s for zone %s",
+                    key,
+                    z["id"],
+                    exc_info=True,
+                )
                 continue
         out.append({"zone_id": z["id"], "zone_name": z["name"], "sensors": keys})
     return {"zones": out}

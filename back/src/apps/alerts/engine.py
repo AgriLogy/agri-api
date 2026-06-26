@@ -67,16 +67,36 @@ def evaluate_alert(alert, value: float | None) -> bool:
 
 
 def latest_value_for(alert) -> LatestReading:
-    """Most recent value the alert applies to. Falls back to the alert's
-    owner when no zone is configured. ``LatestReading(None, None)`` when
-    nothing is available so callers don't need to handle ``DoesNotExist``.
+    """Most recent value the alert applies to. Scopes to the alert's farm
+    zone, or — for a notification-zone alert — the source zone of its matching
+    sensor assignment; falls back to the owner's data when no zone is
+    configured. ``LatestReading(None, None)`` when nothing is available so
+    callers don't need to handle ``DoesNotExist``.
     """
     if not alert.sensor_key or alert.sensor_key not in SENSOR_KEY_REGISTRY:
         return LatestReading(None, None)
 
     model = get_sensor_model(alert.sensor_key)
     qs = model.objects.all()
-    if alert.zone_id:
+    if getattr(alert, "notification_zone_id", None):
+        # Notification-zone alert (#57): scope to the source zone of the
+        # matching sensor assignment (source_zone NULL = the owner's data,
+        # mirroring agri-core's effective_zone_id_for_alert).
+        from analytics.models import NotificationZoneSensor
+
+        assignment = (
+            NotificationZoneSensor.objects.filter(
+                notification_zone_id=alert.notification_zone_id,
+                sensor_key=alert.sensor_key,
+            )
+            .order_by("id")
+            .first()
+        )
+        if assignment is not None and assignment.source_zone_id:
+            qs = qs.filter(zone_id=assignment.source_zone_id)
+        elif alert.user_id:
+            qs = qs.filter(user_id=alert.user_id)
+    elif alert.zone_id:
         qs = qs.filter(zone_id=alert.zone_id)
     elif alert.user_id:
         qs = qs.filter(user_id=alert.user_id)
@@ -153,8 +173,9 @@ def dispatch_alerts_for_reading(
     enqueues a task.
 
     Called from the ingest path AFTER the sensor row is created so the
-    alert reflects the data the database now contains. Returns the number
-    of emails enqueued (useful for tests).
+    alert reflects the data the database now contains. Returns the count of
+    triggered alerts that won the grace claim and were dispatched on at least
+    one channel (email/WhatsApp/SMS) — useful for tests.
     """
     if value is None:
         return 0
@@ -199,6 +220,17 @@ def dispatch_alerts_for_reading(
 
     for alert in alerts_qs:
         if not evaluate_alert(alert, value):
+            continue
+
+        # An alert with no delivery channel enabled would win the grace claim
+        # and stamp last_emailed_at / last_triggered_at without sending
+        # anything, burning the cadence slot for nothing. Skip it before the
+        # claim so a later re-enabled channel isn't left mid-grace.
+        if not (
+            getattr(alert, "notify_email", True)
+            or getattr(alert, "notify_whatsapp", False)
+            or getattr(alert, "notify_sms", False)
+        ):
             continue
 
         from django.db.models import Q
