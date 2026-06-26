@@ -11,14 +11,23 @@ jobs:
     steps:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          # The private agri-db git dependency needs a read credential at BUILD
+          # time. Same secret CI uses (ci.yml). `envs:` forwards it into the
+          # remote shell so the rebuild can authenticate the fetch.
+          AGRI_DB_RO_TOKEN: ${{ secrets.AGRI_DB_RO_TOKEN }}
         with:
           host: ${{ secrets.DO_HOST }}
           username: ${{ secrets.DO_USER }}
           key: ${{ secrets.DO_SSH_KEY }}
+          envs: AGRI_DB_RO_TOKEN
           # Stop on the first failed command instead of barrelling on and
-          # rebuilding stale code (the old script's `git pull` could abort on
+          # leaving stale code/venv (the old script's `git pull` could abort on
           # local changes while the job still reported success).
           script_stop: true
+          # A rebuild (uv sync) can take a few minutes; the default 10m is tight
+          # when the deps layer is cold.
+          command_timeout: 20m
           # IMPORTANT: single-line commands only. The appleboy SSH action runs
           # this under the droplet's login shell (zsh), and multi-line compound
           # constructs (if/case/for) fail to PARSE there — the whole script then
@@ -29,16 +38,17 @@ jobs:
             cd /root/agri-api
             git fetch origin main
             git reset --hard origin/main
-            docker restart agri-api-web agri-api-worker agri-api-beat
+            AGRI_DB_RO_TOKEN="$AGRI_DB_RO_TOKEN" docker compose -f docker-compose.yml build agri-api-web
+            docker compose -f docker-compose.yml up -d --no-deps agri-api-web agri-api-worker agri-api-beat
             docker image prune -f
-          # Why just reset + restart (no build / no `compose up`):
-          #   - app code is bind-mounted (./back:/code), so a code-only deploy
-          #     (the overwhelming majority) only needs a restart to take effect;
-          #     the web auto-reloads but the celery worker/beat do not.
-          #   - `docker compose up -d` conflicts here: mailpit/redis are owned by
-          #     another compose project ("container name already in use").
-          #   - a rebuild needs AGRI_DB_RO_TOKEN (private agri-db dep), which is
-          #     not on the droplet. So DEPENDENCY changes (back/uv.lock or
-          #     pyproject.toml) require a one-off manual rebuild on the droplet:
-          #       cd /root/agri-api && docker compose build agri-api-web \
-          #         && docker compose up -d --no-deps agri-api-web agri-api-worker agri-api-beat
+          # Why ALWAYS rebuild now (vs the old restart-only deploy):
+          #   - app code is bind-mounted (./back:/code), but the Python venv is
+          #     BAKED into the image. A restart-only deploy picks up new code on
+          #     the OLD venv, so any DEPENDENCY change (back/uv.lock or
+          #     pyproject.toml — e.g. an agri-core version bump) crashes the app
+          #     at import time (ModuleNotFoundError). That caused a 502 outage.
+          #   - the build is layer-cached: when deps are unchanged the uv-sync
+          #     layer is a cache hit, so code-only deploys stay fast.
+          #   - `--no-deps` recreates ONLY the three agri-api services, leaving
+          #     mailpit/redis (owned by another compose project) untouched, which
+          #     avoids the "container name already in use" conflict.
