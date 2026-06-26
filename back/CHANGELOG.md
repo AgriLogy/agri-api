@@ -1,6 +1,34 @@
 # CHANGELOG
 
 
+## v1.74.1 (2026-06-26)
+
+### Bug Fixes
+
+- **alerts**: Harden dispatch — skip channel-less alerts, nz-aware latest_value
+  ([#273](https://github.com/AgriLogy/agri-api/pull/273),
+  [`2ca8e17`](https://github.com/AgriLogy/agri-api/commit/2ca8e17cd94b782273afba60e4b8d653a7f39dde))
+
+Closes #272
+
+Post-merge cleanup from a convergence review of the alert-dispatch path (the review found **no
+  critical/major bugs** — these are minor hardening items): - **Channel-less alert** no longer wins
+  the grace claim: `dispatch_alerts_for_reading` skips an alert with
+  `notify_email`/`notify_whatsapp`/`notify_sms` all false **before** the atomic claim, so it doesn't
+  stamp `last_emailed_at`/`last_triggered_at` or count toward `enqueued` while sending nothing. -
+  **`latest_value_for` is notification-zone-aware**: resolves the reading stream via the matching
+  `NotificationZoneSensor.source_zone` (was silently falling through to user-wide scope). -
+  **Docstring**: `dispatch_alerts_for_reading` return value documented correctly (alerts dispatched
+  on any channel, not just emails). - **`available_sensors`**: logs the swallowed per-sensor
+  exception instead of dropping it silently.
+
+2 new tests (channel-less → 0 enqueued + no stamp; nz `latest_value` reads the source zone). Built
+  in an isolated git worktree to avoid colliding with a parallel agent in the same checkout.
+
+**Deliberately skipped** (noted as follow-ups): `grace_override_seconds` DB column type alignment
+  (cosmetic, needs a migration); the `available_sensors` N×25 query optimization.
+
+
 ## v1.74.0 (2026-06-26)
 
 ### Features
