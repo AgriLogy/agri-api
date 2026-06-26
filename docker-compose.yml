@@ -154,7 +154,14 @@ services:
     networks: [agro]
 
 networks:
+  # Postgres (agrydata), redis, and mailpit live in the legacy "agrilogy-back"
+  # compose project's network. Attach to it as EXTERNAL so RECREATED containers
+  # (the deploy rebuild does `up -d`, not just `restart`) can still resolve
+  # agrydata/redis by name. A non-external `agro` would create an isolated
+  # `agri-api_agro` network → "postgres not reachable at agrydata:5432" → 502.
   agro:
+    external: true
+    name: agrilogy-back_agro
 
 # Build-time secret: read-only PAT for the PRIVATE agri-db, which agri-core
 # transitively pulls. Sourced from the AGRI_DB_RO_TOKEN env var on the build
