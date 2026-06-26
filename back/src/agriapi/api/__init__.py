@@ -37,6 +37,7 @@ from apps.irrigation.router_manager_affirmation import (
 )
 from apps.alerts.router_notifications import router as notifications_router
 from apps.irrigation.router_reads import router as analytics_reads_router
+from apps.sensors.router_et_forecast import router as et_forecast_router
 from apps.sensors.router_sensors import router as sensors_router
 from apps.sensors.router_weather_ingest import router as weather_ingest_router
 from apps.bivocom.router import router as bivocom_router
@@ -95,6 +96,9 @@ api.add_router(
 
 # Sensor-key catalog (GET /sensors) + per-sensor readings (GET, PATCH /sensors/<slug>).
 api.add_router("/sensors", sensors_router, tags=["sensors"])
+
+# Weather: 7-day reference-ET0 forecast (GET /weather/et-forecast).
+api.add_router("/weather", et_forecast_router, tags=["weather"])
 
 # Owner-facing technician management (scoped read-only logins).
 api.add_router("/technicians", technicians_router, tags=["technicians"])
