@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v1.74.0 (2026-06-26)
+
+### Features
+
+- **weather**: 7-day reference-ET0 forecast endpoint (mock-first)
+  ([#271](https://github.com/AgriLogy/agri-api/pull/271),
+  [`14acb3d`](https://github.com/AgriLogy/agri-api/commit/14acb3d78cfdd7dfdc66c470cb4cdadc4b6dc61a))
+
+Closes #270 (agrilogy-front #18)
+
+`GET /weather/et-forecast?zone_id=&days=` → per-day ET0 forecast for the caller's zone. Daily
+  weather from a swappable provider (`apps.sensors.forecast_provider`): deterministic seasonal
+  **mock** by default (no key, reproducible), real **OpenWeather** stub behind
+  `ET_FORECAST_PROVIDER=openweather` + `WEATHER_API_KEY` (documented follow-up). ET0 math = pure
+  agri-core `et0_forecast` (pin 0.17.0→0.18.0). Owner-scoped, read-only. 5 endpoint tests (auth,
+  7-day shape, days clamp, determinism, cross-user 404) green vs local Postgres.
+
+
 ## v1.73.0 (2026-06-26)
 
 ### Features
