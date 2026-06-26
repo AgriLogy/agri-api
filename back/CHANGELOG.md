@@ -1,6 +1,26 @@
 # CHANGELOG
 
 
+## v1.74.3 (2026-06-26)
+
+### Bug Fixes
+
+- **deploy**: Attach agri-api to external agrilogy-back_agro network
+  ([#277](https://github.com/AgriLogy/agri-api/pull/277),
+  [`3913948`](https://github.com/AgriLogy/agri-api/commit/39139489733010b3dbb2421f4ed05385eb5ace7c))
+
+Closes #276
+
+Follow-up to #275. The rebuild fix worked (no more et_forecast crash), but recreating containers
+  exposed a second issue: the agri-api compose 'agro' network was non-external, so recreated
+  services landed on an isolated agri-api_agro network and lost connectivity to agrydata (DB) /
+  redis / mailpit, which live on the legacy agrilogy-back_agro network → 502 'postgres not
+  reachable'.
+
+Fix: `agro` is now `external: true, name: agrilogy-back_agro`. Recreated containers join the network
+  where the DB actually lives, matching the pre-existing (restart-preserved) wiring.
+
+
 ## v1.74.2 (2026-06-26)
 
 ### Bug Fixes
