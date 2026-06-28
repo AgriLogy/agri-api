@@ -1,6 +1,34 @@
 # CHANGELOG
 
 
+## v1.75.0 (2026-06-28)
+
+### Features
+
+- **alerts**: Derive type from sensor_key server-side
+  ([#279](https://github.com/AgriLogy/agri-api/pull/279),
+  [`a9c08af`](https://github.com/AgriLogy/agri-api/commit/a9c08af2a9493c82b84e29a45afd93c49c62466e))
+
+Closes #278. Ticks the `type ↔ sensor_key consistency` box on #37.
+
+## What The alert write path validated `sensor_key` (against `SENSOR_KEY_REGISTRY`) and zone
+  ownership, but never enforced that an alert's `type` matched its `sensor_key`. A client could
+  persist an inconsistent row, e.g. `type="Pressure"` + `sensor_key="soil_moisture_low"`.
+
+## How `type` is now **server-authoritative**: `_apply()` derives it from the registry's canonical
+  `type` for the alert's `sensor_key` on every create/update (`_canonical_type_for`).
+
+- A mismatched `type` is normalized to the canonical one; an omitted `type` is filled in. -
+  Re-derived on every write, so changing `sensor_key` keeps `type` consistent and legacy rows
+  self-heal. - Alerts with no `sensor_key` (e.g. periodic maintenance) keep the client-supplied
+  `type`. - Backward-compatible, **no schema change**.
+
+## Tests 5 new cases in `AlertCRUDTests`: mismatch override, omitted-type derivation,
+  PATCH-sensor_key re-derivation, and type-preserved-without-sensor_key. Full `test_alerts.py` green
+  locally except the 3 pre-existing `AlertSuggestStrategyEndpointTests` (Postgres-only dual-ORM,
+  pass in CI). Ruff lint + format clean.
+
+
 ## v1.74.3 (2026-06-26)
 
 ### Bug Fixes
