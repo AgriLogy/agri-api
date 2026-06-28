@@ -67,7 +67,7 @@ dependencies = [
     # Revly: pinned by git tag (not @main). agri-core transitively pulls the
     # PRIVATE agri-db, so CI/Docker need AGRI_DB_RO_TOKEN as a git credential
     # for `uv sync` to resolve it.
-    "agri-core @ git+https://github.com/AgriLogy/agri-core.git@0.18.0",
+    "agri-core @ git+https://github.com/AgriLogy/agri-core.git@0.18.1",
 ]
 
 [dependency-groups]
