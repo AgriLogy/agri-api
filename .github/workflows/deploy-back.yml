@@ -39,6 +39,7 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
             AGRI_DB_RO_TOKEN="$AGRI_DB_RO_TOKEN" docker compose -f docker-compose.yml build agri-api-web
+            docker compose -f docker-compose.yml run --rm --no-deps agri-api-web bash /code/docker-entrypoint.sh migrate
             docker compose -f docker-compose.yml up -d --no-deps agri-api-web agri-api-worker agri-api-beat
             docker image prune -f
           # Why ALWAYS rebuild now (vs the old restart-only deploy):

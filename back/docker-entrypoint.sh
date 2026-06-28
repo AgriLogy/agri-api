@@ -7,6 +7,7 @@
 #   web      gunicorn when DJANGO_ENV=prod, else Django dev server, on :8000
 #   worker   Celery worker
 #   beat     Celery beat with the DatabaseScheduler
+#   migrate  Apply agri-db Alembic migrations, then exit (run by deploy)
 #   shell    Drop into bash for debugging
 #
 # Designed to be idempotent — a container that crashes and restarts
@@ -78,10 +79,10 @@ PY
 }
 
 # --- Migrations -------------------------------------------------------------
-# Schema is owned by the agri-db repo (Alembic). Django no longer runs
-# `migrate` on container boot — see ../agri-db.
-# To bootstrap a fresh Supabase project: `make upgrade-dev` in agri-db
-# BEFORE bringing this stack up.
+# Schema is owned by the agri-db repo (Alembic). Django never runs `migrate`.
+# In prod, the deploy pipeline applies Alembic migrations via the `migrate`
+# role below (run before the app containers (re)start). For a fresh local
+# stack: `make upgrade-dev` in agri-db BEFORE bringing this stack up.
 
 # --- Roles ------------------------------------------------------------------
 case "$ROLE" in
@@ -134,6 +135,47 @@ case "$ROLE" in
     log "Starting Celery beat"
     exec celery -A agriapi beat --loglevel=info \
       --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    ;;
+  migrate)
+    # Apply the bundled agri-db Alembic migrations to the live database, then
+    # exit. Run by the deploy pipeline BEFORE the app containers are (re)started,
+    # so new code never boots against an un-migrated schema.
+    #
+    # Gated OFF by default: until the live DB is reconciled with Alembic (see
+    # below), this is a no-op so merging the deploy wiring can't change prod.
+    # Flip RUN_DB_MIGRATIONS=true in the env once the cutover is done.
+    if [[ "${RUN_DB_MIGRATIONS:-false}" != "true" ]]; then
+      log "RUN_DB_MIGRATIONS != true — skipping Alembic migrations (no-op)."
+      exit 0
+    fi
+    wait_for_postgres
+    # Django builds DATABASES and mirrors it into AGRI_DB_URL
+    # (postgresql+psycopg://… — the very URL agri-core/SQLAlchemy use). Alembic's
+    # env.py reads DATABASE_URL, so resolve one and hand it across.
+    log "Resolving the live database URL from Django settings"
+    DB_URL="$(DJANGO_SETTINGS_MODULE=agriapi.settings python -c 'import django; django.setup(); import os; print(os.environ.get("AGRI_DB_URL", ""))')"
+    if [[ -z "$DB_URL" ]]; then
+      log "Could not resolve AGRI_DB_URL (non-Postgres or unset) — aborting."
+      exit 1
+    fi
+    export DATABASE_URL="$DB_URL"
+    # Has this DB ever been Alembic-managed? A legacy DB bootstrapped by the
+    # ensure_*-scripts already has every table but no alembic_version row, so
+    # replaying from base would fail ("relation already exists"). That one-time
+    # reconciliation must be an EXPLICIT stamp to the revision matching the live
+    # schema — never a guess. Set ALEMBIC_STAMP_REV (e.g. "head" once the pinned
+    # agri-db == the live schema) for that first run, then unset it.
+    if python -c 'import os,sqlalchemy as sa,sys; sys.exit(0 if sa.inspect(sa.create_engine(os.environ["DATABASE_URL"])).has_table("alembic_version") else 1)'; then
+      log "alembic_version present → upgrade head"
+      exec agri-migrate upgrade head
+    elif [[ -n "${ALEMBIC_STAMP_REV:-}" ]]; then
+      log "alembic_version absent → one-time stamp to '$ALEMBIC_STAMP_REV' (legacy DB reconciliation)"
+      exec agri-migrate stamp "$ALEMBIC_STAMP_REV"
+    else
+      log "alembic_version absent and ALEMBIC_STAMP_REV unset — refusing to replay from base on a populated DB."
+      log "Set ALEMBIC_STAMP_REV to the revision matching the live schema (once), then redeploy."
+      exit 1
+    fi
     ;;
   shell)
     exec bash "$@"
