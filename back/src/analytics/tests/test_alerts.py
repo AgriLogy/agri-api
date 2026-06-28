@@ -365,6 +365,49 @@ class AlertCRUDTests(TestCase):
         )
         self.assertEqual(r.status_code, 400)
 
+    def test_create_overrides_mismatched_type_from_sensor_key(self):
+        # #37: type is server-authoritative — a client sending a type that
+        # doesn't match the sensor_key gets the registry's canonical type.
+        # soil_moisture_medium → "Humidity".
+        r = self.client.post(
+            "/alerts", self._create_payload(type="Pressure"), format="json"
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.json()["type"], "Humidity")
+        alert = Alert.objects.get(pk=r.json()["id"])
+        self.assertEqual(alert.type, "Humidity")
+
+    def test_create_derives_type_when_omitted(self):
+        # type may be omitted entirely; it's derived from the sensor_key.
+        payload = self._create_payload()
+        payload.pop("type")
+        r = self.client.post("/alerts", payload, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.json()["type"], "Humidity")
+
+    def test_patch_sensor_key_redirects_type(self):
+        # Changing sensor_key on an existing alert re-derives type so the row
+        # never drifts out of consistency. temperature_weather → "Weather
+        # Temperature".
+        a = _alert(self.user, zone=self.zone, sensor_key="soil_moisture_medium")
+        r = self.client.patch(
+            f"/alerts/{a.id}",
+            {"sensor_key": "temperature_weather"},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        a.refresh_from_db()
+        self.assertEqual(a.type, "Weather Temperature")
+
+    def test_type_kept_when_no_sensor_key(self):
+        # A maintenance-style alert carries a type but no sensor_key — the
+        # client value is preserved (nothing in the registry to derive from).
+        payload = self._create_payload(type="Periodic maintenance")
+        payload.pop("sensor_key")
+        r = self.client.post("/alerts", payload, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.json()["type"], "Periodic maintenance")
+
     def test_list_only_returns_callers_alerts(self):
         _alert(self.user, zone=self.zone, name="mine")
         _alert(self.other, zone=_zone(self.other, name="b"), name="theirs")

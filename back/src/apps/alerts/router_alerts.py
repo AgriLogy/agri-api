@@ -96,6 +96,16 @@ def _serialize(alert: Alert) -> dict[str, Any]:
     return d
 
 
+def _canonical_type_for(sensor_key: str | None) -> str | None:
+    """The registry's authoritative ``type`` for a sensor_key, or ``None`` when
+    the key is empty/unknown (so the caller leaves the client value untouched —
+    e.g. a maintenance alert that carries a ``type`` but no ``sensor_key``)."""
+    if not sensor_key:
+        return None
+    spec = SENSOR_KEY_REGISTRY.get(sensor_key)
+    return spec.get("type") if spec else None
+
+
 def _apply(alert: Alert, payload: AlertWriteIn) -> Alert:
     data = payload.model_dump(exclude_unset=True)
     # `zone` / `notification_zone` arrive as FK ids; assign them to the *_id
@@ -106,6 +116,15 @@ def _apply(alert: Alert, payload: AlertWriteIn) -> Alert:
         alert.notification_zone_id = data.pop("notification_zone")
     for k, v in data.items():
         setattr(alert, k, v)
+    # `type` is server-authoritative: when the alert carries a known sensor_key,
+    # derive `type` from the registry so a client can't persist a mismatch like
+    # type="Pressure" + sensor_key="soil_moisture_low" (#37). Re-derived on every
+    # write, so changing sensor_key keeps type consistent — and legacy rows
+    # self-heal. Alerts with no sensor_key (e.g. periodic maintenance) keep the
+    # client-supplied type.
+    canonical = _canonical_type_for(alert.sensor_key)
+    if canonical is not None:
+        alert.type = canonical
     return alert
 
 
