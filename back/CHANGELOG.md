@@ -1,6 +1,36 @@
 # CHANGELOG
 
 
+## v1.76.0 (2026-06-28)
+
+### Features
+
+- **deploy**: Auto-apply agri-db Alembic migrations on prod (default-off)
+  ([#281](https://github.com/AgriLogy/agri-api/pull/281),
+  [`ca41b9c`](https://github.com/AgriLogy/agri-api/commit/ca41b9c01b40b4e030b07e852e9e1c6b1fd70995))
+
+Closes #280. Pairs with agri-db #44 (the empty-DB Alembic gate).
+
+## What Prod schema changes can now flow through Alembic on deploy instead of hand-applied
+  `ensure_*` scripts.
+
+- **`migrate` entrypoint role** — resolves the live DB URL exactly as Django does (`AGRI_DB_URL` →
+  `agrydata`, `postgresql+psycopg://…`) and runs the bundled `agri-migrate upgrade head`. -
+  **`deploy-back.yml`** — runs `… docker-entrypoint.sh migrate` after build, **before** `up -d`, so
+  new code never boots on an un-migrated schema. A failed migration aborts the deploy (`script_stop:
+  true`). - **Default-off** — `RUN_DB_MIGRATIONS` unset → the step logs and exits 0. Merging this
+  changes nothing on prod (verified locally). - **Safe legacy handling** — absent `alembic_version`
+  refuses to replay from base; a one-time reconciliation needs an explicit `ALEMBIC_STAMP_REV`.
+
+## Enabling (one-time) The container bundles agri-db **0.8.0** (via agri-core 0.18.0) while live is
+  at **0.11.x**, and the DB is unstamped. Turning it on requires closing that pin gap
+  (agri-db→agri-core→agri-api release chain) + a one-time stamp — full runbook in
+  `docs/MIGRATIONS_PROD_CUTOVER.md`. That cutover is intentionally **not** in this PR.
+
+## Verified `bash -n` clean; the default no-op path exits 0 without touching the DB. The active path
+  can only be exercised once the cutover lands.
+
+
 ## v1.75.0 (2026-06-28)
 
 ### Features
