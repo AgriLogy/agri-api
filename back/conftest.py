@@ -144,13 +144,15 @@ def _create_device_table(django_db_setup, django_db_blocker):
     """
     from django.db import connection
 
-    from apps.irrigation.models import Device
+    from apps.irrigation.models import Device, DeviceSensor
     from apps.lorawan.chirpstack.models import LoraUplink
 
     with django_db_blocker.unblock():
         existing = connection.introspection.table_names()
         with connection.schema_editor() as editor:
-            for model in (Device, LoraUplink):
+            # DeviceSensor (analytics_devicesensor) is unmanaged too — its prod
+            # DDL lives in the agri-db Alembic migration 00a3976cb808.
+            for model in (Device, DeviceSensor, LoraUplink):
                 if model._meta.db_table not in existing:
                     editor.create_model(model)
     yield

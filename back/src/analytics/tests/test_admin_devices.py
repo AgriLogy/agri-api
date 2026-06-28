@@ -97,6 +97,104 @@ class TestDeviceRegistry:
         assert admin_bearer.delete(f"{URL}/{pk}").status_code == 404
 
 
+@pytest.mark.django_db
+class TestDeviceSensors:
+    """CRUD over /devices/<id>/sensors — the admin-configurable router→sensor map."""
+
+    def _device(self, admin_bearer, username, **overrides):
+        return admin_bearer.post(
+            URL, _payload(username, **overrides), format="json"
+        ).json()["id"]
+
+    def test_non_admin_is_403(self, admin_bearer, user_bearer, normal_user):
+        did = self._device(admin_bearer, normal_user.username)
+        r = user_bearer.post(
+            f"{URL}/{did}/sensors",
+            {"tag_name": "ta", "sensor_key": "temperature_weather"},
+            format="json",
+        )
+        assert r.status_code == 403
+
+    def test_attach_lists_and_serializes(self, admin_bearer, normal_user, zone_factory):
+        zone = zone_factory(normal_user, name="Bassin")
+        did = self._device(admin_bearer, normal_user.username, zone_id=zone.id)
+        r = admin_bearer.post(
+            f"{URL}/{did}/sensors",
+            {"tag_name": "ta", "sensor_key": "temperature_weather", "zone_id": zone.id},
+            format="json",
+        )
+        assert r.status_code == 201, r.content
+        body = r.json()
+        assert body["tag_name"] == "ta"
+        assert body["sensor_key"] == "temperature_weather"
+        assert body["zone"] == zone.id
+        listed = admin_bearer.get(f"{URL}/{did}/sensors").json()
+        assert [s["tag_name"] for s in listed] == ["ta"]
+
+    def test_unknown_sensor_key_rejected(self, admin_bearer, normal_user):
+        did = self._device(admin_bearer, normal_user.username)
+        r = admin_bearer.post(
+            f"{URL}/{did}/sensors",
+            {"tag_name": "ta", "sensor_key": "bogus"},
+            format="json",
+        )
+        assert r.status_code == 400
+
+    def test_duplicate_tag_rejected(self, admin_bearer, normal_user):
+        did = self._device(admin_bearer, normal_user.username)
+        payload = {"tag_name": "ta", "sensor_key": "temperature_weather"}
+        assert (
+            admin_bearer.post(
+                f"{URL}/{did}/sensors", payload, format="json"
+            ).status_code
+            == 201
+        )
+        r = admin_bearer.post(f"{URL}/{did}/sensors", payload, format="json")
+        assert r.status_code == 400
+
+    def test_zone_not_owned_rejected(
+        self, admin_bearer, normal_user, other_user, zone_factory
+    ):
+        did = self._device(admin_bearer, normal_user.username)
+        foreign = zone_factory(other_user, name="Other")
+        r = admin_bearer.post(
+            f"{URL}/{did}/sensors",
+            {
+                "tag_name": "ta",
+                "sensor_key": "temperature_weather",
+                "zone_id": foreign.id,
+            },
+            format="json",
+        )
+        assert r.status_code == 400
+
+    def test_patch_and_delete(self, admin_bearer, normal_user):
+        did = self._device(admin_bearer, normal_user.username)
+        sid = admin_bearer.post(
+            f"{URL}/{did}/sensors",
+            {"tag_name": "ta", "sensor_key": "temperature_weather"},
+            format="json",
+        ).json()["id"]
+        r = admin_bearer.patch(
+            f"{URL}/{did}/sensors/{sid}",
+            {"sensor_key": "humidity_weather", "is_active": False},
+            format="json",
+        )
+        assert r.status_code == 200
+        assert r.json()["sensor_key"] == "humidity_weather"
+        assert r.json()["is_active"] is False
+        assert admin_bearer.delete(f"{URL}/{did}/sensors/{sid}").status_code == 200
+        assert admin_bearer.delete(f"{URL}/{did}/sensors/{sid}").status_code == 404
+
+    def test_attach_to_missing_device_404(self, admin_bearer):
+        r = admin_bearer.post(
+            f"{URL}/999999/sensors",
+            {"tag_name": "ta", "sensor_key": "temperature_weather"},
+            format="json",
+        )
+        assert r.status_code == 404
+
+
 class TestClassifyDeviceHealth:
     """Pure health classifier — no DB."""
 

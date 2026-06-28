@@ -609,6 +609,50 @@ class Device(_IrrigationBase):
         return f"{self.device_type}:{self.serial}"
 
 
+class DeviceSensor(_IrrigationBase):
+    """A sensor carried by a registered :class:`Device` (router/gateway).
+
+    Maps the device's wire tag (e.g. a Bivocom Modbus tag like ``ta``) to a
+    ``sensor_key`` and the farm zone its readings belong to, so an admin can
+    onboard a router's sensors as DATA — no per-device code. ``zone`` null =
+    inherit the device's own zone at ingest time.
+    """
+
+    device = models.ForeignKey(
+        Device,
+        on_delete=models.CASCADE,
+        related_name="sensors",
+        db_constraint=False,
+    )
+    # The device's wire tag for this sensor (e.g. a Bivocom Modbus tag 'ta').
+    tag_name = models.CharField(max_length=64)
+    # Stable sensor identifier from SENSOR_KEY_REGISTRY (e.g. 'temperature_weather').
+    sensor_key = models.CharField(max_length=64)
+    zone = models.ForeignKey(
+        "analytics.Zone",
+        on_delete=models.SET_NULL,
+        related_name="device_sensors",
+        null=True,
+        blank=True,
+        db_constraint=False,
+    )
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)
+
+    class Meta:
+        app_label = "analytics"
+        db_table = "analytics_devicesensor"
+        # Schema-of-record in agri-db (Alembic migration 00a3976cb808); created
+        # session-wide in the test DB by conftest. managed=False keeps it out of
+        # the migration graph; db_constraint=False on the FKs drops the DB-level
+        # constraint so the postgres CI flush can TRUNCATE.
+        managed = False
+        unique_together = [("device", "tag_name")]
+
+    def __str__(self):
+        return f"{self.device_id}:{self.tag_name}->{self.sensor_key}"
+
+
 class IrrigationProgram(_IrrigationBase):
     """A scheduled irrigation program for a zone: fire on the chosen weekdays at
     a start time, for a duration (or target volume). The beat task
