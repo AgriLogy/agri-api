@@ -55,6 +55,7 @@ from apps.sensors.router_sensor_data import router as sensor_data_router
 from apps.irrigation.router_records import router as records_router
 from apps.irrigation.router_monitoring import router as monitoring_router
 from agriapi.api.router_db import router as db_admin_router
+from apps.irrigation.router_backfill import router as backfill_router
 
 api = NinjaAPI(
     title="Agrilogy API",
@@ -119,6 +120,9 @@ api.add_router("", analytics_admin_router, tags=["admin"])
 # Generic database back-office: staff CRUD over every model via introspection
 # (mounted at empty prefix; routes carry their own /admin/db/* paths).
 api.add_router("", db_admin_router, tags=["admin-db"])
+
+# Admin sensor-data backfill (synthesize continuation data up to now).
+api.add_router("/admin", backfill_router, tags=["admin-backfill"])
 
 # Business-admin: billing/subscriptions, audit log, system settings.
 api.add_router("/admin/billing", billing_router, tags=["admin-billing"])
