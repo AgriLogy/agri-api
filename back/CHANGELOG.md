@@ -1,6 +1,35 @@
 # CHANGELOG
 
 
+## v1.78.0 (2026-06-30)
+
+### Features
+
+- **admin**: Sensor-data backfill to revive stale series
+  ([#289](https://github.com/AgriLogy/agri-api/pull/289),
+  [`10324fb`](https://github.com/AgriLogy/agri-api/commit/10324fba30f45bbf72fecf4cb5835402de312062))
+
+Closes #288
+
+Adds a staff-only backfill so an admin can revive a user/zone whose sensor feed stopped — filling
+  the gap up to now from the back-office, **no SSH or code**.
+
+### Endpoints (`/api/admin`) - `GET /users/{username}/zones/{zone_id}/backfill-status` — last
+  reading, gap (hours), series-with-data. - `POST /users/{username}/zones/{zone_id}/backfill` —
+  `{start?, end?, interval_minutes=60, dry_run}`.
+
+### How it generates Schema-introspected: every model with `user`+`zone`+`timestamp` fields is a
+  target (37 series). For each, the last real row is carried forward at the chosen interval, with
+  light ±5% jitter on numeric columns, **skipping timestamps that already exist** (idempotent).
+  Bulk-inserted under per-model/total caps. Audited. Empty zone → 400; already-current → 0 rows.
+
+### Tests `test_admin_backfill.py` — 7 tests: auth (401/403), status gap, creates-rows +
+  carry-forward, dry-run writes nothing, idempotent re-run, empty-zone 400. All green (14 incl.
+  db-crud).
+
+Powers the agri-admin **Backfill** tab (separate PR).
+
+
 ## v1.77.0 (2026-06-30)
 
 ### Chores
