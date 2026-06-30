@@ -54,6 +54,7 @@ from apps.irrigation.router_admin_kc import router as admin_kc_router
 from apps.sensors.router_sensor_data import router as sensor_data_router
 from apps.irrigation.router_records import router as records_router
 from apps.irrigation.router_monitoring import router as monitoring_router
+from agriapi.api.router_db import router as db_admin_router
 
 api = NinjaAPI(
     title="Agrilogy API",
@@ -114,6 +115,10 @@ api.add_router("/ingest", weather_ingest_router, tags=["ingest"])
 
 # Admin tree (KPIs, per-user resources, admin alert override).
 api.add_router("", analytics_admin_router, tags=["admin"])
+
+# Generic database back-office: staff CRUD over every model via introspection
+# (mounted at empty prefix; routes carry their own /admin/db/* paths).
+api.add_router("", db_admin_router, tags=["admin-db"])
 
 # Business-admin: billing/subscriptions, audit log, system settings.
 api.add_router("/admin/billing", billing_router, tags=["admin-billing"])
