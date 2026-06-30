@@ -1,6 +1,49 @@
 # CHANGELOG
 
 
+## v1.77.0 (2026-06-30)
+
+### Chores
+
+- **deps**: Bump agri-core 0.18.0 → 0.18.1 (pulls agri-db 0.11.1)
+  ([#283](https://github.com/AgriLogy/agri-api/pull/283),
+  [`1718490`](https://github.com/AgriLogy/agri-api/commit/17184901634a49be666bd389300900e14ac55362))
+
+Closes #282. Final link in the db→core→api pin chain.
+
+Bumps agri-core to **0.18.1**, which pins agri-db **0.11.1** — so the container's bundled Alembic
+  head now matches the live schema (0.11.x) instead of lagging at 0.8.0. This is the prerequisite
+  for turning on the deploy-time migration auto-apply (#281 / `docs/MIGRATIONS_PROD_CUTOVER.md`).
+
+`uv lock` regenerated (agri-core 0.18.0→0.18.1, agri-db 0.8.0→0.11.1). Local suite **495 passed**;
+  the 4 sqlite failures are the known Postgres-only dual-ORM tests that pass under CI's Postgres
+  gate.
+
+### Features
+
+- **admin**: Generic database CRUD API over every model
+  ([#287](https://github.com/AgriLogy/agri-api/pull/287),
+  [`7ed3da3`](https://github.com/AgriLogy/agri-api/commit/7ed3da307d94dc926de2c6d11a42109028819a3d))
+
+Closes #286
+
+Adds a staff-only, schema-introspected CRUD API so **any** table is manageable from the admin
+  console with **no per-table code** — new models appear automatically.
+
+### Endpoints (`/api/admin/db`) - `GET /tables` — every model + row count - `GET
+  /tables/{key}/schema` — field types, requiredness, choices, FK relations - `GET
+  /tables/{key}/rows` — server-side search / sort / pagination - `GET|POST|PATCH|DELETE
+  /tables/{key}/rows[/{pk}]` — full CRUD
+
+`key` is `app_label.modelname`. All routes require JWT + `is_staff`; writes are audit-logged; bad
+  input returns 400 (not 500); Django-internal bookkeeping tables are hidden.
+
+### Tests `test_admin_db.py` — 7 tests: auth gating (401/403), introspection (tables/schema/FK),
+  full CRUD lifecycle, and 400-on-invalid. All green.
+
+Powers the agri-admin **Database** section (separate PR).
+
+
 ## v1.76.0 (2026-06-28)
 
 ### Features
