@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v1.78.1 (2026-07-01)
+
+### Bug Fixes
+
+- **admin**: Backfill each series from its own last reading
+  ([#291](https://github.com/AgriLogy/agri-api/pull/291),
+  [`8c5104d`](https://github.com/AgriLogy/agri-api/commit/8c5104df9616a0335e6435c24eed5a7efa623eba))
+
+Closes #290
+
+Auto backfill used a single global start (newest timestamp across all series). Once one series was
+  current, stale series were skipped. Now, in auto mode, **each series extends from its own last
+  reading**; an explicit `start` still applies to all. Adds a regression test with an uneven pair
+  (one stale, one fresh). 8/8 pass.
+
+
 ## v1.78.0 (2026-06-30)
 
 ### Features
