@@ -181,46 +181,42 @@ def backfill(request, username: str, zone_id: int, payload: BackfillIn):
         timezone.make_aware(start) if (start and timezone.is_naive(start)) else start
     )
     start_auto = start is None
-    # Default start: just after the last existing reading.
-    if start_auto:
-        last = _last_data_ts(user, zone)
-        if last is None:
-            return Response(
-                {"detail": "This zone has no existing data to extend from."},
-                status=400,
-            )
-        start = last + step
-
-    if start > end:
-        # Auto start past the window just means the series is already current.
-        if start_auto:
-            return {
-                "dry_run": payload.dry_run,
-                "zone_id": zone_id,
-                "start": start.isoformat(),
-                "end": end.isoformat(),
-                "interval_minutes": interval,
-                "rows_created": 0,
-                "per_series": {},
-            }
+    # An explicit start must precede end; an auto (per-series) start is derived
+    # below from each series' own last reading, so series can be at different
+    # freshness and each still gets filled.
+    if not start_auto and start > end:
         return Response({"detail": "start must be before end."}, status=400)
+
+    models = _backfillable_models()
+    if start_auto and not any(
+        m.objects.filter(user=user, zone=zone).exists() for m in models
+    ):
+        return Response(
+            {"detail": "This zone has no existing data to extend from."},
+            status=400,
+        )
 
     per_model: dict[str, int] = {}
     total = 0
-    for model in _backfillable_models():
+    for model in models:
         last_row = (
             model.objects.filter(user=user, zone=zone).order_by("-timestamp").first()
         )
         if last_row is None:
             continue
+        # Auto mode extends each series from its own last reading; explicit mode
+        # uses the shared start for every series.
+        model_start = (last_row.timestamp + step) if start_auto else start
+        if model_start > end:
+            continue
         copy = _copy_fields(model)
         existing = set(
             model.objects.filter(
-                user=user, zone=zone, timestamp__gte=start, timestamp__lte=end
+                user=user, zone=zone, timestamp__gte=model_start, timestamp__lte=end
             ).values_list("timestamp", flat=True)
         )
         rows = []
-        ts = start
+        ts = model_start
         while ts <= end and len(rows) < _MAX_ROWS_PER_MODEL:
             if total + len(rows) >= _MAX_ROWS_TOTAL:
                 break
@@ -250,7 +246,7 @@ def backfill(request, username: str, zone_id: int, payload: BackfillIn):
     return {
         "dry_run": payload.dry_run,
         "zone_id": zone_id,
-        "start": start.isoformat(),
+        "start": start.isoformat() if start else "per-series",
         "end": end.isoformat(),
         "interval_minutes": interval,
         "rows_created": total,

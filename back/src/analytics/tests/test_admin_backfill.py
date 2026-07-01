@@ -109,6 +109,37 @@ class TestBackfill:
         ).json()
         assert second["rows_created"] == 0
 
+    def test_uneven_series_each_extend_from_own_last(self, admin_bearer, normal_user):
+        # One series is stale (10d), another is already current. Auto backfill
+        # must fill the stale one from ITS last point, not skip it because a
+        # different series is fresh.
+        z = _zone_for(normal_user)
+        WL = apps.get_model("analytics", "waterlevelsensor")
+        WF = apps.get_model("analytics", "waterflowsensor")
+        WL.objects.create(
+            user=normal_user,
+            zone=z,
+            value=10.0,
+            timestamp=timezone.now() - timedelta(days=10),
+        )
+        WF.objects.create(
+            user=normal_user,
+            zone=z,
+            value=5.0,
+            timestamp=timezone.now() - timedelta(minutes=30),
+        )
+        resp = admin_bearer.post(
+            _url(normal_user.username, z.id),
+            data={"interval_minutes": 1440},
+            format="json",
+        )
+        assert resp.status_code == 200, resp.content
+        per = resp.json()["per_series"]
+        # Stale water-level series gets backfilled...
+        assert per.get("analytics.waterlevelsensor", 0) > 0
+        # ...the already-current flow series does not.
+        assert "analytics.waterflowsensor" not in per
+
     def test_empty_zone_400(self, admin_bearer, normal_user):
         z = _zone_for(normal_user)  # no readings seeded
         resp = admin_bearer.post(
