@@ -56,6 +56,7 @@ from apps.irrigation.router_records import router as records_router
 from apps.irrigation.router_monitoring import router as monitoring_router
 from agriapi.api.router_db import router as db_admin_router
 from apps.irrigation.router_backfill import router as backfill_router
+from apps.feedback.router import router as feedback_router
 
 api = NinjaAPI(
     title="Agrilogy API",
@@ -88,6 +89,9 @@ api.add_router("/irrigation", irrigation_automation_router, tags=["irrigation"])
 
 # Notification feed + outbound trigger.
 api.add_router("/notifications", notifications_router, tags=["notifications"])
+
+# In-app "Report an issue" — POST /feedback (stores + emails internal team).
+api.add_router("/feedback", feedback_router, tags=["feedback"])
 
 # Manager-affirmation workflow.
 api.add_router(
