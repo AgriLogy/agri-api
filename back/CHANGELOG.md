@@ -1,6 +1,52 @@
 # CHANGELOG
 
 
+## v1.79.0 (2026-07-02)
+
+### Features
+
+- **fastapp**: Scaffold FastAPI sidecar (no routes cut over)
+  ([#295](https://github.com/AgriLogy/agri-api/pull/295),
+  [`8394b7d`](https://github.com/AgriLogy/agri-api/commit/8394b7dec95d183c58c10ac9c10cf77fed1557e0))
+
+Closes #294
+
+## What Phase **F0** of the Django→FastAPI strangler migration: a sidecar FastAPI app that ships in
+  the same pyproject/Docker image as Django and serves `:8001`, with **zero routes cut over** —
+  Django keeps serving everything.
+
+- **Deps:** `fastapi`, `uvicorn[standard]`, `pydantic-settings` (+ `httpx` in the dev group for
+  TestClient); `uv.lock` updated via `uv add`. - **`back/src/fastapp/settings.py`** —
+  pydantic-settings `AppSettings` reading the SAME env vars Django consumes (`SECRET_KEY`,
+  `POSTGRES_*`/`AGRI_DB_URL`, `CELERY_BROKER_URL`, `RESEND_API_KEY`, `DEFAULT_FROM_EMAIL`,
+  `CORS_ALLOWED_ORIGINS`, `DJANGO_ENV`) with dev defaults mirroring `agriapi/settings/dev.py`. No
+  new variable names. - **`back/src/fastapp/errors.py`** — AgriError taxonomy identical to
+  `agriapi/errors.py` (same codes + statuses) and exception handlers emitting the exact `{"error":
+  {"code", "message"}}` envelope `agriapi/exception_handler.py` produces (including the `str(exc) or
+  exc.code` fallback). - **`back/src/fastapp/main.py`** — `FastAPI(title="Agrilogy API (fastapp)",
+  docs_url="/api/fast/docs")`, CORSMiddleware matching the django-cors-headers config (explicit
+  origins, credentials, verbatim `default_headers`), `GET /healthz` returning `{"status", "app",
+  "version"}` (version read from `back/pyproject.toml`), lifespan disposing the agri-core SQLAlchemy
+  engine on shutdown. - **Entrypoint:** new `fast` role in `back/docker-entrypoint.sh` (waits for
+  Postgres like `web`, then `exec uvicorn fastapp.main:app --host 0.0.0.0 --port 8001 --workers 2`;
+  ensure/seed scripts stay web-only so the roles never race). - **Compose:** new `agri-api-fast`
+  service mirroring `agri-api-web` (same image/build/secrets/env_file/volumes/network, publishes
+  `8001:8001`, healthcheck on `/healthz`). - **`deploy/nginx/back.conf`** — faithful copy of the
+  live `back.agrogo-datafarm.com` server blocks from the droplet (baseline: everything →
+  `127.0.0.1:8000`), with a header documenting how cutover `location` blocks are added and rolled
+  back. This file is the source of truth for strangler cutovers.
+
+## Tests / gates - `back/src/fastapp/tests/test_healthz.py`: 9 tests (healthz payload, docs mount,
+  all 6 error codes' envelope shape, empty-message fallback) — no DB needed; **9 passed** locally. -
+  `ruff check src/` + `ruff format --check src/` clean; `bash -n docker-entrypoint.sh` clean;
+  `docker compose config -q` valid.
+
+## Follow-up (deliberately NOT in this PR) - Wiring `deploy/nginx/back.conf` auto-apply into
+  `deploy-back.yml` — for now applying the nginx file on the droplet stays manual (`nginx -t &&
+  systemctl reload nginx`). - F1 (JWT verification against the shared user table) lands on top of
+  this branch.
+
+
 ## v1.78.1 (2026-07-01)
 
 ### Bug Fixes
