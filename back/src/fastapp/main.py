@@ -11,9 +11,10 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from fastapp.auth import AuthedUser, get_current_user
 from fastapp.errors import register_exception_handlers
 from fastapp.settings import get_settings
 
@@ -69,3 +70,11 @@ def healthz() -> dict[str, str]:
     """Liveness probe — no DB, no auth. Also the smoke check the deploy
     pipeline (and nginx cutovers) can hit to prove the sidecar booted."""
     return {"status": "ok", "app": "fastapp", "version": settings.version}
+
+
+@app.get("/fast/whoami", response_model=AuthedUser)
+def whoami(user: AuthedUser = Depends(get_current_user)) -> AuthedUser:
+    """Auth-parity probe (F1): proves a Django-minted simplejwt access token
+    authenticates against the sidecar via the shared user table. Harmless
+    new path — nothing on the Django side serves /fast/*."""
+    return user
