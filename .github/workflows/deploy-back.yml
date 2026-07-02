@@ -9,7 +9,7 @@ name: Deploy Backend to DigitalOcean
 #   - migrate role via `bash /code/docker-entrypoint.sh migrate` (a no-op
 #     until RUN_DB_MIGRATIONS=true in the droplet env — see
 #     docs/MIGRATIONS_PROD_CUTOVER.md)
-#   - recreate agri-api-web + agri-api-worker + agri-api-beat with --no-deps
+#   - recreate agri-api-web + agri-api-worker + agri-api-beat + agri-api-fast with --no-deps
 #     so mailpit/redis (owned by the legacy compose project) stay untouched
 #   - AGRI_DB_RO_TOKEN forwarded for the private agri-db fetch at build time
 
@@ -29,5 +29,7 @@ jobs:
       build_services: agri-api-web
       migrate_service: agri-api-web
       migrate_command: bash /code/docker-entrypoint.sh migrate
-      compose_services: agri-api-web agri-api-worker agri-api-beat
+      # agri-api-fast = the FastAPI strangler sidecar (:8001) — same image,
+      # started by the pipeline so cutovers never need manual droplet work.
+      compose_services: agri-api-web agri-api-worker agri-api-beat agri-api-fast
     secrets: inherit
