@@ -16,6 +16,7 @@ name: Deploy Backend to DigitalOcean
 on:
   push:
     branches: [main]
+  workflow_dispatch: {}
 
 permissions:
   contents: read
