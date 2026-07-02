@@ -1,6 +1,42 @@
 # CHANGELOG
 
 
+## v1.81.0 (2026-07-02)
+
+### Continuous Integration
+
+- Make the droplet deploy manually dispatchable
+  ([#301](https://github.com/AgriLogy/agri-api/pull/301),
+  [`bd53723`](https://github.com/AgriLogy/agri-api/commit/bd53723ed98f269272a7c156a6b92155e0f7bb62))
+
+Closes 300
+
+One-line trigger addition: `workflow_dispatch: {}` on deploy-back.yml. Also serves as the empirical
+  test that push-event runs fire again after the #299 workflow swap (its merge SHA produced zero
+  runs).
+
+### Features
+
+- **feedback**: Post /feedback stores in-app bug reports + emails internal team
+  ([#293](https://github.com/AgriLogy/agri-api/pull/293),
+  [`999e01d`](https://github.com/AgriLogy/agri-api/commit/999e01d32de5fb951c2795a08ed45eae2c66667a))
+
+Closes #292
+
+## What - New `apps/feedback` app: unmanaged `BugReport` model over `feedback_bugreport` +
+  django-ninja router mounted at `/feedback`. - Reporter identity (id/email) derived from the JWT
+  server-side — never trusted from the body. - Best-effort email to `INTERNAL_FEEDBACK_EMAILS` (new
+  csv setting, defaults to the internal_* team addresses) through the existing Resend backend;
+  failures never block the submission. - Model auto-appears in the generic `/api/admin/db`
+  back-office CRUD (`feedback.bugreport`).
+
+## Deploy order ⚠️ Merge + migrate **AgriLogy/agri-db#48** first (creates `feedback_bugreport`),
+  then this.
+
+## Verification - Django system check + ruff clean; smoke test: 201 + row create + email fan-out to
+  the 3 internal recipients; 400 on empty description.
+
+
 ## v1.80.0 (2026-07-02)
 
 ### Continuous Integration
