@@ -1,55 +1,35 @@
 name: Deploy Backend to DigitalOcean
 
+# Thin caller into AgriLogy/shared-workflows@v1. The SSH deploy script
+# (git reset → layer-cached image rebuild → entrypoint migrate role →
+# `up -d --no-deps` for ONLY our services → image prune) lives in the shared
+# deploy-droplet.yml, parameterized here to reproduce the previous inline
+# script exactly:
+#   - build only agri-api-web (worker/beat run the same image)
+#   - migrate role via `bash /code/docker-entrypoint.sh migrate` (a no-op
+#     until RUN_DB_MIGRATIONS=true in the droplet env — see
+#     docs/MIGRATIONS_PROD_CUTOVER.md)
+#   - recreate agri-api-web + agri-api-worker + agri-api-beat + agri-api-fast with --no-deps
+#     so mailpit/redis (owned by the legacy compose project) stay untouched
+#   - AGRI_DB_RO_TOKEN forwarded for the private agri-db fetch at build time
+
 on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   deploy:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        env:
-          # The private agri-db git dependency needs a read credential at BUILD
-          # time. Same secret CI uses (ci.yml). `envs:` forwards it into the
-          # remote shell so the rebuild can authenticate the fetch.
-          AGRI_DB_RO_TOKEN: ${{ secrets.AGRI_DB_RO_TOKEN }}
-        with:
-          host: ${{ secrets.DO_HOST }}
-          username: ${{ secrets.DO_USER }}
-          key: ${{ secrets.DO_SSH_KEY }}
-          envs: AGRI_DB_RO_TOKEN
-          # Stop on the first failed command instead of barrelling on and
-          # leaving stale code/venv (the old script's `git pull` could abort on
-          # local changes while the job still reported success).
-          script_stop: true
-          # A rebuild (uv sync) can take a few minutes; the default 10m is tight
-          # when the deps layer is cold.
-          command_timeout: 20m
-          # IMPORTANT: single-line commands only. The appleboy SSH action runs
-          # this under the droplet's login shell (zsh), and multi-line compound
-          # constructs (if/case/for) fail to PARSE there — the whole script then
-          # aborts before any command runs. Every line below is a standalone
-          # command.
-          script: |
-            set -eu
-            cd /root/agri-api
-            git fetch origin main
-            git reset --hard origin/main
-            AGRI_DB_RO_TOKEN="$AGRI_DB_RO_TOKEN" docker compose -f docker-compose.yml build agri-api-web
-            docker compose -f docker-compose.yml run --rm --no-deps agri-api-web bash /code/docker-entrypoint.sh migrate
-            docker compose -f docker-compose.yml up -d --no-deps agri-api-web agri-api-worker agri-api-beat
-            docker image prune -f
-          # Why ALWAYS rebuild now (vs the old restart-only deploy):
-          #   - app code is bind-mounted (./back:/code), but the Python venv is
-          #     BAKED into the image. A restart-only deploy picks up new code on
-          #     the OLD venv, so any DEPENDENCY change (back/uv.lock or
-          #     pyproject.toml — e.g. an agri-core version bump) crashes the app
-          #     at import time (ModuleNotFoundError). That caused a 502 outage.
-          #   - the build is layer-cached: when deps are unchanged the uv-sync
-          #     layer is a cache hit, so code-only deploys stay fast.
-          #   - `--no-deps` recreates ONLY the three agri-api services, leaving
-          #     mailpit/redis (owned by another compose project) untouched, which
-          #     avoids the "container name already in use" conflict.
+    uses: AgriLogy/shared-workflows/.github/workflows/deploy-droplet.yml@v1
+    with:
+      repo_dir: /root/agri-api
+      branch: main
+      build_services: agri-api-web
+      migrate_service: agri-api-web
+      migrate_command: bash /code/docker-entrypoint.sh migrate
+      # agri-api-fast = the FastAPI strangler sidecar (:8001) — same image,
+      # started by the pipeline so cutovers never need manual droplet work.
+      compose_services: agri-api-web agri-api-worker agri-api-beat agri-api-fast
+    secrets: inherit
