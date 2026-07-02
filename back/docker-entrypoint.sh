@@ -5,6 +5,7 @@
 #
 # Roles:
 #   web      gunicorn when DJANGO_ENV=prod, else Django dev server, on :8000
+#   fast     FastAPI sidecar (src/fastapp) via uvicorn on :8001
 #   worker   Celery worker
 #   beat     Celery beat with the DatabaseScheduler
 #   migrate  Apply agri-db Alembic migrations, then exit (run by deploy)
@@ -119,6 +120,15 @@ case "$ROLE" in
       exec python manage.py runserver 0.0.0.0:8000
     fi
     ;;
+  fast)
+    # FastAPI strangler sidecar. Same prelude as `web` (the DB must be up —
+    # fastapp's SQLAlchemy auth lookups hit it on first request); table
+    # ensure/seed scripts stay web-only so the two roles never race them.
+    wait_for_postgres
+    log "Starting uvicorn (fastapp) on :8001 (workers=${UVICORN_WORKERS:-2})"
+    exec uvicorn fastapp.main:app --host 0.0.0.0 --port 8001 \
+      --workers "${UVICORN_WORKERS:-2}"
+    ;;
   worker)
     wait_for_postgres
     wait_for_redis
@@ -182,7 +192,7 @@ case "$ROLE" in
     ;;
   *)
     echo "Unknown role: $ROLE" >&2
-    echo "Use one of: web | worker | beat | shell" >&2
+    echo "Use one of: web | fast | worker | beat | migrate | shell" >&2
     exit 2
     ;;
 esac

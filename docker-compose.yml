@@ -97,6 +97,44 @@ services:
     restart: unless-stopped
     networks: [agro]
 
+  # ---------- FastAPI sidecar (fast) ----------------------------------
+  # The strangler-fig target: same image + env as agri-api-web, but uvicorn
+  # serves back/src/fastapp on :8001. nginx on the droplet moves path
+  # prefixes from :8000 (Django) to :8001 one cutover at a time — see
+  # deploy/nginx/back.conf.
+  agri-api-fast:
+    container_name: agri-api-fast
+    image: agri-api:latest
+    build:
+      context: ./back
+      dockerfile: Dockerfile
+      secrets:
+        - agri_db_token
+    env_file: ./back/.env
+    environment:
+      # Postgres connection comes from back/.env (Supabase pooler).
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      DJANGO_RUN_MODE: fast
+      DJANGO_ENV: ${DJANGO_ENV:-dev}
+    command: ["bash", "/code/docker-entrypoint.sh", "fast"]
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./back:/code:delegated
+      - ./shared_data:/shared:rw
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8001/healthz').status<500 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+    networks: [agro]
+
   # ---------- Celery worker -------------------------------------------
   agri-api-worker:
     container_name: agri-api-worker
