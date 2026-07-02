@@ -89,6 +89,8 @@ INSTALLED_APPS = [
     "apps.irrigation.apps.IrrigationConfig",
     "apps.alerts.apps.AlertsConfig",
     "apps.assistant.apps.AssistantConfig",
+    # In-app "Report an issue" (unmanaged model over agri-db feedback_bugreport).
+    "apps.feedback.apps.FeedbackConfig",
 ]
 
 MIDDLEWARE = [
@@ -249,6 +251,16 @@ EMAIL_TIMEOUT = int(os.getenv("EMAIL_TIMEOUT", "10") or 10)
 # Defined here (not just prod) so every settings module exposes it — the
 # deployed container can run under dev settings depending on DJANGO_ENV.
 RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+
+# Internal team recipients for in-app "Report an issue" submissions
+# (apps.feedback). Comma-separated env var; defaults to the internal_* team
+# addresses. Empty → reports are still stored, just not emailed.
+INTERNAL_FEEDBACK_EMAILS = _csv_env(
+    "INTERNAL_FEEDBACK_EMAILS",
+    "internal_zakaria@agrogo-datafarm.com,"
+    "internal_anass@agrogo-datafarm.com,"
+    "internal_brahim@agrogo-datafarm.com",
+)
 
 # ── AI assistant (LLM orchestrator) ──────────────────────────────────────────
 # Provider-agnostic: any OpenAI-compatible chat-completions API with tool
