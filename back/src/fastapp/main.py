@@ -1,0 +1,71 @@
+"""fastapp ASGI application.
+
+Served by uvicorn on :8001 (``docker-entrypoint.sh fast``) next to the
+Django process on :8000. nginx (deploy/nginx/back.conf) strangles routes
+over one path prefix at a time; until a prefix is cut over, this app only
+answers its own new paths (/healthz, /api/fast/docs).
+"""
+
+from __future__ import annotations
+
+from contextlib import asynccontextmanager
+from typing import AsyncIterator
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from fastapp.errors import register_exception_handlers
+from fastapp.settings import get_settings
+
+# django-cors-headers' corsheaders.defaults.default_headers, verbatim — the
+# Django side runs CORS_ALLOW_HEADERS = list(default_headers), so the sidecar
+# must accept exactly the same request headers.
+_CORS_ALLOW_HEADERS = [
+    "accept",
+    "authorization",
+    "content-type",
+    "user-agent",
+    "x-csrftoken",
+    "x-requested-with",
+]
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Dispose the shared agri-core SQLAlchemy engine on shutdown so pooled
+    connections don't linger past the process (mirrors what the test suite's
+    conftest does after rebinding AGRI_DB_URL)."""
+    yield
+    from agri.core.database.session import dispose_engine
+
+    dispose_engine()
+
+
+settings = get_settings()
+
+app = FastAPI(
+    title="Agrilogy API (fastapp)",
+    version=settings.version,
+    docs_url="/api/fast/docs",
+    openapi_url="/api/fast/openapi.json",
+    lifespan=lifespan,
+)
+
+# Same policy as the Django app: explicit origin list + credentials allowed
+# (django-cors-headers: CORS_ALLOWED_ORIGINS / CORS_ALLOW_CREDENTIALS=True).
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_allowed_origins_list,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=_CORS_ALLOW_HEADERS,
+)
+
+register_exception_handlers(app)
+
+
+@app.get("/healthz")
+def healthz() -> dict[str, str]:
+    """Liveness probe — no DB, no auth. Also the smoke check the deploy
+    pipeline (and nginx cutovers) can hit to prove the sidecar booted."""
+    return {"status": "ok", "app": "fastapp", "version": settings.version}
