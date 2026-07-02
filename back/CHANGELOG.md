@@ -1,6 +1,120 @@
 # CHANGELOG
 
 
+## v1.80.0 (2026-07-02)
+
+### Continuous Integration
+
+- Adopt AgriLogy/shared-workflows callers ([#299](https://github.com/AgriLogy/agri-api/pull/299),
+  [`24d1c0b`](https://github.com/AgriLogy/agri-api/commit/24d1c0bc2fec7a0b6b94cdf494e2b424735b642b))
+
+Closes #298
+
+## What All five workflows become thin callers into `AgriLogy/shared-workflows@v1` (org access
+  enabled); this repo keeps only triggers + repo-specific inputs. Independent of the fastapp stack
+  (#295/#297) — branched off main.
+
+| File | Now | Notes | | --- | --- | --- | | `primary.yml` (replaces `ci.yml`) |
+  `python-lint.yml@v1` + `python-test.yml@v1` | lint → test chain; `working_directory: back`; test
+  reproduces today's gate: Postgres **16** service, `django_check`, `coverage_min: 85`,
+  `pytest_args: "src/ -v"`, identical env block; `secrets: inherit` forwards `AGRI_DB_RO_TOKEN`
+  (private agri-db transitive dep) | | `release.yml` | `release.yml@v1` | `[skip ci]` head-commit
+  guard, `concurrency: release-…`, push+`workflow_dispatch` (release_type stable/rc) all stay
+  caller-side; `working_directory: back`, `prerelease: ${{ inputs.release_type == 'rc' }}` — same
+  PSR version (v9.21.0), same pinned author | | `lint-pr-title.yml` | `lint-pr-title.yml@v1` | same
+  trigger types + permissions; shared body is the identical amannn/action-semantic-pull-request
+  config | | `auto-assign.yml` | `auto-assign.yml@v1` | same triggers; default assignee mks-zakaria
+  | | `deploy-back.yml` | `deploy-droplet.yml@v1` | `repo_dir: /root/agri-api`, `branch: main`,
+  `build_services: agri-api-web`, `migrate_service: agri-api-web` + `migrate_command: bash
+  /code/docker-entrypoint.sh migrate`, `compose_services: "agri-api-web agri-api-worker
+  agri-api-beat"`; `secrets: inherit` forwards DO_HOST/DO_USER/DO_SSH_KEY/AGRI_DB_RO_TOKEN |
+
+Also adds **ONBOARDING.md**: repo role (Django+ninja API, strangler → FastAPI sidecar in
+  `back/src/fastapp`), bootstrap order (agri-db `make upgrade-dev` → `back/.env` → `make up`), the
+  api→core→db tag-pinned chain + `AGRI_DB_RO_TOKEN`, release flow (v-tags, semantic-release), CI =
+  shared callers, deploy = push main → droplet, and the `deploy/nginx/back.conf` cutover pointer.
+
+## Behavioral diffs found (diffed shared bodies vs the old inline ones)
+
+**CI (old single "ruff" job → lint + test jobs):** 1. **Django system check env changed.** Old
+  ci.yml ran `manage.py check` with `DEBUG=False, USE_POSTGRES=False` and no Postgres vars; the
+  shared `python-test.yml` exports the caller `env_vars` before BOTH the check and pytest, so the
+  check now runs with `DEBUG=True, USE_POSTGRES=True` + Postgres vars. `manage.py check` (without
+  `--deploy`) doesn't hit the DB and raises no DEBUG-dependent errors, so the gate is equivalent —
+  flagged for awareness. 2. **Job topology/duplication:** lint and test are separate runners, so `uv
+  sync` runs twice (cache-shared) and the Postgres service no longer idles during lint. Check names
+  change from `ruff` to `lint / ruff` + `test / pytest` (no branch protection on this repo, so
+  nothing to retarget). 3. **Coverage flags:** old = `--cov` (source from pyproject
+  `[tool.coverage.run] source=["src"]`, floor from `fail_under=85`); shared = `--cov=src
+  --cov-fail-under=85`. Same measured tree (relative to `back/`), same floor; pyproject's
+  `omit`/report settings still apply. The pyproject `fail_under` remains as defense in depth.
+
+**Deploy (diffed `deploy-droplet.yml`'s remote script line-by-line against the old
+  `deploy-back.yml`):** 1. `AGRI_DB_RO_TOKEN="$AGRI_DB_RO_TOKEN"` →
+  `AGRI_DB_RO_TOKEN="${AGRI_DB_RO_TOKEN:-}"` — old form would abort under `set -u` if the env were
+  ever absent; new form defaults empty. No change while the secret exists. 2. New no-op hook line `[
+  -z "${PRE_DEPLOY_SCRIPT:-}" ] || eval "$PRE_DEPLOY_SCRIPT"` — inert (input left empty). 3. Migrate
+  + build lines are env-var-parameterized (`"$MIGRATE_SERVICE" $MIGRATE_COMMAND`, `build
+  ${BUILD_SERVICES:-}`) — with the inputs above they expand to the exact same commands (`build
+  agri-api-web`, `run --rm --no-deps agri-api-web bash /code/docker-entrypoint.sh migrate`, `up -d
+  --no-deps agri-api-web agri-api-worker agri-api-beat`, `docker image prune -f`). 4. Everything
+  else identical: appleboy/ssh-action@v1.0.3, `script_stop: true`, `command_timeout: 20m`,
+  single-line-only script discipline, same git fetch/reset. The caller adds an explicit
+  `permissions: contents: read` (old file used the default token perms; the job only SSHes, so no
+  effect). 5. The shared job forwards a few extra env names over SSH (`BUILD_SERVICES` etc.) —
+  parameters only, no behavior change.
+
+**Release/lint-pr-title/auto-assign:** shared bodies are verbatim copies of the old inline jobs
+  (same action versions, same pinned MKS~ZAK author for the release commit); only `install_uv` is
+  newly available and left off (agri-api's PSR `build_command` is empty).
+
+## Verification - `yaml.safe_load` clean on all 5 workflow files. - CI on this PR runs the new
+  `primary.yml` callers themselves — checks below prove the swap resolves `@v1` and stays green.
+
+### Features
+
+- **fastapp**: Verify Django-issued JWTs against the shared user table
+  ([#297](https://github.com/AgriLogy/agri-api/pull/297),
+  [`b8b1779`](https://github.com/AgriLogy/agri-api/commit/b8b177934262caae8551b0b0b4aeee9ac214f2b7))
+
+Closes #296
+
+> **Stacked on #295** (base = `feat/fastapp-scaffold`; auto-retargets to `main` when #295 merges).
+  Merge #295 first.
+
+## What Phase **F1** of the strangler migration: the FastAPI sidecar authenticates the exact `Bearer
+  <access>` tokens the Django side mints with rest_framework_simplejwt — same key, same claims, same
+  revocation semantics — so a route can cut over to :8001 without clients re-authenticating.
+
+- **`back/src/fastapp/auth.py`** - PyJWT decode (direct dep already: `PyJWT==2.9.0`): HS256 +
+  `settings.secret_key` (Django's `SECRET_KEY` = simplejwt's default SIGNING_KEY),
+  `options={"require": ["exp", "iat"]}`; enforces the SIMPLE_JWT contract — `token_type == "access"`
+  (TOKEN_TYPE_CLAIM) and a `user_id` claim (USER_ID_CLAIM). - User load through the agri-core
+  SQLAlchemy session (`session_scope`) against agri-db's `CustomUserCustomuser`
+  (`CustomUser_customuser` — the same table Django's auth reads); 401 for unknown or inactive users.
+  - `token_session_revoked` ported **verbatim** from `agriapi/api/auth.py` (whole-second `iat` vs
+  `sessions_revoked_at` compare, missing `iat` fails safe), with a comment pointing at the Django
+  original — lifting both copies into agri-core is a later phase. - Dependencies `get_current_user`
+  (HTTPBearer) / `get_current_staff_user` (403 unless `is_staff`) + typed `AuthedUser` (id,
+  username, email, is_staff, preferred_language). - **`GET /fast/whoami`** — demo protected route
+  returning the `AuthedUser`; harmless new path (nothing on the Django side serves `/fast/*`).
+
+## Tests `back/src/fastapp/tests/test_auth_parity.py` — dual-ORM parity suite that mints REAL
+  simplejwt tokens for a real Django user (pytest-django), then presents them to the fastapp
+  TestClient. The SQLAlchemy lookup hits Django's test DB via the existing `_bind_agri_core_db`
+  session fixture in `back/conftest.py`; `django_db(transaction=True)` commits rows so the separate
+  SQLAlchemy connection sees them. Postgres-gated with the same skipif pattern as the other dual-ORM
+  suites (skips on sqlite).
+
+Covered: access token accepted (200 + exact payload) / refresh-type 401 / tampered signature 401 /
+  `sessions_revoked_at` after iat 401 (+ the re-login flip side stays 200) / inactive user 401 /
+  missing iat 401 / unknown user 401 / no credentials 401 / staff dependency 403-then-200.
+
+## Verification - `ruff check` + `ruff format --check` clean. - Full fastapp suite run locally
+  against a throwaway Postgres 18: **19 passed** (parity tests exercised for real, not skipped);
+  `src/apps/users` regression run: **89 passed**. CI re-runs everything on its Postgres service.
+
+
 ## v1.79.0 (2026-07-02)
 
 ### Features
