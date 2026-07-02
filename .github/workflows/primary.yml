@@ -1,0 +1,59 @@
+name: CI
+
+# Thin caller into AgriLogy/shared-workflows@v1 — the lint/test step logic
+# lives there (one CI definition for every AgriLogy repo). This file only
+# owns the triggers and the repo-specific inputs. Replaces the old ci.yml,
+# whose single "ruff" job did lint + Django check + pytest inline; the same
+# steps now run as two chained jobs (lint → test).
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # uv sync --frozen + ruff check + ruff format --check, from back/.
+  # AGRI_DB_RO_TOKEN because agri-core transitively pulls the PRIVATE agri-db.
+  lint:
+    uses: AgriLogy/shared-workflows/.github/workflows/python-lint.yml@v1
+    with:
+      working_directory: back
+    secrets: inherit
+
+  # Django system check + full pytest run (src/) with the Postgres 16 service
+  # so the dual-ORM handler tests run instead of skipping (conftest.py binds
+  # AGRI_DB_URL to Django's test DB), plus the coverage floor (85) that the
+  # old ci.yml applied via pyproject's fail_under.
+  test:
+    needs: lint
+    uses: AgriLogy/shared-workflows/.github/workflows/python-test.yml@v1
+    with:
+      working_directory: back
+      postgres: true
+      postgres_version: "16"
+      needs_agri_db_token: true
+      django_check: true
+      coverage_min: 85
+      pytest_args: "src/ -v"
+      # Same env the old ci.yml gave the pytest step. NB: the shared workflow
+      # exports these for the Django system check too (the old ci.yml ran the
+      # check with DEBUG=False/USE_POSTGRES=False) — `manage.py check` is
+      # env-insensitive for these flags without --deploy, so the gate is
+      # unchanged.
+      env_vars: |
+        DJANGO_SETTINGS_MODULE=agriapi.settings
+        SECRET_KEY=ci-placeholder-secret-key
+        DEBUG=True
+        ALLOWED_HOSTS=*
+        USE_POSTGRES=True
+        POSTGRES_HOST=localhost
+        POSTGRES_PORT=5432
+        POSTGRES_USER=postgres
+        POSTGRES_PASSWORD=postgres
+        POSTGRES_DB=postgres
+        EMAIL_BACKEND=django.core.mail.backends.locmem.EmailBackend
+        CELERY_TASK_ALWAYS_EAGER=True
+    secrets: inherit
