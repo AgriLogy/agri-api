@@ -1,6 +1,54 @@
 # CHANGELOG
 
 
+## v1.90.0 (2026-07-03)
+
+### Features
+
+- **fastapp**: Cut /assistant over to the sidecar (F7)
+  ([#321](https://github.com/AgriLogy/agri-api/pull/321),
+  [`a17ead0`](https://github.com/AgriLogy/agri-api/commit/a17ead0bea7384868043796e98fd0346f4d33b1b))
+
+Closes #320
+
+Strangler phase **F7**: ports the django-ninja `apps/assistant/router.py` to the FastAPI sidecar
+  (`fastapp`). 10 groups already live on the sidecar; this adds `/assistant`.
+
+## Routes ported (mounted in `fastapp/main.py`) | Method | Path | |---|---| | GET |
+  `/assistant/tools` — tool catalog | | POST | `/assistant/tools/{name}` — invoke one tool | | POST
+  | `/assistant/chat` — orchestrated message → intent/reply/tool/data | | GET |
+  `/assistant/conversations` | | PUT | `/assistant/conversations/{client_id}` | | DELETE |
+  `/assistant/conversations/{client_id}` |
+
+## How it's built - New `fastapp/assistant/` package mirroring the Django one: `registry.py`
+  (sensor-key → agri-db model + label/unit, byte-identical keys/labels/order), `tools.py` (14-tool
+  catalog + handlers), `orchestrator.py` (rule-based, verbatim rule table), `llm.py`
+  (OpenAI-compatible tool-caller over stdlib urllib). - **All DB access is SQLAlchemy via
+  agri-core** (no Django ORM). Reads open a session; the two mutating tools (`create_alert`,
+  `set_notification_cadence`) use `session_scope(commit=True)`. Conversations live in
+  `assistant_conversation` (agri-db `AssistantConversation`). - Irrigation advice Tier-1 reuses
+  agri-core's `field_snapshot_for_user` (the SQLAlchemy twin of the Django
+  `agriapi.agronomy.field_snapshot` adapter); Tier-2 fallback is pure math, identical to Django. -
+  Added `AI_API_KEY` / `AI_API_BASE_URL` / `AI_MODEL` / `AI_TIMEOUT` to `AppSettings` (same env vars
+  Django reads; no new names). Empty key ⇒ rule-based orchestrator, exactly like Django.
+
+## Parity `src/fastapp/tests/test_assistant_parity.py` — dual-ORM golden parity on Postgres (18
+  tests, all green): - **byte-identical**: tool catalog, unknown-tool 404, conversation CRUD
+  (list/upsert/replace/delete + user isolation), `/chat /sitemap`, `/chat` smalltalk,
+  technician-blocked `create_alert`. - **JSON parity** (ids match by construction):
+  `get_active_alerts`, `get_farm_status`, `list_recent_notifications`, `/chat /alerts`, `/chat
+  /help`. - **`create_alert`** writes: response shape + row match (ids differ). - **`/chat` LLM
+  path**: the model reply is non-deterministic in prod, so it's **not** byte-matched — the LLM
+  `_post` is mocked identically on BOTH sides to assert the envelope + tool-routing + tool data
+  match. With no key, `/chat` is byte-identical.
+
+Full fastapp suite: 120 passed. Ruff clean.
+
+## nginx (HELD — do not merge with app) Added `location = /assistant` + `location /assistant/` →
+  `:8001` in `deploy/nginx/back.conf`, matching the existing cutover blocks. Not activated until
+  deploy.
+
+
 ## v1.89.0 (2026-07-03)
 
 ### Features
