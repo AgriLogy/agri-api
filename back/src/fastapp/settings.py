@@ -101,6 +101,17 @@ class AppSettings(BaseSettings):
         alias="INTERNAL_FEEDBACK_EMAILS",
     )
 
+    # -- Assistant LLM orchestrator (OpenAI-compatible chat-completions) ------
+    # Same env vars agriapi.settings.base reads. When AI_API_KEY is empty the
+    # assistant falls back to the deterministic rule-based orchestrator (so the
+    # sidecar behaves exactly like Django with no key configured).
+    ai_api_key: str = Field(default="", alias="AI_API_KEY")
+    ai_api_base_url: str = Field(
+        default="https://api.groq.com/openai/v1", alias="AI_API_BASE_URL"
+    )
+    ai_model: str = Field(default="llama-3.3-70b-versatile", alias="AI_MODEL")
+    ai_timeout: int = Field(default=20, alias="AI_TIMEOUT")
+
     # -- CORS (comma-separated origin list, django-cors-headers style) -------
     cors_allowed_origins: str = Field(
         default=_DEV_CORS_DEFAULT, alias="CORS_ALLOWED_ORIGINS"
