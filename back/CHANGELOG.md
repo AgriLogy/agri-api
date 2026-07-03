@@ -1,6 +1,37 @@
 # CHANGELOG
 
 
+## v1.82.0 (2026-07-03)
+
+### Features
+
+- **fastapp**: Cut /weather over to the FastAPI sidecar (F2)
+  ([#303](https://github.com/AgriLogy/agri-api/pull/303),
+  [`dfeacac`](https://github.com/AgriLogy/agri-api/commit/dfeacac5e10ad50ecb3489ffaeb676c042eab3b3))
+
+Closes 302
+
+## What First strangler cutover — **GET /weather/et-forecast** now has a FastAPI implementation on
+  the :8001 sidecar, byte-for-byte compatible with the django-ninja route.
+
+- `fastapp/routers/weather.py`: owner-scoped zone + user lat/lon via agri-core SQLAlchemy (no Django
+  ORM), the framework-agnostic `forecast_provider`, pure `agri.core.et0_forecast`. Same
+  route/params/clamp/404-shape/response. - `fastapp/tests/test_weather_parity.py`: **golden parity**
+  — every test drives BOTH the Django ninja endpoint (APIClient) and the fastapp route (TestClient)
+  over the same committed data + same Django-minted token, asserting identical JSON incl. the 404
+  envelope (`{"detail": "Zone not found."}`) and 401 on missing auth. 5 tests, verified locally on
+  Postgres 18; full fastapp suite 24 passed. - `deploy/nginx/back.conf`: `location /weather/ ->
+  127.0.0.1:8001` (most-specific-first).
+
+## Cutover (manual, after merge+deploy) On the droplet: apply the /weather/ block + `nginx -t &&
+  systemctl reload nginx`. Rollback = delete the block + reload (Django still serves /weather).
+  Smoke: `curl :8001/weather/et-forecast` (401 no-auth) + a real authed request.
+
+## Deferred (own PRs) - **/feedback** — needs the agri-db pin bump (installed 0.11.1 lacks
+  `FeedbackBugreport`, added in 0.13.0). - **/sensors** — highest-traffic + hardest (dynamic
+  per-model reading serialization + a PATCH write); careful separate port.
+
+
 ## v1.81.0 (2026-07-02)
 
 ### Continuous Integration
