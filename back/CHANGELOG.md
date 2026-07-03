@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v1.82.1 (2026-07-03)
+
+### Bug Fixes
+
+- **fastapp**: Django-ninja-style JSON for byte-identical cutover parity
+  ([#305](https://github.com/AgriLogy/agri-api/pull/305),
+  [`fd60eb6`](https://github.com/AgriLogy/agri-api/commit/fd60eb65830d4170bd36b607886279e78dcd0294))
+
+Closes 304
+
+Follow-up to #303. `DjangoStyleJSONResponse` (spaced separators + ascii) as the app default response
+  class + the HTTPException/validation error handlers, so every cut-over route matches ninja's wire
+  format byte-for-byte. Weather parity tests upgraded to assert `dj.content == fp.content`. 24
+  fastapp tests pass on Postgres 18.
+
+
 ## v1.82.0 (2026-07-03)
 
 ### Features
