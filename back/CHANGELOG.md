@@ -1,6 +1,56 @@
 # CHANGELOG
 
 
+## v1.88.0 (2026-07-03)
+
+### Features
+
+- **fastapp**: Cut /users/me + /zones self-reads over to the sidecar (F5-reads)
+  ([#313](https://github.com/AgriLogy/agri-api/pull/313),
+  [`4a2a01c`](https://github.com/AgriLogy/agri-api/commit/4a2a01c867414463b7c15b473aaaa97392cbb763))
+
+Closes #312
+
+## What
+
+Ports the **F5-reads** self-scoped group from django-ninja to the `fastapp` FastAPI sidecar,
+  byte-parity with the Django originals:
+
+- **GET/PATCH `/users/me`** — caller's profile (`{username, preferred_language, notify_every}`);
+  PATCH self-updates `preferred_language`. Invalid language returns the bare field map
+  `{"preferred_language": "Must be 'fr' or 'ar'."}` @ 400 (not the `{detail}` envelope), matching
+  ninja. - **GET `/zones`** — caller's zones (`[{id, name}]`). - **GET `/zones/{id}/active-graph`**
+  — `model_to_dict(ActiveGraph)` minus `id`: FK ids under `user`/`zone`, then every `*_status`
+  boolean in the Django model's field-declaration order; 404 `{"detail": "ActiveGraph not found."}`
+  on miss/foreign zone.
+
+## How
+
+- Data access is SQLAlchemy via agri-core's `session_scope` (no Django ORM). Owner-scoped by
+  `user.id`; PATCH uses `commit=True`. - Ports `resolve_read_scope` so **technician** (scoped
+  read-only) callers keep parity too — regular users get an unrestricted own-id scope; technicians
+  get the owner's rows narrowed to granted zones + per-zone graph whitelist. The unmanaged grant
+  tables (no agri.db ORM model) are read with parameterised raw SQL. - Response bytes go through
+  `DjangoStyleJSONResponse` (spaced separators, ascii) so a cutover is byte-identical, not just
+  parse-identical.
+
+## nginx cutover
+
+Added to `deploy/nginx/back.conf` (above the catch-all), capturing ONLY the ported routes: -
+  `location = /users/me` (exact) — leaves the still-Django `/users/me/notifications` (POST) and the
+  `/users` admin tree (`/users`, `/users/<username>/*`) on :8000. - `location = /zones` + `location
+  /zones/` — together capture exactly the two ported routes; the distinct `/notification-zones`
+  prefix is untouched.
+
+## Tests
+
+New dual-ORM Postgres parity suite `fastapp/tests/test_selfreads_parity.py` (10 tests) drives both
+  surfaces with the same token + data and asserts `status_code` + byte-identical `content` for:
+  /users/me GET, PATCH (valid / no-op / invalid-400), /zones (populated / empty / no owner leak),
+  active-graph (ok / missing-404 / foreign-zone-404), and 401. All green (also re-ran the weather
+  suite — no regression). Ruff clean.
+
+
 ## v1.87.0 (2026-07-03)
 
 ### Features
