@@ -1,6 +1,29 @@
 # CHANGELOG
 
 
+## v1.84.0 (2026-07-03)
+
+### Features
+
+- **fastapp**: Cut /feedback over to the FastAPI sidecar (F2c)
+  ([#309](https://github.com/AgriLogy/agri-api/pull/309),
+  [`c965b38`](https://github.com/AgriLogy/agri-api/commit/c965b383a241bb560d4e287101e8ff9ea2a660b6))
+
+Closes 308
+
+Second strangler cutover — **POST /feedback** on the :8001 sidecar.
+
+- `fastapp/routers/feedback.py`: writes FeedbackBugreport via agri-core SQLAlchemy (no Django ORM);
+  `fastapp/email.py` stdlib Resend client for the best-effort internal-team email. Same validation,
+  metadata→column promotion, 201 {id,status} + 400 envelope as ninja. -
+  `fastapp/tests/test_feedback_parity.py`: both surfaces over the same committed data/token →
+  identical column writes + byte-identical 400. 28 fastapp tests pass on PG. -
+  `deploy/nginx/back.conf`: `location = /feedback → :8001`.
+
+⚠️ **Deploy order**: needs the deployed image at agri-db 0.14.0 (#307) — merging + deploying while
+  the image is still 0.11.1 crashloops the sidecar. Verifying the image before merge.
+
+
 ## v1.83.0 (2026-07-03)
 
 ### Features
