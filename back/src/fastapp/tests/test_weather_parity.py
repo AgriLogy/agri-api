@@ -106,6 +106,9 @@ def test_forecast_body_is_identical(fast, django, owner, zone):
     assert dj.status_code == 200, dj.content
     assert fp.status_code == 200, fp.text
     assert dj.json() == fp.json()
+    # Byte-level parity, not just parse-level: fastapp's Django-style JSON
+    # renderer must match ninja's wire format (spaced separators) exactly.
+    assert dj.content == fp.content
     # sanity: the shared payload is actually the real thing, not two empties
     body = fp.json()
     assert body["zone_id"] == zone.id
@@ -125,6 +128,7 @@ def test_missing_zone_404_is_identical(fast, django, owner):
     assert dj.status_code == 404
     assert fp.status_code == 404
     assert dj.json() == fp.json() == {"detail": "Zone not found."}
+    assert dj.content == fp.content  # byte-identical 404 envelope
 
 
 def test_other_users_zone_404_is_identical(fast, django, owner, other, zone):
