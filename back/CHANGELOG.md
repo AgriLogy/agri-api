@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v1.83.0 (2026-07-03)
+
+### Features
+
+- **deps**: Bump agri-core 0.18.1 -> 0.19.0 (agri-db 0.14.0)
+  ([#307](https://github.com/AgriLogy/agri-api/pull/307),
+  [`4783b41`](https://github.com/AgriLogy/agri-api/commit/4783b417ac0882e81acfe20fa7e3c1fe6d28124f))
+
+Closes 306
+
+Transitively upgrades agri-db 0.11.1 → 0.14.0, closing the api→core→db pin gap. Picks up
+  FeedbackBugreport (unblocks fastapp /feedback), the absorbed ensure-script tables, and
+  CustomUser.is_technician. Full suite: 564 passed locally; the only failures were
+  Celery/Redis-dependent notification tests (no local Redis — green in CI).
+
+
 ## v1.82.1 (2026-07-03)
 
 ### Bug Fixes
