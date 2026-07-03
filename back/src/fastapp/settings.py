@@ -90,6 +90,16 @@ class AppSettings(BaseSettings):
     default_from_email: str = Field(
         default="Agrilogy <noreply@agrogo-datafarm.com>", alias="DEFAULT_FROM_EMAIL"
     )
+    # Internal team recipients for in-app bug reports (apps.feedback). Same
+    # env var + default the Django settings expose (INTERNAL_FEEDBACK_EMAILS).
+    internal_feedback_emails: str = Field(
+        default=(
+            "internal_zakaria@agrogo-datafarm.com,"
+            "internal_anass@agrogo-datafarm.com,"
+            "internal_brahim@agrogo-datafarm.com"
+        ),
+        alias="INTERNAL_FEEDBACK_EMAILS",
+    )
 
     # -- CORS (comma-separated origin list, django-cors-headers style) -------
     cors_allowed_origins: str = Field(
@@ -107,6 +117,13 @@ class AppSettings(BaseSettings):
     def cors_allowed_origins_list(self) -> list[str]:
         """Split like Django settings' _csv_env (strip + drop empties)."""
         return [o.strip() for o in self.cors_allowed_origins.split(",") if o.strip()]
+
+    @property
+    def internal_feedback_emails_list(self) -> list[str]:
+        """Split like Django settings' _csv_env (strip + drop empties)."""
+        return [
+            e.strip() for e in self.internal_feedback_emails.split(",") if e.strip()
+        ]
 
     @property
     def database_url(self) -> str:

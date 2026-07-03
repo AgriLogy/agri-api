@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapp.auth import AuthedUser, get_current_user
 from fastapp.errors import register_exception_handlers
 from fastapp.json import DjangoStyleJSONResponse, register_django_style_json
-from fastapp.routers import weather
+from fastapp.routers import feedback, weather
 from fastapp.settings import get_settings
 
 # django-cors-headers' corsheaders.defaults.default_headers, verbatim — the
@@ -77,6 +77,7 @@ register_django_style_json(app)
 # deploy/nginx/back.conf, or the route is unreachable in prod (Django still
 # answers it). See the phase notes in that file.
 app.include_router(weather.router)  # F2: /weather/*
+app.include_router(feedback.router)  # F2c: /feedback
 
 
 @app.get("/healthz")
