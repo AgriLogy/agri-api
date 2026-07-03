@@ -1,6 +1,41 @@
 # CHANGELOG
 
 
+## v1.89.0 (2026-07-03)
+
+### Features
+
+- **fastapp**: Cut /devices + /technicians + /irrigation over to the sidecar (F5b)
+  ([#319](https://github.com/AgriLogy/agri-api/pull/319),
+  [`5a18964`](https://github.com/AgriLogy/agri-api/commit/5a18964d1c7cd6912eff6d37db33608f544140a0))
+
+Closes #318
+
+Strangler phase **F5b**: three more django-ninja routers move to the FastAPI sidecar (`:8001`),
+  byte-parity preserved. nginx (`deploy/nginx/back.conf`) location blocks added for each prefix so
+  prod routes cut over on deploy.
+
+## Routers ported | Django source | Sidecar | Access | |---|---|---| |
+  `apps/irrigation/router_devices.py` | `fastapp/routers/devices.py` — `/devices` | admin
+  (`is_staff`) | | `apps/users/router_technicians.py` | `fastapp/routers/technicians.py` —
+  `/technicians` | owner (non-technician) | | `apps/irrigation/router_irrigation_automation.py` |
+  `fastapp/routers/irrigation.py` — `/irrigation` | caller-scoped; technician read-only |
+
+## Notes - **No agri.db ORM models** exist for `analytics_device`, `analytics_irrigationprogram`,
+  `analytics_outputcommand`, `analytics_techniciangrant`, `analytics_technicianzonegrant` (all
+  Django-managed / unmirrored), so every read/write is parameterised raw SQL over the agri-core
+  session — the `selfreads.py` pattern. - **Technician passwords** are hashed with a new Django-free
+  `fastapp/passwords.py` (stdlib `pbkdf2_hmac`, `pbkdf2_sha256$600000$`, Django-format salt). The
+  stored hash verifies against Django's `check_password` (asserted in the test). Password-validation
+  error messages (min-length / common / numeric) are reproduced byte-for-byte, reading Django's
+  bundled common-password list directly. - **Irrigation dispatch** simulation path inlined (mirrors
+  `output_dispatch.dispatch_command`); new `IRRIGATION_DISPATCH_ENABLED` mirror added to
+  `fastapp/settings.py`. - Error envelopes, field order, and `isoformat`/time rendering all matched.
+
+## Tests `fastapp/tests/test_devices_parity.py` — 34 dual-ORM golden-parity cases (Postgres). Full
+  sidecar suite green: **136 passed**.
+
+
 ## v1.88.0 (2026-07-03)
 
 ### Features
