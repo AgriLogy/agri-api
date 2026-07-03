@@ -24,6 +24,7 @@ from fastapp.routers import (
     manager_affirmations,
     notification_zones,
     notifications,
+    selfreads,
     sensors,
     weather,
 )
@@ -95,6 +96,7 @@ app.include_router(notifications.router)  # F3: /notifications + /notifications/
 app.include_router(
     notification_zones.router
 )  # F3: /notification-zones + /notification-zones/*
+app.include_router(selfreads.router)  # F5: /users/me + /zones self-reads
 
 
 @app.get("/healthz")
