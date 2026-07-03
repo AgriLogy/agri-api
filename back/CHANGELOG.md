@@ -1,6 +1,32 @@
 # CHANGELOG
 
 
+## v1.85.0 (2026-07-03)
+
+### Features
+
+- **fastapp**: Cut /sensors over to the FastAPI sidecar (F2b)
+  ([#311](https://github.com/AgriLogy/agri-api/pull/311),
+  [`303d5d9`](https://github.com/AgriLogy/agri-api/commit/303d5d962ecd62d7f9d4d0dd6f19cbc4ec8bca2c))
+
+Closes 310
+
+The highest-traffic cutover — every chart hits `/sensors/<slug>`.
+
+- `fastapp/sensors.py`: `SENSOR_SPEC` (37 sensors — units + field order extracted from the Django
+  models for byte-parity) + `hourly_readings` / `raw_readings` / `serialize_raw`. Aggregation
+  delegated to agri-core `AgriMainDBClient` (same as the Django engine); no Django ORM. -
+  `fastapp/routers/sensors.py`: GET `/sensors` (catalog), GET `/sensors/{slug}` (`?raw=true`), PATCH
+  `/sensors/{slug}`. Same key order + unit metadata; same 404 shapes (`{detail}` for unknown slug,
+  bare `{error: Not found}` for a missing row). - `fastapp/tests/test_sensors_parity.py`: **golden
+  parity across ALL 37 slugs × (aggregated + raw)** + catalog + PATCH + both 404s + empty-list —
+  byte-identical. 34 fastapp tests pass on Postgres 18. - `deploy/nginx/back.conf`: `location =
+  /sensors` + `location /sensors/`.
+
+Prereqs met: agri-db 0.14.0 (#307). After merge+deploy, apply the /sensors nginx blocks (manual,
+  alongside /weather + /feedback).
+
+
 ## v1.84.0 (2026-07-03)
 
 ### Features
