@@ -1,6 +1,58 @@
 # CHANGELOG
 
 
+## v1.91.0 (2026-07-03)
+
+### Features
+
+- **fastapp**: Cut business-admin routes over to the sidecar (F6-business-admin)
+  ([#323](https://github.com/AgriLogy/agri-api/pull/323),
+  [`a6799b1`](https://github.com/AgriLogy/agri-api/commit/a6799b1ef830354164bb5da12e00974ff481653b))
+
+Closes #322
+
+Strangler phase **F6**: ports the staff-only business-admin django-ninja routers to the FastAPI
+  sidecar (`fastapp`, :8001) with **byte-identical** parity, and adds the matching nginx location
+  blocks so each prefix strangles over to :8001.
+
+## Routes ported (23) | prefix | routes | |---|---| | `/admin/billing` | GET/POST `/plans`,
+  PUT/DELETE `/plans/{id}`, GET/POST `/subscriptions`, POST `/subscriptions/{id}/cancel`, GET/POST
+  `/invoices`, POST `/invoices/{id}/mark-paid` | | `/admin/audit` | GET `/admin/audit` (actor /
+  action-icontains / target_type / limit filters) | | `/admin/settings` | GET (seeds defaults),
+  PATCH (upsert), POST (create, 409 on dup), DELETE `/{key}` | | `/admin/kc` | GET/POST list+create,
+  GET/PUT/DELETE `/{id}` (cross-user, adds `username`) | | `/admin/monitoring` | GET `/overview`,
+  `/tasks` (+ beat schedule), `/deliveries`, `/logins` | | `/admin` records | GET/DELETE
+  `/notifications`, GET/DELETE `/conversations`, GET `/proactive-notices` + DELETE reset,
+  GET/PATCH/DELETE `/technician-grants` |
+
+## How - All routes staff-gated via `get_current_staff_user` (401 bad token, 403 non-staff). -
+  Reads/writes go through the **agri-core SQLAlchemy** session — no Django ORM. Unmanaged tables
+  (`lora_uplink`, `django_celery_beat_*`) read via raw SQL. - Writes replicate Django's app-layer
+  defaults (`created_at`/`issued_at`/`updated_at`) and mirror `payement_status` onto the user; admin
+  mutations still record an `analytics_auditevent` row. - The monitoring **beat schedule** is
+  reproduced without importing Django: the static `CELERY_BEAT_SCHEDULE` is rebuilt from the same
+  env-driven `celery.schedules.crontab` logic, and `django_celery_beat` DatabaseScheduler rows are
+  read via raw SQL with each schedule's `__str__` reconstructed exactly.
+
+## Not in scope (stay on Django) `/admin/db` (generic CRUD), `/admin/overview`, `/admin/analytics`,
+  `/admin/alerts`, `/admin/devices`, `/admin/sensor-data`, `/admin/backfill`, `/admin/impersonate`,
+  `/admin/users/*`. The nginx blocks are scoped to exactly the ported prefixes so these are
+  untouched.
+
+## Tests `fastapp/tests/test_adminbiz_parity.py` — dual-ORM Postgres golden parity: same committed
+  rows + same Django-minted staff token, asserting `dj.content == fp.content` for reads and
+  shape+refetch for writes, plus a 403 check per route and byte-parity of the DB-backed beat
+  schedule. **38 passed**; full fastapp suite **140 passed**; ruff clean.
+
+## Known non-byte-match (documented) - **Non-staff 403 body**: Django `_require_admin` returns
+  `{"detail": "Admin access required"}`; the sidecar's `get_current_staff_user` returns `{"detail":
+  "You do not have permission to perform this action."}`. Only the 403 **status** is asserted (per
+  plan). Authenticated 401 envelopes already match. - **Billing subscription with
+  `period_start`/`period_end`**: Django assigns the raw string to a `DateField` and then calls
+  `.isoformat()`, which 500s; the port correctly parses the date instead. The realistic admin path
+  (dates omitted) is byte-identical.
+
+
 ## v1.90.0 (2026-07-03)
 
 ### Features
