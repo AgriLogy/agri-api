@@ -1,6 +1,50 @@
 # CHANGELOG
 
 
+## v1.87.0 (2026-07-03)
+
+### Features
+
+- **fastapp**: Cut /notifications + /notification-zones over to the sidecar (F3-notifications)
+  ([#315](https://github.com/AgriLogy/agri-api/pull/315),
+  [`c34f3ef`](https://github.com/AgriLogy/agri-api/commit/c34f3efca30c6793ce2bde68ff4fe7123dc2d518))
+
+Closes #314
+
+Strangler phase **F3**: moves the notifications group from django-ninja to the fastapp sidecar
+  (`:8001`), byte-for-byte, following the F2 (weather), F2b (sensors) and F2c (feedback) cutovers.
+
+## Routes ported | Method | Path | Notes | |---|---|---| | GET | `/notifications` | feed — 200 most
+  recent, newest first | | POST | `/notifications/zone-outbound` | email / SMS / WhatsApp; Celery
+  enqueue | | GET, POST | `/notification-zones` | list / create | | GET |
+  `/notification-zones/available-sensors` | registered before `/{pk}` | | GET, PATCH, DELETE |
+  `/notification-zones/{pk}` | owner-scoped | | POST | `/notification-zones/{pk}/sensors` | add
+  assignment | | DELETE | `/notification-zones/{pk}/sensors/{sensor_id}` | remove assignment |
+
+## How - **SQLAlchemy via agri-core** (no Django ORM). Reads use `session_scope()`; writes use
+  `session_scope(commit=True)` with explicit `created_at`/`updated_at` to mirror the Django model's
+  `auto_now_add` / `auto_now` columns. - **Celery** enqueue via a new `fastapp/celery.py`
+  `send_task` helper — same task names (`agriapi.tasks.send_zone_outbound_{email,sms,whatsapp}`) and
+  kwargs the ninja route used with `.delay(...)`; no import of `agriapi.tasks`. - **Technician**
+  writes are blocked (403) by resolving `is_technician` from the user row (kept off `AuthedUser` so
+  the F1 auth-parity contract is unchanged). - **available-sensors** resolves each registry key to
+  its agri-db model via `agri.core.alerts.db_model_for` (the SQLAlchemy analogue of Django's
+  `get_sensor_model`). - **nginx**: added `= /notifications` + `/notifications/` and `=
+  /notification-zones` + `/notification-zones/` location blocks → `:8001`.
+
+## Byte-parity - `DjangoStyleJSONResponse` for direct bodies; `raise HTTPException(N, ...)` for
+  `{"detail": ...}` envelopes; spaced-separator ASCII JSON throughout. - New dual-ORM parity suite
+  `fastapp/tests/test_notifications_parity.py` drives **both** surfaces over the same committed rows
+  + the same Django-minted token and asserts identical status + bytes for reads/errors, identical
+  shape for writes, and the 202/400/401 contract for the Celery route.
+
+## Tests - `test_notifications_parity.py`: **25 passed**. - Full fastapp suite: **59 passed**. Ruff
+  check + format clean.
+
+## Deploy note Cutover is inert until the nginx blocks are reloaded on the droplet; rollback =
+  delete the blocks + `nginx -t && systemctl reload nginx`.
+
+
 ## v1.86.0 (2026-07-03)
 
 ### Features
