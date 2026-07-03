@@ -19,13 +19,16 @@ from fastapp.errors import register_exception_handlers
 from fastapp.json import DjangoStyleJSONResponse, register_django_style_json
 from fastapp.routers import (
     alerts,
+    devices,
     feedback,
+    irrigation,
     kc,
     manager_affirmations,
     notification_zones,
     notifications,
     selfreads,
     sensors,
+    technicians,
     weather,
 )
 from fastapp.settings import get_settings
@@ -97,6 +100,9 @@ app.include_router(
     notification_zones.router
 )  # F3: /notification-zones + /notification-zones/*
 app.include_router(selfreads.router)  # F5: /users/me + /zones self-reads
+app.include_router(devices.router)  # F5b: /devices + /devices/*
+app.include_router(technicians.router)  # F5b: /technicians + /technicians/*
+app.include_router(irrigation.router)  # F5b: /irrigation + /irrigation/*
 
 
 @app.get("/healthz")
