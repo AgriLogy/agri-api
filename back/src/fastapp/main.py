@@ -18,6 +18,12 @@ from fastapp.auth import AuthedUser, get_current_user
 from fastapp.errors import register_exception_handlers
 from fastapp.json import DjangoStyleJSONResponse, register_django_style_json
 from fastapp.routers import (
+    admin_audit,
+    admin_billing,
+    admin_kc,
+    admin_monitoring,
+    admin_records,
+    admin_settings,
     alerts,
     assistant,
     devices,
@@ -105,6 +111,13 @@ app.include_router(devices.router)  # F5b: /devices + /devices/*
 app.include_router(technicians.router)  # F5b: /technicians + /technicians/*
 app.include_router(irrigation.router)  # F5b: /irrigation + /irrigation/*
 app.include_router(assistant.router)  # F7: /assistant/* (tools + chat + convos)
+# F6 business-admin (staff-only) — each has a matching nginx location block.
+app.include_router(admin_billing.router)  # /admin/billing/*
+app.include_router(admin_audit.router)  # /admin/audit
+app.include_router(admin_settings.router)  # /admin/settings + /admin/settings/{key}
+app.include_router(admin_kc.router)  # /admin/kc + /admin/kc/{id}
+app.include_router(admin_monitoring.router)  # /admin/monitoring/*
+app.include_router(admin_records.router)  # /admin/{notifications,conversations,...}
 
 
 @app.get("/healthz")
