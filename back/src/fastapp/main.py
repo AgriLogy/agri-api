@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from fastapp.auth import AuthedUser, get_current_user
 from fastapp.errors import register_exception_handlers
+from fastapp.json import DjangoStyleJSONResponse, register_django_style_json
 from fastapp.routers import weather
 from fastapp.settings import get_settings
 
@@ -51,6 +52,9 @@ app = FastAPI(
     docs_url="/api/fast/docs",
     openapi_url="/api/fast/openapi.json",
     lifespan=lifespan,
+    # Match django-ninja's JSON wire format (spaced separators, ascii) so a
+    # cut-over route is byte-identical, not just parse-identical.
+    default_response_class=DjangoStyleJSONResponse,
 )
 
 # Same policy as the Django app: explicit origin list + credentials allowed
@@ -64,6 +68,9 @@ app.add_middleware(
 )
 
 register_exception_handlers(app)
+# Django-style JSON for the framework's own error envelopes (HTTPException /
+# validation), so 404/401/422 bodies match ninja byte-for-byte too.
+register_django_style_json(app)
 
 # --- Strangler cutover routers (mirror the nginx location blocks) ----------
 # Each prefix here must have a matching `location /<prefix>/ → :8001` block in
