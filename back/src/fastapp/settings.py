@@ -106,12 +106,24 @@ class AppSettings(BaseSettings):
         default=_DEV_CORS_DEFAULT, alias="CORS_ALLOWED_ORIGINS"
     )
 
+    # -- Irrigation automation -----------------------------------------------
+    # Django: IRRIGATION_DISPATCH_ENABLED gates physical valve/pump actuation
+    # (off = commands are simulated). Same env var + truthy parsing.
+    irrigation_dispatch_enabled_raw: str = Field(
+        default="false", alias="IRRIGATION_DISPATCH_ENABLED"
+    )
+
     # -- Derived --------------------------------------------------------------
     version: str = Field(default_factory=_read_project_version)
 
     @property
     def is_prod(self) -> bool:
         return self.django_env.lower() == "prod"
+
+    @property
+    def irrigation_dispatch_enabled(self) -> bool:
+        """Mirror Django base.py: truthy iff '1' / 'true' / 'yes'."""
+        return self.irrigation_dispatch_enabled_raw.lower() in ("1", "true", "yes")
 
     @property
     def cors_allowed_origins_list(self) -> list[str]:
