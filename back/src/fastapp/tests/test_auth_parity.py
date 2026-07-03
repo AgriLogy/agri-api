@@ -76,6 +76,7 @@ def test_django_minted_access_token_is_accepted(client, user):
         "username": "fastapp-parity",
         "email": "fastapp-parity@example.com",
         "is_staff": False,
+        "is_technician": False,
         "preferred_language": "ar",
     }
 

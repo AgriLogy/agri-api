@@ -38,6 +38,7 @@ class AuthedUser(BaseModel):
     username: str
     email: str
     is_staff: bool
+    is_technician: bool = False
     preferred_language: str
 
 
@@ -117,6 +118,7 @@ def get_current_user(
             username=user.username,
             email=user.email,
             is_staff=user.is_staff,
+            is_technician=user.is_technician,
             preferred_language=user.preferred_language,
         )
 
