@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from fastapp.auth import AuthedUser, get_current_user
 from fastapp.errors import register_exception_handlers
+from fastapp.routers import weather
 from fastapp.settings import get_settings
 
 # django-cors-headers' corsheaders.defaults.default_headers, verbatim — the
@@ -63,6 +64,12 @@ app.add_middleware(
 )
 
 register_exception_handlers(app)
+
+# --- Strangler cutover routers (mirror the nginx location blocks) ----------
+# Each prefix here must have a matching `location /<prefix>/ → :8001` block in
+# deploy/nginx/back.conf, or the route is unreachable in prod (Django still
+# answers it). See the phase notes in that file.
+app.include_router(weather.router)  # F2: /weather/*
 
 
 @app.get("/healthz")
