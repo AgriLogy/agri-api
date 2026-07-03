@@ -22,6 +22,8 @@ from fastapp.routers import (
     feedback,
     kc,
     manager_affirmations,
+    notification_zones,
+    notifications,
     sensors,
     weather,
 )
@@ -89,6 +91,10 @@ app.include_router(sensors.router)  # F2b: /sensors + /sensors/*
 app.include_router(alerts.router)  # F3: /alerts + /alerts/*
 app.include_router(kc.router)  # F3: /kc + /kc/*
 app.include_router(manager_affirmations.router)  # F3: /manager-affirmations + /*
+app.include_router(notifications.router)  # F3: /notifications + /notifications/*
+app.include_router(
+    notification_zones.router
+)  # F3: /notification-zones + /notification-zones/*
 
 
 @app.get("/healthz")
