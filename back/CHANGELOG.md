@@ -1,6 +1,46 @@
 # CHANGELOG
 
 
+## v1.86.0 (2026-07-03)
+
+### Features
+
+- **fastapp**: Cut /alerts + /kc + /manager-affirmations over to the sidecar (F3-alerts)
+  ([#317](https://github.com/AgriLogy/agri-api/pull/317),
+  [`6870306`](https://github.com/AgriLogy/agri-api/commit/6870306fcacb2de04cc19ca164bdbb061f129e00))
+
+Closes #316
+
+Continues the strangler migration (F2 weather/feedback/sensors already on the sidecar) by porting
+  the **F3-alerts** router group to the FastAPI sidecar (`fastapp`), **byte-identical** to the
+  django-ninja originals. Each cut-over prefix gets a matching nginx `location` block and a golden
+  parity test that drives BOTH surfaces over the same committed Postgres rows + the same
+  Django-minted token and asserts `dj.content == fp.content`.
+
+## Routers ported | ninja source | sidecar | routes | |---|---|---| | `apps/alerts/router_alerts.py`
+  | `fastapp/routers/alerts.py` | `GET/POST /alerts`, `GET /alerts/for-graph`, `GET
+  /alerts/suggest`, `GET/PUT/PATCH/DELETE /alerts/{pk}` | | `apps/irrigation/router_kc.py` |
+  `fastapp/routers/kc.py` | `GET/POST /kc`, `GET/PUT/DELETE /kc/{kc_id}` | |
+  `apps/irrigation/router_manager_affirmation.py` | `fastapp/routers/manager_affirmations.py` |
+  `GET/POST /manager-affirmations`, `POST /manager-affirmations/{pk}/approve|reject` |
+
+## Notes - All data access is SQLAlchemy via agri-core (`session_scope`); no Django ORM. The alert
+  fan-out (`recent_triggers_for_user`) and suggestion (`suggest_alert_for`) already live in
+  `agri.core.alerts` and are called directly. - The `manager-affirmations` approve path ports the
+  Django `affirmation_appliers` (zone-params / kc-periods / user-reactivate) to SQLAlchemy so the
+  whole prefix can cut over. - `AuthedUser` gains an `is_technician` flag (real `CustomUser` column)
+  to reproduce the technician read-only 403. - Two byte-parity subtleties handled: Django's
+  `model_to_dict` field order (incl. the computed `threshold`) and `condition_nbr` rendered as its
+  Decimal string `"30.00"` — the alert reads return `DjangoStyleJSONResponse` directly so FastAPI's
+  `jsonable_encoder` can't coerce the Decimal to a float. - nginx: added `location = /alerts` +
+  `/alerts/`, `/kc` + `/kc/`, `/manager-affirmations` + `/manager-affirmations/` → `:8001`.
+
+## Tests `67 passed` — the three new golden parity suites (`test_alerts_parity.py`,
+  `test_kc_parity.py`, `test_manager_affirmations_parity.py`) plus the existing sidecar suite
+  (updated `test_auth_parity.py` for the new `is_technician` field). Dual-ORM: Postgres-only,
+  committed rows.
+
+
 ## v1.85.0 (2026-07-03)
 
 ### Features
