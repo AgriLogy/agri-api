@@ -1,6 +1,39 @@
 # CHANGELOG
 
 
+## v1.96.0 (2026-07-04)
+
+### Features
+
+- **fastapp**: Port /auth login + token issuance to the sidecar (F9)
+  ([#335](https://github.com/AgriLogy/agri-api/pull/335),
+  [`c379afa`](https://github.com/AgriLogy/agri-api/commit/c379afa5af9775cbede92d9ea661204c3e7dcf53))
+
+Closes #334
+
+Strangler **F9** — the riskiest phase (login path for every user). Django `/auth` stays the live
+  surface; **nginx is NOT flipped here** — the orchestrator flips it last with careful live A/B.
+
+## Ported | Endpoint | Notes | |---|---| | `POST /auth/signup` | + `post_save(User)` bootstrap
+  (per-user GraphName + SensorColor, Django defaults replicated) | | `POST /auth/sessions` | JWT
+  pair; Django `login()` session cookie dropped (frontends are Bearer + SSO-localStorage only) | |
+  `POST /auth/admin-sessions` | sign-in, `is_staff` omitted | | `DELETE /auth/sessions` | log out
+  everywhere (bump `sessions_revoked_at`) | | `POST /auth/token/` · `POST /auth/token/refresh/` |
+  legacy DRF simplejwt + revocation-aware refresh |
+
+## Building blocks - `fastapp/tokens.py` — simplejwt-compatible mint (access 5d / refresh 10d).
+  **Cross-mint proven**: a fastapp token validates under Django `AccessToken()`. -
+  `passwords.verify_password` — pbkdf2_sha256, `check_password`-compatible (iteration count read
+  from the hash). - In-process lockout (5/5min) mirroring Django's LocMem cache.
+
+## Parity insight ninja `/auth` endpoints render **spaced** JSON; DRF `/auth/token/*` render
+  **compact** — the latter use Starlette's stock JSONResponse (byte-compatible with DRF's renderer).
+
+## Tests 16 golden parity tests — error/status envelopes byte-identical, token responses by decoded
+  claims + cross-mint, signup asserts the same DB rows on both surfaces. Full fastapp suite **280
+  passed**, ruff + format clean.
+
+
 ## v1.95.0 (2026-07-04)
 
 ### Features
