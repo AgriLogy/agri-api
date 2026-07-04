@@ -1,6 +1,33 @@
 # CHANGELOG
 
 
+## v1.94.1 (2026-07-04)
+
+### Bug Fixes
+
+- **fastapp**: Close two admin-rest byte-parity gaps before cutover
+  ([#331](https://github.com/AgriLogy/agri-api/pull/331),
+  [`33123dc`](https://github.com/AgriLogy/agri-api/commit/33123dc93f50012b27c5983a99f00969a9412a2a))
+
+Closes #330
+
+Live A/B against prod on the F6-admin-rest routes (#329) surfaced two residual byte-parity
+  divergences; this closes both so the routes can be flipped in nginx.
+
+## 1. `/admin/alert-analytics` → `recently_triggered` tie order Alerts sharing an identical
+  `last_triggered_at` came out in a different order between the Django ORM and the SQLAlchemy port
+  (undefined secondary sort). Added a deterministic `-id` tie-break on **both** surfaces.
+
+## 2. Validation 422 envelope The fastapp `RequestValidationError` handler emitted pydantic v2's
+  `input`/`url`/`ctx` keys; django-ninja omits them. The handler now strips them → byte-identical
+  422 on `/admin/sensor-data` and any required-param route.
+
+## Not flipped `= /admin/monitoring` (exact) stays on Django — it returns an empty 404 there vs
+  fastapp's JSON 404; only `/admin/monitoring/` sub-routes are byte-identical.
+
+## Tests 262 fastapp suite green + 3 new parity tests (tie order, 422 envelope).
+
+
 ## v1.94.0 (2026-07-04)
 
 ### Features
