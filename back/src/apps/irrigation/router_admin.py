@@ -855,7 +855,7 @@ def alerts_analytics(request):
                 last_triggered_at__gte=now - timezone.timedelta(days=7)
             )
             .select_related("user")
-            .order_by("-last_triggered_at")[:10]
+            .order_by("-last_triggered_at", "-id")[:10]
         )
     ]
     return {

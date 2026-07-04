@@ -982,7 +982,11 @@ def alerts_analytics(user: AuthedUser = Depends(get_current_staff_user)):
                 .where(
                     AnalyticsAlert.last_triggered_at >= now - datetime.timedelta(days=7)
                 )
-                .order_by(AnalyticsAlert.last_triggered_at.desc())
+                # id.desc() is a deterministic tie-break so rows sharing an identical
+                # last_triggered_at come out in the same order as the Django surface.
+                .order_by(
+                    AnalyticsAlert.last_triggered_at.desc(), AnalyticsAlert.id.desc()
+                )
                 .limit(10)
             ).all()
         ]
