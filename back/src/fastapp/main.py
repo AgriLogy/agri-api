@@ -18,12 +18,16 @@ from fastapp.auth import AuthedUser, get_current_user
 from fastapp.errors import register_exception_handlers
 from fastapp.json import DjangoStyleJSONResponse, register_django_style_json
 from fastapp.routers import (
+    admin_analytics,
     admin_audit,
+    admin_backfill,
     admin_billing,
     admin_db,
+    admin_impersonation,
     admin_kc,
     admin_monitoring,
     admin_records,
+    admin_sensor_data,
     admin_settings,
     alerts,
     assistant,
@@ -122,6 +126,16 @@ app.include_router(admin_kc.router)  # /admin/kc + /admin/kc/{id}
 app.include_router(admin_monitoring.router)  # /admin/monitoring/*
 app.include_router(admin_records.router)  # /admin/{notifications,conversations,...}
 app.include_router(admin_db.router)  # /admin/db/* generic schema-driven CRUD
+# F6-admin-rest: the remaining admin routers (analytics tree + sensor-data
+# explorer + backfill + read-only impersonation). Only the /admin/* paths of
+# admin_analytics are cut over in nginx; its /users/{username}/* paths share
+# the /users prefix with the still-Django users-admin router.
+app.include_router(admin_analytics.router)  # /admin/overview + /users/{u}/* admin
+app.include_router(
+    admin_sensor_data.router
+)  # /admin/sensor-data + /admin/sensor-data/*
+app.include_router(admin_backfill.router)  # /admin/users/{u}/zones/{z}/backfill*
+app.include_router(admin_impersonation.router)  # /admin/impersonate/{username}
 
 
 @app.get("/healthz")
