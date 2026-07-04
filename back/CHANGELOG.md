@@ -1,6 +1,34 @@
 # CHANGELOG
 
 
+## v1.97.0 (2026-07-04)
+
+### Features
+
+- **fastapp**: Port the 7 comms Celery task bodies (F8a)
+  ([#339](https://github.com/AgriLogy/agri-api/pull/339),
+  [`f6147fd`](https://github.com/AgriLogy/agri-api/commit/f6147fd2a78f6f526458cac3c515e088cdbfb7ab))
+
+Closes #338
+
+Strangler **F8a** — the seven on-demand notification-delivery tasks move to Django-free fastapp
+  functions. **Additive**: the Django worker still executes everything; nothing in prod changes
+  until the F10 worker cutover.
+
+## Ported → `fastapp/tasks_comms.py` `send_alert_email` · `send_alert_digest_email` ·
+  `send_alert_whatsapp` · `send_alert_sms` · `send_zone_outbound_{email,sms,whatsapp}`
+
+## Building blocks - `fastapp/sms.py` — Twilio (copy of the already-Django-free
+  `twilio_messaging.py`) - labels/units from `agri.core.alerts.SENSOR_KEY_REGISTRY`; email via
+  `fastapp.email`; delivery-log via SQLAlchemy `AnalyticsNotificationdeliverylog`
+
+## Parity 10 golden tests — Django task vs fastapp twin on the same rows, email/SMS captured both
+  sides → identical return dict + delivery-log rows + composed message. Full suite **315 passed**,
+  ruff + format clean.
+
+Next: **F8b** (compute/scan tasks) → **F10** (native `fastapp/celery_app.py` worker + static beat).
+
+
 ## v1.96.1 (2026-07-04)
 
 ### Bug Fixes
