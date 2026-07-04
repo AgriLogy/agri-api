@@ -52,6 +52,29 @@ def make_password(raw_password: str) -> str:
     return f"{_ALGORITHM}${_ITERATIONS}${salt}${b64}"
 
 
+def verify_password(raw_password: str, encoded: str) -> bool:
+    """Constant-time check of ``raw_password`` against a Django
+    ``pbkdf2_sha256`` hash — the sign-in twin of ``make_password`` and
+    equivalent to ``check_password`` for the default hasher. The iteration
+    count is read from the stored hash so legacy hashes still verify."""
+    try:
+        algorithm, iterations, salt, _ = encoded.split("$", 3)
+    except ValueError:
+        return False
+    if algorithm != _ALGORITHM:
+        return False
+    try:
+        rounds = int(iterations)
+    except ValueError:
+        return False
+    digest = hashlib.pbkdf2_hmac(
+        _DIGEST, raw_password.encode("utf-8"), salt.encode("utf-8"), rounds
+    )
+    b64 = base64.b64encode(digest).decode("ascii").strip()
+    candidate = f"{_ALGORITHM}${iterations}${salt}${b64}"
+    return secrets.compare_digest(candidate, encoded)
+
+
 @lru_cache(maxsize=1)
 def _common_passwords() -> frozenset[str]:
     """Django's bundled common-password list (lower-cased, stripped). Read
