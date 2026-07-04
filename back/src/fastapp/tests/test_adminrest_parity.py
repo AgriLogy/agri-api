@@ -397,6 +397,29 @@ def test_alert_analytics_identical(fast, django, admin, plain):
     _assert_identical(dj, fp)
 
 
+def test_alert_analytics_recently_triggered_tie_order_identical(
+    fast, django, admin, plain
+):
+    """Alerts sharing an identical last_triggered_at must tie-break the same way
+    on both surfaces (-last_triggered_at, -id) so recently_triggered is byte-equal."""
+    ts = datetime.datetime.now(datetime.timezone.utc)
+    for name in ("t1", "t2", "t3"):
+        a = _mk_alert(plain, name=name, sensor_key="temperatureweather")
+        a.last_triggered_at = ts  # deliberately identical → tie on the sort key
+        a.save(update_fields=["last_triggered_at"])
+    dj, fp = _both(fast, django, admin, "/admin/alert-analytics")
+    _assert_identical(dj, fp)
+
+
+def test_sensor_data_missing_required_param_422_identical(fast, django, admin):
+    """The missing-required-query-param 422 envelope must drop pydantic v2's
+    input/url/ctx keys to match the django-ninja body byte-for-byte."""
+    dj, fp = _both(fast, django, admin, "/admin/sensor-data")
+    assert dj.status_code == 422, dj.content
+    assert fp.status_code == 422, fp.text
+    assert dj.content == fp.content
+
+
 def test_alert_create_row_match(fast, django, admin, plain):
     from apps.alerts.models import Alert
 

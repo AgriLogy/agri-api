@@ -49,4 +49,11 @@ def register_django_style_json(app: FastAPI) -> None:
 
     @app.exception_handler(RequestValidationError)
     async def _validation_exc(request: Request, exc: RequestValidationError):
-        return DjangoStyleJSONResponse({"detail": exc.errors()}, status_code=422)
+        # django-ninja emits only type/loc/msg per error; pydantic v2 additionally
+        # carries input/url/ctx. Strip those so the 422 body is byte-identical to
+        # the Django surface being superseded.
+        errors = [
+            {k: v for k, v in err.items() if k not in ("input", "url", "ctx")}
+            for err in exc.errors()
+        ]
+        return DjangoStyleJSONResponse({"detail": errors}, status_code=422)
