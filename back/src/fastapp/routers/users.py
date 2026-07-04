@@ -346,7 +346,11 @@ def list_users(search: str | None = None, user: AuthedUser = Depends(get_current
                 CustomUserCustomuser.username.ilike(like)
                 | CustomUserCustomuser.email.ilike(like)
             )
-        stmt = stmt.order_by(CustomUserCustomuser.date_joined.desc())
+        # id.desc() is a deterministic tie-break so users sharing an identical
+        # date_joined come out in the same order as the Django surface.
+        stmt = stmt.order_by(
+            CustomUserCustomuser.date_joined.desc(), CustomUserCustomuser.id.desc()
+        )
         rows = session.scalars(stmt).all()
         counts = _zones_count_map(session, [u.id for u in rows])
         return [_serialize_list(u, counts.get(u.id, 0)) for u in rows]
