@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v1.96.1 (2026-07-04)
+
+### Bug Fixes
+
+- **fastapp**: Deterministic /users list tie-order (equal date_joined)
+  ([#337](https://github.com/AgriLogy/agri-api/pull/337),
+  [`70643ac`](https://github.com/AgriLogy/agri-api/commit/70643acaf585903b580efeb226b2423d13c038c8))
+
+Closes #336
+
+Live A/B on prod caught the last `/users` byte-parity gap: 3 prod users share an identical
+  `date_joined`, and the list came out in a different order on each surface (undefined secondary
+  sort). Added a `-id` tie-break to **both** the Django `list_users` and the fastapp query.
+  Regression test with tied timestamps included; `/users` parity suite 25 passed.
+
+
 ## v1.96.0 (2026-07-04)
 
 ### Features
