@@ -35,6 +35,22 @@ OFFLINE_AFTER_HOURS = 24
 _FAILURE = "failure"  # TaskRun.FAILURE
 _FAILED = "failed"  # NotificationDeliveryLog.FAILED
 
+# django_celery_beat.models.SOLAR_SCHEDULES — event value → human label. A
+# SolarSchedule's ``__str__`` renders ``get_event_display()`` (the label), NOT
+# the raw stored value, so the DatabaseScheduler schedule string is byte-parity
+# only when we map through this too. Keep in lockstep with django_celery_beat.
+_SOLAR_EVENT_DISPLAY = {
+    "dawn_astronomical": "Astronomical dawn",
+    "dawn_civil": "Civil dawn",
+    "dawn_nautical": "Nautical dawn",
+    "dusk_astronomical": "Astronomical dusk",
+    "dusk_civil": "Civil dusk",
+    "dusk_nautical": "Nautical dusk",
+    "solar_noon": "Solar noon",
+    "sunrise": "Sunrise",
+    "sunset": "Sunset",
+}
+
 
 def _utcnow() -> datetime.datetime:
     return datetime.datetime.now(datetime.timezone.utc)
@@ -385,7 +401,9 @@ def _database_beat_schedule(session) -> list[dict[str, Any]]:
         elif r.minute is not None:
             sched = _crontab_str(r)
         elif r.s_event is not None:
-            sched = f"{r.s_event} ({r.s_lat}, {r.s_lon})"
+            # SolarSchedule.__str__ uses get_event_display() (the label).
+            event_label = _SOLAR_EVENT_DISPLAY.get(r.s_event, r.s_event)
+            sched = f"{event_label} ({r.s_lat}, {r.s_lon})"
         elif r.clocked_time is not None:
             sched = str(r.clocked_time)
         else:
