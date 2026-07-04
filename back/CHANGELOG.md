@@ -1,6 +1,55 @@
 # CHANGELOG
 
 
+## v1.92.0 (2026-07-04)
+
+### Features
+
+- **fastapp**: Cut /ingest device webhooks over to the sidecar (F9-ingest)
+  ([#325](https://github.com/AgriLogy/agri-api/pull/325),
+  [`22d8539`](https://github.com/AgriLogy/agri-api/commit/22d8539ca561efe7c2229020995a8815a724759a))
+
+Closes #324
+
+Strangler phase **F9-ingest**: ports the device-ingest webhooks from django-ninja to the FastAPI
+  sidecar (`fastapp`), byte-parity verified.
+
+## Routes ported (all `auth=None` — device shared-secret, not JWT) | fastapp route | Django source |
+  behaviour | |---|---|---| | `POST /ingest/bivocom` | `apps/bivocom/router.py` | stub (validate +
+  202, no persist) — matches the current ninja stub | | `POST /ingest/lorawan/chirpstack` |
+  `apps/lorawan/chirpstack/router.py` | decode pH/battery/rssi → append `lora_uplink` + per-metric
+  rows under the `lora` zone, dispatch alerts | | `POST /ingest/weather` |
+  `apps/sensors/router_weather_ingest.py` | registry-driven multi-sensor ingest + alert dispatch | |
+  `POST /ingest/sensor` | `apps/sensors/router_weather_ingest.py` | single typed reading + alert
+  dispatch |
+
+## How - Readings persist through the shared **agri-core SQLAlchemy** session
+  (`session_scope(commit=True)`) — no Django ORM. - **Device decode** (ChirpStack RS485-LB
+  pH/battery) is pure Python and was replicated verbatim in `fastapp/ingest.py` (the Django router
+  held it inline; agri-core only owns the pure alert evaluator, not the decode). Bivocom has no
+  adapter yet on either side. - **Alert dispatch** (`dispatch_alerts_for_reading`) is a SQLAlchemy
+  port of the Django `apps/alerts/engine.py` adapter: same alert-matching (farm-zone + user-wide +
+  custom notification-zone #57), same **atomic grace claim** (conditional `UPDATE ...
+  last_emailed_at`), same per-channel + digest Celery enqueue via `fastapp.celery.send_task` (same
+  task names + kwargs the Django `.delay(...)` used). Grace table mirrors `settings/base.py`. -
+  `lora_uplink` isn't modelled in agri.db (Django owns it, managed=False), so a minimal SQLAlchemy
+  model on a private Base maps it for INSERT — kept out of `AgriBase.metadata` so Alembic
+  autogenerate is untouched.
+
+## Parity test — `fastapp/tests/test_ingest_parity.py` (dual-ORM, Postgres) 8 tests, all green.
+  Drives BOTH surfaces over one DB and asserts identical status + **byte-identical** response
+  bodies, the **same rows written** (LoraUplink + per-metric + weather), and the **same alert task
+  enqueued with the same kwargs** (Django `.delay` + `send_task` both monkeypatched to no-ops — no
+  broker). Full fastapp suite: **200 passed**.
+
+## nginx Adds `location /ingest/` → `127.0.0.1:8001` in `deploy/nginx/back.conf` (single prefix
+  covers bivocom/chirpstack/weather/sensor). Manual apply on the droplet as usual.
+
+## Not byte-matched (by design) Malformed-payload **422** envelopes differ between ninja and FastAPI
+  validation (inherent framework difference) — parity is asserted on the valid path + the
+  hand-rolled 400/200/202 envelopes, which ARE byte-identical.
+
+
 ## v1.91.0 (2026-07-03)
 
 ### Features
