@@ -1,6 +1,63 @@
 # CHANGELOG
 
 
+## v1.94.0 (2026-07-04)
+
+### Features
+
+- **fastapp**: Cut remaining admin routes over + fix /admin/monitoring byte-parity (F6-admin-rest)
+  ([#329](https://github.com/AgriLogy/agri-api/pull/329),
+  [`fd84633`](https://github.com/AgriLogy/agri-api/commit/fd84633b1de01d68111862da6a63cf49435ec41f))
+
+Closes #328
+
+Ports the last django-ninja admin routers to the `fastapp` strangler sidecar (SQLAlchemy via
+  agri-core, no Django ORM) with wire byte-parity, and closes a byte-parity gap in the
+  already-ported `/admin/monitoring`.
+
+## Routers ported | Django source | fastapp router | paths | |---|---|---| |
+  `apps/irrigation/router_admin.py` | `routers/admin_analytics.py` | `/admin/overview`,
+  `/admin/analytics`, `/admin/devices/health`, `/admin/alerts` (+`{pk}`), `/admin/alert-analytics`,
+  per-user
+  `/users/{u}/zones|params|active-graph|graph-names|sensor-colors|alerts|activity|sensor-units` | |
+  `apps/sensors/router_sensor_data.py` | `routers/admin_sensor_data.py` | `/admin/sensor-data`
+  catalog + list + patch + delete + range-delete | | `apps/irrigation/router_backfill.py` |
+  `routers/admin_backfill.py` | `/admin/users/{u}/zones/{z}/backfill[-status]` | |
+  `apps/irrigation/router_impersonation.py` | `routers/admin_impersonation.py` |
+  `/admin/impersonate/{username}` |
+
+All require JWT + `is_staff` (`get_current_staff_user`). Byte-parity matches `model_to_dict` field
+  order, `.isoformat()` timestamps, Decimal→float, and the 404/400 envelopes. Timestamped writes
+  (create/patch) and the minted impersonation token are inherently non-deterministic, so they're
+  compared structurally (shape + decoded claims). The impersonation token is minted with PyJWT to
+  carry the SAME simplejwt `AccessToken` claims (`token_type`/`user_id`/`jti`/`exp`/`iat` +
+  `readonly`/`impersonator*`), verifiable against the shared `SECRET_KEY`.
+
+## /admin/monitoring byte-parity fix **Root cause:** a DatabaseScheduler `SolarSchedule` row
+  rendered its schedule string from the raw `event` value (`sunrise (…)`), whereas
+  django_celery_beat's `SolarSchedule.__str__` uses `get_event_display()` — the human label
+  (`Sunrise (…)`). Semantically equal, one byte different. **Fix:** map the event through the
+  `SOLAR_SCHEDULES` label table in `admin_monitoring._database_beat_schedule`. `overview` + `tasks`
+  are now `dj.content == fp.content` even with a solar schedule present (regression test added).
+
+## nginx (deploy/nginx/back.conf) Cut over the cleanly-owned prefixes to `:8001`: `=
+  /admin/overview`, `= /admin/analytics`, `= /admin/alert-analytics`, `= /admin/alerts` +
+  `/admin/alerts/`, `/admin/devices/`, `= /admin/sensor-data` + `/admin/sensor-data/`,
+  `/admin/users/` (backfill), `= /admin/impersonate` + `/admin/impersonate/`, and now `=
+  /admin/monitoring` (the `/admin/monitoring/` prefix was already cut over). The analytics router's
+  `/users/{username}/*` paths are **NOT** cut over — they share the `/users` prefix with the
+  still-Django users-admin router, so they stay on Django; the ports are exercised via the sidecar
+  TestClient.
+
+## Tests New `src/fastapp/tests/test_adminrest_parity.py` (42 tests): non-staff 403s, byte-parity
+  reads + 404/400 envelopes, structural write checks, backfill count parity, impersonation claim
+  decode, and the monitoring solar byte-parity assertion for **both** `overview` and `tasks`. Full
+  fastapp suite green (234 passed) on Postgres. Ruff clean.
+
+## Out of scope `apps/users/router_admin.py` (the `/users` admin tree) is intentionally left on
+  Django. `/admin/db` (another agent's generic CRUD) is untouched.
+
+
 ## v1.93.0 (2026-07-04)
 
 ### Features
