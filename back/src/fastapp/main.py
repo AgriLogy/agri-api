@@ -28,6 +28,7 @@ from fastapp.routers import (
     assistant,
     devices,
     feedback,
+    ingest,
     irrigation,
     kc,
     manager_affirmations,
@@ -111,6 +112,7 @@ app.include_router(devices.router)  # F5b: /devices + /devices/*
 app.include_router(technicians.router)  # F5b: /technicians + /technicians/*
 app.include_router(irrigation.router)  # F5b: /irrigation + /irrigation/*
 app.include_router(assistant.router)  # F7: /assistant/* (tools + chat + convos)
+app.include_router(ingest.router)  # F9: /ingest/* device webhooks (auth=None)
 # F6 business-admin (staff-only) — each has a matching nginx location block.
 app.include_router(admin_billing.router)  # /admin/billing/*
 app.include_router(admin_audit.router)  # /admin/audit
