@@ -1,6 +1,35 @@
 # CHANGELOG
 
 
+## v1.95.0 (2026-07-04)
+
+### Features
+
+- **fastapp**: Port /users admin console + /users/me/notifications (F5c)
+  ([#333](https://github.com/AgriLogy/agri-api/pull/333),
+  [`ce9ea75`](https://github.com/AgriLogy/agri-api/commit/ce9ea752b9ba60ecbe93aa3a61c2f45b4865b328))
+
+Closes #332
+
+Strangler F5c — the last user-facing Django ninja surface moves to the FastAPI sidecar.
+
+## Ported (`apps/users/router_admin.py` → `fastapp/routers/users.py`) - `GET/POST /users`
+  (list+search / create) - `GET/PATCH/DELETE /users/{username}` - `POST
+  /users/{username}/{activate,password-reset,force-logout}` - `GET /users/{username}/sessions` -
+  `POST /users/me/notifications`
+
+## Route ownership (no collisions) - `GET/PATCH /users/me` stay with `selfreads.py` (byte-verified
+  in F5). - `/users/{username}/{zones,alerts,activity,sensor-units}` stay with `admin_analytics.py`.
+  - `users.router` is included AFTER both so the exact/existing routes keep their owners.
+
+## Parity 24 byte-parity golden tests (Django ninja `APIClient` vs fastapp `TestClient`, same rows +
+  token): reads / 404 / 403 / 400 byte-identical; mutations structural. Full fastapp suite: **288
+  passed**, ruff + format clean.
+
+## nginx (orchestrator to apply) After merge the whole `/users` prefix is portable to `:8001` —
+  every `/users/*` route is now served by fastapp (selfreads + admin_analytics + this).
+
+
 ## v1.94.1 (2026-07-04)
 
 ### Bug Fixes
