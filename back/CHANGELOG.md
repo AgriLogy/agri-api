@@ -1,6 +1,65 @@
 # CHANGELOG
 
 
+## v1.93.0 (2026-07-04)
+
+### Features
+
+- **fastapp**: Cut /admin/db generic CRUD over to the sidecar (F6-admin-db)
+  ([#327](https://github.com/AgriLogy/agri-api/pull/327),
+  [`e991937`](https://github.com/AgriLogy/agri-api/commit/e9919370e0a949a99455a7a29bf91888bb75d0b9))
+
+Closes #326
+
+Ports the generic, schema-driven database back-office (`/api/admin/db/*`) from the django-ninja
+  router (`agriapi/api/router_db.py`) to the fastapp sidecar. This is the hardest strangler port:
+  the Django version introspects **Django models**; the sidecar re-implements it over the **agri.db
+  SQLAlchemy metadata** (`AgriBase.registry.mappers` + `sqlalchemy.inspect`), with **no Django
+  ORM**.
+
+## Routes (staff-only, mounted at the URL root) | method | path | purpose | |---|---|---| | GET |
+  /admin/db/tables | list every model + row count | | GET | /admin/db/tables/{key}/schema | field
+  schema for one model | | GET | /admin/db/tables/{key}/rows | paginated / searchable list | | POST
+  | /admin/db/tables/{key}/rows | create a row | | GET | /admin/db/tables/{key}/rows/{pk} | retrieve
+  one row | | PATCH | /admin/db/tables/{key}/rows/{pk} | update a row | | DELETE |
+  /admin/db/tables/{key}/rows/{pk} | delete a row |
+
+## Table-key mapping (kept byte-identical to Django's `label_lower`) `key =
+  f"{app_label}.{model_name}"` derived from `__tablename__` — only `model_name` is lowercased
+  (`app_label` keeps its case, e.g. **`CustomUser.customuser`**). Default `{app}_{model}` tablenames
+  split on the first `_`; two special cases: - `assistant_conversation` →
+  **`assistant.assistantconversation`** (custom db_table; explicit override). - the auto-created M2M
+  through tables (`CustomUser_customuser_{groups,user_permissions}`) are **hidden** — Django's
+  `get_models()` excludes them.
+
+## Table-set delta vs Django (documented + asserted in the test) - **fastapp-only:**
+  `analytics.devicesensor` — exists in the agri.db schema-of-record; the Django DeviceSensor model
+  isn't in this repo yet (so the sidecar can already manage it). - **Django-only:** `auth.group`,
+  `auth.permission`, and the six `django_celery_beat.*` tables — Django-runtime apps not mirrored in
+  agri.db. - All other **68 keys are shared** with byte-identical db_table.
+
+## What byte-matches, and what can't Full byte-parity on `/tables` + `/schema` is **not**
+  attainable: Django's `verbose_name`, `help_text`, `choices`, per-field `required`/`editable` and
+  the field ordering all come from Django model metadata absent from the DB/SQLAlchemy layer. What
+  IS byte-identical (and what the frontend keys off): the table **key** format, `app_label`,
+  `model_name`, `pk_field`, the set of field names + each field's `type`/`primary_key`/`nullable` +
+  the FK `relation.to` target, the row-CRUD JSON coercion (dates → ISO, Decimal → float, bytes →
+  None), and the `{"detail": ...}` error envelopes.
+
+Two field-level deltas are pinned in the test where the SA mirror (source = the live DB) diverges
+  from Django's declared model: - `assistant.assistantconversation.user_id` — SA mirror has no FK
+  constraint (assistant tables were absorbed from ensure_* boot scripts without it) → `integer` vs
+  Django's `fk`. - `feedback.bugreport.video_url` — `nullable=True` in the real DB column, but the
+  Django model declares `null=False` (fastapp reflects the actual schema).
+
+## Tests `src/fastapp/tests/test_admindb_parity.py` (20 cases): non-staff 403 / unauth 401, the
+  table-key subset + set-delta, schema derivable-projection parity vs Django's own `_schema` (+ the
+  two pinned deltas), the row-list envelope + search + pagination, the full CRUD lifecycle, and
+  byte-identical 404 error envelopes. Full fastapp suite: **212 passed**. Ruff clean.
+
+nginx: added `= /admin/db` + `/admin/db/` → :8001 in `deploy/nginx/back.conf`.
+
+
 ## v1.92.0 (2026-07-04)
 
 ### Features
