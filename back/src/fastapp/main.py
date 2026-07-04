@@ -20,6 +20,7 @@ from fastapp.json import DjangoStyleJSONResponse, register_django_style_json
 from fastapp.routers import (
     admin_audit,
     admin_billing,
+    admin_db,
     admin_kc,
     admin_monitoring,
     admin_records,
@@ -120,6 +121,7 @@ app.include_router(admin_settings.router)  # /admin/settings + /admin/settings/{
 app.include_router(admin_kc.router)  # /admin/kc + /admin/kc/{id}
 app.include_router(admin_monitoring.router)  # /admin/monitoring/*
 app.include_router(admin_records.router)  # /admin/{notifications,conversations,...}
+app.include_router(admin_db.router)  # /admin/db/* generic schema-driven CRUD
 
 
 @app.get("/healthz")
