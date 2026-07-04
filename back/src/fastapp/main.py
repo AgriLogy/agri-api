@@ -42,6 +42,7 @@ from fastapp.routers import (
     selfreads,
     sensors,
     technicians,
+    users,
     weather,
 )
 from fastapp.settings import get_settings
@@ -136,6 +137,11 @@ app.include_router(
 )  # /admin/sensor-data + /admin/sensor-data/*
 app.include_router(admin_backfill.router)  # /admin/users/{u}/zones/{z}/backfill*
 app.include_router(admin_impersonation.router)  # /admin/impersonate/{username}
+# F5c: users-admin console + the caller's on-demand notification email. Included
+# AFTER selfreads so GET/PATCH /users/me stay with selfreads, and its /users/
+# {username} (exact) + admin-op subpaths don't collide with admin_analytics'
+# /users/{username}/{zones,alerts,activity,sensor-units}.
+app.include_router(users.router)  # /users, /users/{username}, /users/me/notifications
 
 
 @app.get("/healthz")
