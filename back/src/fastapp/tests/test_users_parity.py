@@ -132,6 +132,21 @@ def test_list_users_identical(fast, django, admin, plain, other):
     _assert_identical(dj, fp)
 
 
+def test_list_users_tied_date_joined_order_identical(
+    fast, django, admin, plain, other, django_user_model
+):
+    """Users sharing an identical date_joined must tie-break the same way on
+    both surfaces (-date_joined, -id) so the list is byte-equal."""
+    import datetime
+
+    ts = datetime.datetime(
+        2026, 5, 16, 15, 38, 44, 666232, tzinfo=datetime.timezone.utc
+    )
+    django_user_model.objects.filter(pk__in=[plain.pk, other.pk]).update(date_joined=ts)
+    dj, fp = _both(fast, django, admin, "/users")
+    _assert_identical(dj, fp)
+
+
 def test_list_users_search_identical(fast, django, admin, plain, other):
     dj, fp = _both(fast, django, admin, "/users?search=other")
     _assert_identical(dj, fp)

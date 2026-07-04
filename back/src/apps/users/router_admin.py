@@ -248,7 +248,7 @@ def list_users(request, search: str | None = None):
     qs = _annotated(CustomUser.objects.exclude(pk=request.auth.pk))
     if search:
         qs = qs.filter(Q(username__icontains=search) | Q(email__icontains=search))
-    qs = qs.order_by("-date_joined")
+    qs = qs.order_by("-date_joined", "-id")
     return [_serialize_list(u, u.zones_count) for u in qs]
 
 
