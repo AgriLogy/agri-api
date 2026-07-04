@@ -1,6 +1,28 @@
 # CHANGELOG
 
 
+## v1.98.0 (2026-07-04)
+
+### Features
+
+- **fastapp**: Port compute_et0_vpd_hourly Celery task (F8b)
+  ([#341](https://github.com/AgriLogy/agri-api/pull/341),
+  [`36fcea9`](https://github.com/AgriLogy/agri-api/commit/36fcea97f44788c1d40e452c661794b852922390))
+
+Closes #340
+
+Strangler **F8b (part 1)** — the hourly ET0/VPD persistence beat task moves to a Django-free fastapp
+  function. Physics already lives in `agri.core.agronomy.compute_et0_for_zone`; this iterates zones
+  and upserts `Et0Calculated`/`VPDWeather` (one row per (zone, timestamp), idempotent). Additive
+  until the F10 worker cutover.
+
+2 golden parity tests: identical rows + return dict vs the Django task, idempotency, no-weather
+  no-op. Full suite **317 passed**.
+
+Remaining F8b: `flag_idle_zones`, `send_periodic_notifications`, `scan_device_health`,
+  `scan_proactive_insights`, `run_due_irrigation_programs` → then F10 native worker.
+
+
 ## v1.97.0 (2026-07-04)
 
 ### Features
