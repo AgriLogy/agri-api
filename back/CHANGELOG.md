@@ -1,6 +1,29 @@
 # CHANGELOG
 
 
+## v1.103.0 (2026-07-05)
+
+### Features
+
+- **fastapp**: Port run_due_irrigation_programs Celery task (F8b — completes F8)
+  ([#351](https://github.com/AgriLogy/agri-api/pull/351),
+  [`e45326f`](https://github.com/AgriLogy/agri-api/commit/e45326fec61664b8d985cb178714feb92d64ee2d))
+
+Closes #350
+
+Strangler **F8b (final)** — the irrigation-program scheduler moves to `fastapp/tasks_scan.py`. Fires
+  enabled programs whose start_time is in the just-passed window today, once per window (weekday
+  filter + atomic dedup on `last_run_at`), creates a scheduled `OutputCommand`, and dispatches it
+  (simulated unless `IRRIGATION_DISPATCH_ENABLED` — the safe default; port of
+  `output_dispatch.dispatch_command`). Additive until F10.
+
+2 tests: fire + dedup parity vs Django (same fired/skipped + OutputCommand rows + `last_run_at`
+  stamp), none-due no-op. Full suite **330 passed**.
+
+**This completes F8** — all 13 Celery task bodies now have Django-free fastapp implementations.
+  Next: **F10** (native `fastapp/celery_app.py` worker + static beat + container switch).
+
+
 ## v1.102.0 (2026-07-05)
 
 ### Features
