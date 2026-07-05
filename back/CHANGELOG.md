@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v1.105.0 (2026-07-05)
+
+### Features
+
+- **deploy**: Add fast-worker / fast-beat entrypoint roles (F10b-prep)
+  ([#355](https://github.com/AgriLogy/agri-api/pull/355),
+  [`9c442a3`](https://github.com/AgriLogy/agri-api/commit/9c442a305474b4d1c8bd84e0eee414e8157ae182))
+
+Closes #354
+
+Strangler **F10b prep** — `fast-worker` + `fast-beat` entrypoint roles running the native
+  Django-free Celery app (`celery -A fastapp.celery_app`). **Additive**: defined but not run — the
+  live compose still uses the Django `worker`/`beat`. The actual container cutover is a separate
+  careful deploy step, only after diffing the static beat schedule vs the live `PeriodicTask` rows.
+  The two workers must never run together (shared `agriapi` queue → double execution); rollback =
+  switch the compose command back.
+
+
 ## v1.104.0 (2026-07-05)
 
 ### Features
