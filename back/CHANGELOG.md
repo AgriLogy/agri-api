@@ -1,6 +1,23 @@
 # CHANGELOG
 
 
+## v1.105.1 (2026-07-05)
+
+### Bug Fixes
+
+- **fastapp**: Static beat cadences match the live PeriodicTask rows (F10b)
+  ([#357](https://github.com/AgriLogy/agri-api/pull/357),
+  [`352b711`](https://github.com/AgriLogy/agri-api/commit/352b711f3252ee70919883ab2dfcd0669afd33f4))
+
+Closes #356
+
+Recon for the F10b beat cutover found the live prod cadences (DatabaseScheduler `PeriodicTask` rows)
+  are the *dev* crontabs — the prod `CELERY_BEAT_SCHEDULE` code branch never took effect. Corrects
+  the static `beat_schedule` to the live cadences (`*/4`, `*/10`, `*/2`) so switching the beat
+  container to the static PersistentScheduler preserves current behaviour. Adds a test pinning each
+  cadence to the live value.
+
+
 ## v1.105.0 (2026-07-05)
 
 ### Features
