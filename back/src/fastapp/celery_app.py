@@ -29,7 +29,13 @@ from fastapp.settings import get_settings
 log = logging.getLogger(__name__)
 _settings = get_settings()
 
-app = Celery("fastapp", broker=_settings.celery_broker_url)
+# set_as_current=False: creating this app must NOT hijack the global current_app.
+# The Django app (agriapi) and this one register the SAME task names
+# (agriapi.tasks.*) — in a single process (the test suite imports both) whichever
+# app is "current" wins name resolution. The fastapp worker activates this app
+# explicitly via `celery -A fastapp.celery_app`, so prod is unaffected; leaving it
+# non-current keeps the Django task tests resolving to the Django tasks.
+app = Celery("fastapp", broker=_settings.celery_broker_url, set_as_current=False)
 app.conf.result_backend = _settings.celery_broker_url
 app.conf.timezone = "UTC"
 # Same queue + routing as the Django app so enqueuers/beat and this worker meet.
