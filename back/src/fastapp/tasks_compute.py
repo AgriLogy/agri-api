@@ -22,8 +22,9 @@ from agri.db.analytics import (
     AnalyticsVpdweather,
     AnalyticsZone,
 )
+from agri.core.notifications import compose_notification_for_user
 from agri.db.users import CustomUserCustomuser
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select, update
 
 from fastapp.settings import get_settings
 from fastapp.tasks_comms import _record_delivery, _send_email
@@ -194,3 +195,92 @@ def flag_idle_zones() -> dict:
 
     logger.info("flag_idle_zones: flagged=%d zones", flagged)
     return {"flagged": flagged}
+
+
+# ---------------------------------------------------------------------------
+# send_periodic_notifications — the cadence-gated field-status digest
+# ---------------------------------------------------------------------------
+def _claim_notification_slot(session, user_id: int, notify_every: int, moment) -> bool:
+    """Atomically claim the user's periodic slot: a single conditional UPDATE
+    that stamps ``last_notified = moment`` only when the cadence window elapsed.
+    True when THIS call won the slot (rowcount == 1). Advancing the clock
+    up-front means a provider failure won't re-attempt every tick (#180)."""
+    cutoff = moment - datetime.timedelta(minutes=notify_every)
+    result = session.execute(
+        update(CustomUserCustomuser)
+        .where(
+            CustomUserCustomuser.id == user_id,
+            or_(
+                CustomUserCustomuser.last_notified.is_(None),
+                CustomUserCustomuser.last_notified < cutoff,
+            ),
+        )
+        .values(last_notified=moment)
+    )
+    return result.rowcount == 1
+
+
+def send_periodic_notifications() -> dict:
+    """For every active user with an email, dispatch a personalised field-status
+    notification when their cadence (notify_every minutes) has elapsed since
+    last_notified. Per-user failures don't abort the batch. Django-free port of
+    ``agriapi.tasks.send_periodic_notifications``."""
+    with session_scope() as session:
+        user_ids = list(
+            session.scalars(
+                select(CustomUserCustomuser.id)
+                .where(CustomUserCustomuser.is_active.is_(True))
+                .order_by(CustomUserCustomuser.id)
+            ).all()
+        )
+
+    sent = skipped = failed = 0
+    for uid in user_ids:
+        moment = _utcnow()
+        with session_scope() as session:
+            user = session.get(CustomUserCustomuser, uid)
+            if user is None:
+                continue
+            recipient = (getattr(user, "email", "") or "").strip()
+            notify_every = getattr(user, "notify_every", 240) or 240
+        if not recipient:
+            skipped += 1
+            continue
+        # Claim in its own committed txn so the row lock is released before the
+        # (slow, network) send — mirrors the Django autocommit UPDATE.
+        with session_scope(commit=True) as session:
+            claimed = _claim_notification_slot(session, uid, notify_every, moment)
+        if not claimed:
+            skipped += 1
+            continue
+        status, error = "sent", ""
+        try:
+            with session_scope() as session:
+                body = compose_notification_for_user(session, uid, now=moment)
+            ok = _send_email(
+                to=recipient,
+                subject="Mise à jour de votre terrain agricole",
+                body=body or "",
+            )
+            if not ok:
+                raise RuntimeError("send_error")
+            sent += 1
+        except Exception as exc:
+            failed += 1
+            status, error = "failed", str(exc)
+            logger.exception("Failed to send periodic notification to %s", recipient)
+        with session_scope(commit=True) as session:
+            _record_delivery(
+                session,
+                channel="email",
+                kind="periodic",
+                recipient=recipient,
+                user_id=uid,
+                status=status,
+                error=error,
+            )
+
+    logger.info(
+        "Periodic notifications: sent=%d, skipped=%d, failed=%d", sent, skipped, failed
+    )
+    return {"sent": sent, "skipped": skipped, "failed": failed}
