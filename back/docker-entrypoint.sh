@@ -6,8 +6,10 @@
 # Roles:
 #   web      gunicorn when DJANGO_ENV=prod, else Django dev server, on :8000
 #   fast     FastAPI sidecar (src/fastapp) via uvicorn on :8001
-#   worker   Celery worker
-#   beat     Celery beat with the DatabaseScheduler
+#   worker   Celery worker (Django app: celery -A agriapi)
+#   beat     Celery beat with the DatabaseScheduler (Django app)
+#   fast-worker  Native Celery worker (celery -A fastapp.celery_app) — F10 cutover of `worker`
+#   fast-beat    Native Celery beat, static schedule — F10 cutover of `beat`
 #   migrate  Apply agri-db Alembic migrations, then exit (run by deploy)
 #   shell    Drop into bash for debugging
 #
@@ -145,6 +147,28 @@ case "$ROLE" in
     log "Starting Celery beat"
     exec celery -A agriapi beat --loglevel=info \
       --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    ;;
+  fast-worker)
+    # F10: native (Django-free) Celery worker running the ported task bodies
+    # (fastapp.celery_app registers them under the same agriapi.tasks.* names on
+    # the same `agriapi` queue). This REPLACES the `worker` role at cutover — the
+    # two must never run together or every task double-executes off the shared
+    # queue. Rollback = switch the compose command back to `worker`.
+    wait_for_postgres
+    wait_for_redis
+    log "Starting native Celery worker (fastapp.celery_app)"
+    exec celery -A fastapp.celery_app worker --loglevel=info --concurrency=1 -Q agriapi
+    ;;
+  fast-beat)
+    # F10: native Celery beat with the STATIC schedule in fastapp.celery_app
+    # (PersistentScheduler). REPLACES the `beat` (DatabaseScheduler) role at
+    # cutover. Reconcile the static schedule against the live PeriodicTask rows
+    # BEFORE flipping. Rollback = switch the compose command back to `beat`.
+    wait_for_postgres
+    wait_for_redis
+    log "Starting native Celery beat (fastapp.celery_app, static schedule)"
+    exec celery -A fastapp.celery_app beat --loglevel=info \
+      --schedule "${CELERYBEAT_SCHEDULE_FILE:-/tmp/fastapp-celerybeat-schedule}"
     ;;
   migrate)
     # Apply the bundled agri-db Alembic migrations to the live database, then
