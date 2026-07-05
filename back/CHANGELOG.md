@@ -1,6 +1,38 @@
 # CHANGELOG
 
 
+## v1.105.2 (2026-07-05)
+
+### Bug Fixes
+
+- **fastapp**: Route on-demand send_task to the agriapi queue
+  ([#361](https://github.com/AgriLogy/agri-api/pull/361),
+  [`804efba`](https://github.com/AgriLogy/agri-api/commit/804efbabea460a238af8ed45bdc466e78453fd1b))
+
+Closes #360
+
+The fastapp on-demand enqueue helper had no routing, so `send_task("agriapi.tasks.…")` landed on the
+  default `celery` queue — the `-Q agriapi` worker never consumed the on-demand alert /
+  zone-outbound tasks (silently dropped since the /ingest cutover; surfaced while verifying the F10
+  worker cutover — they hit the legacy default-queue worker as 'unregistered'). Fix mirrors Django's
+  `CELERY_TASK_ROUTES` (`agriapi.*` → `agriapi`) + `task_default_queue`. 2 tests.
+
+### Continuous Integration
+
+- Cut Celery worker + beat over to the native fastapp app (F10)
+  ([#359](https://github.com/AgriLogy/agri-api/pull/359),
+  [`055db05`](https://github.com/AgriLogy/agri-api/commit/055db05809ebd29afc7c98833affbf329c983840))
+
+Closes #358
+
+Strangler **F10 cutover** — switch `agri-api-worker`/`agri-api-beat` from the Django Celery app to
+  the native Django-free app (`fast-worker`/`fast-beat`). All 13 task bodies parity-tested + run
+  live against prod data; native worker boots + connects to Redis; static beat cadences match the
+  live `PeriodicTask` rows. Deploy recreates the two containers (old stops before new starts → no
+  double-consume of the shared `agriapi` queue). **Rollback** = set commands back to `worker`/`beat`
+  and redeploy.
+
+
 ## v1.105.1 (2026-07-05)
 
 ### Bug Fixes
