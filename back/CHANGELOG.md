@@ -1,6 +1,28 @@
 # CHANGELOG
 
 
+## v1.101.0 (2026-07-05)
+
+### Features
+
+- **fastapp**: Port scan_device_health Celery task (F8b)
+  ([#347](https://github.com/AgriLogy/agri-api/pull/347),
+  [`fac7a13`](https://github.com/AgriLogy/agri-api/commit/fac7a133ae54566a12b207fbb918be4ede75763d))
+
+Closes #346
+
+Strangler **F8b (part 4)** — the device-health scan beat task moves to a Django-free
+  `fastapp/tasks_scan.py`. Scans active devices for offline / low-battery (health from latest
+  `lora_uplink` via raw SQL), emails the owner once per cooldown window (atomic dedup claim on
+  `last_health_notified`, rolled back on send failure). Pure `classify_device_health` ported
+  verbatim. Additive until F10.
+
+3 tests: classify + notify parity vs Django (same scanned/notified/healthy/skipped + emails +
+  delivery rows + claim stamps), cooldown dedup, pure classifier. Full suite **326 passed**.
+
+Remaining F8b: `scan_proactive_insights`, `run_due_irrigation_programs` → F10 native worker.
+
+
 ## v1.100.0 (2026-07-05)
 
 ### Features
