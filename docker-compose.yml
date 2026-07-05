@@ -149,9 +149,12 @@ services:
       # Postgres connection comes from back/.env (Supabase pooler).
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
-      DJANGO_RUN_MODE: worker
+      DJANGO_RUN_MODE: fast-worker
       DJANGO_ENV: ${DJANGO_ENV:-dev}
-    command: ["bash", "/code/docker-entrypoint.sh", "worker"]
+    # F10 cutover: the native (Django-free) Celery worker running the ported task
+    # bodies (fastapp.celery_app), same agriapi.tasks.* names + agriapi queue.
+    # Rollback = set this back to "worker" (Django app) and redeploy.
+    command: ["bash", "/code/docker-entrypoint.sh", "fast-worker"]
     volumes:
       - ./back:/code:delegated
       - ./shared_data:/shared:rw
@@ -177,9 +180,12 @@ services:
       # Postgres connection comes from back/.env (Supabase pooler).
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
-      DJANGO_RUN_MODE: beat
+      DJANGO_RUN_MODE: fast-beat
       DJANGO_ENV: ${DJANGO_ENV:-dev}
-    command: ["bash", "/code/docker-entrypoint.sh", "beat"]
+    # F10 cutover: native Celery beat with the static schedule (cadences matched
+    # to the live PeriodicTask rows). Rollback = set this back to "beat"
+    # (DatabaseScheduler) and redeploy.
+    command: ["bash", "/code/docker-entrypoint.sh", "fast-beat"]
     volumes:
       - ./back:/code:delegated
       - ./shared_data:/shared:rw
