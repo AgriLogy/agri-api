@@ -300,3 +300,108 @@ def scan_proactive_insights() -> dict:
         "quiet": quiet,
         "skipped": skipped,
     }
+
+
+# ---------------------------------------------------------------------------
+# run_due_irrigation_programs — fire scheduled irrigation programs
+# ---------------------------------------------------------------------------
+IRRIGATION_RUN_WINDOW_MIN = 15
+_SIMULATED_DETAIL = "Simulation mode — no hardware actuated."
+
+
+def run_due_irrigation_programs() -> dict:
+    """Fire enabled irrigation programs whose start_time falls in the current
+    window today, once per window. Each due program creates a scheduled
+    OutputCommand and dispatches it (simulated unless IRRIGATION_DISPATCH_ENABLED).
+    Django-free port of ``agriapi.tasks.run_due_irrigation_programs``."""
+    from agri.db.irrigation import (
+        AnalyticsIrrigationprogram,
+        AnalyticsOutputcommand,
+    )
+
+    from fastapp.settings import get_settings
+
+    reference = _utcnow()
+    today_iso = reference.isoweekday()  # 1=Mon … 7=Sun
+    window_start = reference - datetime.timedelta(minutes=IRRIGATION_RUN_WINDOW_MIN)
+    dispatch_enabled = get_settings().irrigation_dispatch_enabled
+    fired = skipped = 0
+
+    with session_scope(commit=True) as session:
+        programs = session.scalars(
+            select(AnalyticsIrrigationprogram)
+            .where(AnalyticsIrrigationprogram.enabled.is_(True))
+            .order_by(AnalyticsIrrigationprogram.id)
+        ).all()
+        for program in programs:
+            # Weekday filter (empty weekdays = every day).
+            wd = (program.weekdays or "").strip()
+            if wd:
+                allowed = {int(d) for d in wd.split(",") if d.strip().isdigit()}
+                if today_iso not in allowed:
+                    continue
+
+            # Is start_time within the just-passed window?
+            start_dt = datetime.datetime.combine(
+                reference.date(), program.start_time, tzinfo=reference.tzinfo
+            )
+            if not (window_start <= start_dt <= reference):
+                continue
+
+            # Per-window dedup: skip if already fired since the window opened.
+            if program.last_run_at and program.last_run_at >= window_start:
+                skipped += 1
+                continue
+
+            # Atomic claim: last_run_at never/expired → this tick wins.
+            claimed = session.execute(
+                update(AnalyticsIrrigationprogram)
+                .where(
+                    AnalyticsIrrigationprogram.id == program.id,
+                    AnalyticsIrrigationprogram.last_run_at.is_(None),
+                )
+                .values(last_run_at=reference)
+            ).rowcount
+            if not claimed:
+                claimed = session.execute(
+                    update(AnalyticsIrrigationprogram)
+                    .where(
+                        AnalyticsIrrigationprogram.id == program.id,
+                        AnalyticsIrrigationprogram.last_run_at < window_start,
+                    )
+                    .values(last_run_at=reference)
+                ).rowcount
+            if not claimed:
+                skipped += 1
+                continue
+
+            cmd = AnalyticsOutputcommand(
+                user_id=program.user_id,
+                zone_id=program.zone_id,
+                action="open",
+                source="scheduled",
+                status="pending",
+                detail=f"Programme « {program.name} »",
+                created_at=reference,
+            )
+            session.add(cmd)
+            session.flush()
+            # Dispatch (simulated unless enabled) — port of dispatch_command.
+            try:
+                if dispatch_enabled:
+                    raise NotImplementedError(
+                        "IRRIGATION_DISPATCH_ENABLED is on but no downlink backend "
+                        "is wired."
+                    )
+                cmd.status = "simulated"
+                cmd.detail = _SIMULATED_DETAIL
+                cmd.dispatched_at = _utcnow()
+                fired += 1
+            except Exception:
+                cmd.status = "failed"
+                skipped += 1
+                logger.exception(
+                    "irrigation: dispatch failed for program %s", program.id
+                )
+
+    return {"fired": fired, "skipped": skipped}
