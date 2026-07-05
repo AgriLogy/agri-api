@@ -1,6 +1,29 @@
 # CHANGELOG
 
 
+## v1.100.0 (2026-07-05)
+
+### Features
+
+- **fastapp**: Port send_periodic_notifications Celery task (F8b)
+  ([#345](https://github.com/AgriLogy/agri-api/pull/345),
+  [`1fc1de7`](https://github.com/AgriLogy/agri-api/commit/1fc1de70a98c20f962349e6de8913986b31aade7))
+
+Closes #344
+
+Strangler **F8b (part 3)** — the cadence-gated periodic field-status digest moves to a Django-free
+  fastapp function. Sends to each active user with an email once their `notify_every`-minute cadence
+  elapses; the atomic cadence claim (conditional UPDATE stamping `last_notified` up-front to close
+  the double-send race, #180) is ported to SQLAlchemy. Composition reuses
+  `agri.core.notifications.compose_notification_for_user`. Additive until F10.
+
+2 parity tests: gating + sent/skipped/failed + delivery rows + `last_notified` stamp vs Django
+  (composer/email mocked, the claim runs for real on both), and the none-due no-op. Full suite **323
+  passed**.
+
+Remaining F8b: `scan_device_health`, `scan_proactive_insights`, `run_due_irrigation_programs` → F10.
+
+
 ## v1.99.0 (2026-07-05)
 
 ### Features
