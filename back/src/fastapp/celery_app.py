@@ -65,34 +65,37 @@ for _name, _fn in _TASK_BODIES.items():
     app.task(name=_name)(_fn)
 
 # --- static beat schedule ----------------------------------------------------
-# Mirrors the prod CELERY_BEAT_SCHEDULE crontabs (settings/base.py). The dev-only
-# simulate_sensor_ingest is intentionally omitted. NOTE: prod historically ran
-# the DatabaseScheduler, so before the beat container is switched to this static
-# schedule, diff it against the live PeriodicTask rows and reconcile cadences.
+# Cadences MATCH THE LIVE prod PeriodicTask rows (django_celery_beat
+# DatabaseScheduler), captured from the droplet on 2026-07-05 — NOT the prod
+# crontab branch in settings/base.py, which the DatabaseScheduler ignored. This
+# preserves the exact current behaviour when the beat container is switched from
+# the DatabaseScheduler to this static PersistentScheduler. The dev-only
+# simulate_sensor_ingest is intentionally omitted; celery.backend_cleanup is
+# provided by Celery itself.
 app.conf.beat_schedule = {
     "compute_et0_vpd_hourly": {
         "task": "agriapi.tasks.compute_et0_vpd_hourly",
-        "schedule": crontab(minute=0),
+        "schedule": crontab(minute="*/4"),
     },
     "send_periodic_notifications": {
         "task": "agriapi.tasks.send_periodic_notifications",
-        "schedule": crontab(minute="*/5"),
+        "schedule": crontab(minute="*/4"),
     },
     "scan_device_health": {
         "task": "agriapi.tasks.scan_device_health",
-        "schedule": crontab(minute=15),
+        "schedule": crontab(minute="*/10"),
     },
     "scan_proactive_insights": {
         "task": "agriapi.tasks.scan_proactive_insights",
-        "schedule": crontab(minute=30, hour="*/8"),
+        "schedule": crontab(minute="*/10"),
     },
     "run_due_irrigation_programs": {
         "task": "agriapi.tasks.run_due_irrigation_programs",
-        "schedule": crontab(minute="*/5"),
+        "schedule": crontab(minute="*/2"),
     },
     "flag_idle_zones": {
         "task": "agriapi.tasks.flag_idle_zones",
-        "schedule": crontab(minute=45, hour="*/6"),
+        "schedule": crontab(minute="*/10"),
     },
 }
 

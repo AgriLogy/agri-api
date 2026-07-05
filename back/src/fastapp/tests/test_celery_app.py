@@ -62,6 +62,25 @@ def test_beat_schedule_matches_prod_set():
     assert "agriapi.tasks.simulate_sensor_ingest" not in scheduled_tasks
 
 
+def test_beat_cadences_match_live_periodictask_rows():
+    """Cadences must equal the live prod PeriodicTask rows (captured 2026-07-05)
+    so switching the beat container from the DatabaseScheduler to this static
+    schedule preserves the exact current behaviour."""
+    from celery.schedules import crontab
+
+    beat = app.conf.beat_schedule
+    expected = {
+        "compute_et0_vpd_hourly": crontab(minute="*/4"),
+        "send_periodic_notifications": crontab(minute="*/4"),
+        "scan_device_health": crontab(minute="*/10"),
+        "scan_proactive_insights": crontab(minute="*/10"),
+        "run_due_irrigation_programs": crontab(minute="*/2"),
+        "flag_idle_zones": crontab(minute="*/10"),
+    }
+    for key, sched in expected.items():
+        assert beat[key]["schedule"] == sched, key
+
+
 def test_queue_and_routing_match_django_app():
     # same queue + route as agriapi so both apps share the broker during overlap.
     assert app.conf.task_routes == {"agriapi.*": {"queue": "agriapi"}}
