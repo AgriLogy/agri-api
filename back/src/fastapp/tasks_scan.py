@@ -156,3 +156,147 @@ def scan_device_health() -> dict:
         "healthy": healthy,
         "skipped": skipped,
     }
+
+
+# ---------------------------------------------------------------------------
+# scan_proactive_insights — one high-value irrigation nudge per customer
+# ---------------------------------------------------------------------------
+PROACTIVE_COOLDOWN_HOURS = 24
+
+
+def scan_proactive_insights() -> dict:
+    """Per active customer, compute one irrigation insight via the assistant's
+    agronomy tool and email an actionable nudge when a zone needs water. Deduped
+    to once per cooldown window per user (atomic claim on
+    ``AssistantProactiveNotice.last_sent``). Django-free port."""
+    from agri.db.assistant import AssistantProactiveNotice
+
+    from fastapp.assistant.tools import _get_irrigation_advice
+    from fastapp.auth import AuthedUser
+
+    reference = _utcnow()
+    cooldown_cutoff = reference - datetime.timedelta(hours=PROACTIVE_COOLDOWN_HOURS)
+    scanned = notified = quiet = skipped = 0
+
+    with session_scope() as session:
+        customers = session.scalars(
+            select(CustomUserCustomuser)
+            .where(
+                CustomUserCustomuser.is_active.is_(True),
+                CustomUserCustomuser.is_staff.is_(False),
+                CustomUserCustomuser.is_technician.is_(False),
+            )
+            .order_by(CustomUserCustomuser.id)
+        ).all()
+        rows = [
+            (
+                u.id,
+                u.username,
+                (getattr(u, "email", "") or ""),
+                getattr(u, "preferred_language", "fr") or "fr",
+            )
+            for u in customers
+        ]
+
+    for uid, uname, email, lang in rows:
+        scanned += 1
+        recipient = email.strip()
+        if not recipient:
+            skipped += 1
+            continue
+        authed = AuthedUser(
+            id=uid,
+            username=uname,
+            email=email,
+            is_staff=False,
+            is_technician=False,
+            preferred_language=lang,
+        )
+        try:
+            advice = _get_irrigation_advice(authed, {})
+        except Exception:
+            skipped += 1
+            logger.exception("proactive: advice failed for %s", recipient)
+            continue
+        if advice.get("recommendation") != "irrigate":
+            quiet += 1
+            continue
+
+        # Atomic dedup claim: ensure a ledger row, capture the prior stamp, then
+        # only the UPDATE that flips last_sent from never/expired wins.
+        prev_sent = None
+        with session_scope(commit=True) as session:
+            notice = session.scalar(
+                select(AssistantProactiveNotice).where(
+                    AssistantProactiveNotice.user_id == uid
+                )
+            )
+            if notice is None:
+                session.add(AssistantProactiveNotice(user_id=uid, last_sent=None))
+                session.flush()
+            else:
+                prev_sent = notice.last_sent
+            claimed = (
+                session.execute(
+                    update(AssistantProactiveNotice)
+                    .where(
+                        AssistantProactiveNotice.user_id == uid,
+                        or_(
+                            AssistantProactiveNotice.last_sent.is_(None),
+                            AssistantProactiveNotice.last_sent < cooldown_cutoff,
+                        ),
+                    )
+                    .values(last_sent=reference)
+                ).rowcount
+                == 1
+            )
+        if not claimed:
+            skipped += 1
+            continue
+
+        zone = advice.get("zone_name") or "votre parcelle"
+        reason = advice.get("reason") or ""
+        water = advice.get("estimated_water_m3")
+        extra = f" (~{water} m³ recommandés)" if water else ""
+        subject = f"Conseil d'irrigation : {zone}"
+        body = (
+            f"Votre assistant Agrilogy recommande d'irriguer "
+            f"« {zone} »{extra}.\n\n{reason}\n\n"
+            f"Ouvrez l'application pour le détail."
+        )
+        ok = _send_email(to=recipient, subject=subject, body=body)
+        with session_scope(commit=True) as session:
+            if ok:
+                notified += 1
+                _record_delivery(
+                    session,
+                    channel="email",
+                    kind="proactive",
+                    recipient=recipient,
+                    user_id=uid,
+                    status="sent",
+                )
+            else:
+                # roll back the claim so a later tick can retry.
+                session.execute(
+                    update(AssistantProactiveNotice)
+                    .where(AssistantProactiveNotice.user_id == uid)
+                    .values(last_sent=prev_sent)
+                )
+                skipped += 1
+                _record_delivery(
+                    session,
+                    channel="email",
+                    kind="proactive",
+                    recipient=recipient,
+                    user_id=uid,
+                    status="failed",
+                    error="send_error",
+                )
+
+    return {
+        "scanned": scanned,
+        "notified": notified,
+        "quiet": quiet,
+        "skipped": skipped,
+    }
