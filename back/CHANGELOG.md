@@ -1,6 +1,29 @@
 # CHANGELOG
 
 
+## v1.102.0 (2026-07-05)
+
+### Features
+
+- **fastapp**: Port scan_proactive_insights Celery task (F8b)
+  ([#349](https://github.com/AgriLogy/agri-api/pull/349),
+  [`34f57b6`](https://github.com/AgriLogy/agri-api/commit/34f57b638690977857fd65f79cb4380e61264045))
+
+Closes #348
+
+Strangler **F8b (part 5)** — the proactive-insights scan moves to `fastapp/tasks_scan.py`. Per
+  active customer, compute an irrigation insight via the F7-ported assistant tool
+  (`_get_irrigation_advice` with an `AuthedUser`) and email a nudge when a zone needs water; deduped
+  once per cooldown window via an atomic claim on `AssistantProactiveNotice.last_sent` (rolled back
+  on send failure). Additive until F10.
+
+2 tests: scan + notify parity vs Django (advice mocked, filter + claim run for real → same
+  scanned/notified/quiet/skipped + emails + delivery rows), cooldown dedup. Full suite **328
+  passed**.
+
+Remaining F8b: `run_due_irrigation_programs` → then F10 native worker.
+
+
 ## v1.101.0 (2026-07-05)
 
 ### Features
