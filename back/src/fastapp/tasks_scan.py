@@ -1,0 +1,158 @@
+"""fastapp scan task bodies (F8b) — the device/insight/irrigation beat jobs.
+
+Django-free ports of the scan Celery tasks in ``agriapi/tasks.py``. Plain
+functions; the native Celery app (F10) wraps them under the SAME names. Additive
+until then. DB access via the agri-core SQLAlchemy session; the unmanaged
+``lora_uplink`` table is read with raw SQL (as the admin routers do).
+"""
+
+from __future__ import annotations
+
+import datetime
+import logging
+
+from agri.core.database import session_scope
+from agri.db.devices import AnalyticsDevice
+from agri.db.users import CustomUserCustomuser
+from sqlalchemy import or_, select, text, update
+
+from fastapp.tasks_comms import _record_delivery, _send_email
+
+logger = logging.getLogger(__name__)
+
+DEVICE_LOW_BATTERY_V = 3.4
+DEVICE_OFFLINE_HOURS = 24
+DEVICE_HEALTH_COOLDOWN_HOURS = 24
+
+_PROBLEM_FR = {"offline": "hors ligne", "low_battery": "batterie faible"}
+
+
+def _utcnow() -> datetime.datetime:
+    return datetime.datetime.now(datetime.timezone.utc)
+
+
+def classify_device_health(
+    last_seen,
+    battery_v,
+    *,
+    reference,
+    low_battery_v: float = DEVICE_LOW_BATTERY_V,
+    offline_hours: int = DEVICE_OFFLINE_HOURS,
+) -> list[str]:
+    """Pure health check for one device — ``["offline"]`` / ``["low_battery"]``
+    (empty = healthy). Byte-identical logic to ``agriapi.tasks``."""
+    issues: list[str] = []
+    if last_seen is None or (reference - last_seen) > datetime.timedelta(
+        hours=offline_hours
+    ):
+        issues.append("offline")
+    if battery_v is not None and battery_v < low_battery_v:
+        issues.append("low_battery")
+    return issues
+
+
+def scan_device_health() -> dict:
+    """Scan active devices for offline / low-battery problems and email the
+    owner at most once per cooldown window (atomic dedup claim on
+    ``last_health_notified``). Health derives from the latest ``lora_uplink``
+    matching the device serial. Django-free port."""
+    reference = _utcnow()
+    cooldown_cutoff = reference - datetime.timedelta(hours=DEVICE_HEALTH_COOLDOWN_HOURS)
+    scanned = notified = healthy = skipped = 0
+
+    with session_scope(commit=True) as session:
+        devices = session.scalars(
+            select(AnalyticsDevice)
+            .where(AnalyticsDevice.is_active.is_(True))
+            .order_by(AnalyticsDevice.id)
+        ).all()
+        for device in devices:
+            scanned += 1
+            row = session.execute(
+                text(
+                    "SELECT received_at, battery_v FROM lora_uplink "
+                    "WHERE dev_eui = :s ORDER BY received_at DESC LIMIT 1"
+                ),
+                {"s": device.serial},
+            ).first()
+            last_seen = row[0] if row else None
+            battery_v = row[1] if row else None
+            issues = classify_device_health(last_seen, battery_v, reference=reference)
+            if not issues:
+                healthy += 1
+                continue
+
+            user = (
+                session.get(CustomUserCustomuser, device.user_id)
+                if device.user_id
+                else None
+            )
+            recipient = (getattr(user, "email", "") or "").strip() if user else ""
+            if not recipient:
+                skipped += 1
+                continue
+
+            # Atomic dedup claim: only the UPDATE that flips last_health_notified
+            # from never/expired wins → one email per cooldown window.
+            prev = device.last_health_notified
+            claimed = (
+                session.execute(
+                    update(AnalyticsDevice)
+                    .where(
+                        AnalyticsDevice.id == device.id,
+                        or_(
+                            AnalyticsDevice.last_health_notified.is_(None),
+                            AnalyticsDevice.last_health_notified < cooldown_cutoff,
+                        ),
+                    )
+                    .values(last_health_notified=reference)
+                ).rowcount
+                == 1
+            )
+            if not claimed:
+                skipped += 1
+                continue
+
+            label = device.name or device.serial
+            problems = ", ".join(_PROBLEM_FR[i] for i in issues)
+            subject = f"Alerte appareil : {label}"
+            body = (
+                f"Votre appareil « {label} » présente un problème : {problems}.\n\n"
+                f"Dernière communication : "
+                f"{last_seen.isoformat() if last_seen else 'jamais'}."
+            )
+            ok = _send_email(to=recipient, subject=subject, body=body)
+            if ok:
+                notified += 1
+                _record_delivery(
+                    session,
+                    channel="email",
+                    kind="device_health",
+                    recipient=recipient,
+                    user_id=user.id,
+                    status="sent",
+                )
+            else:
+                # roll back the claim so a later tick can retry the send.
+                session.execute(
+                    update(AnalyticsDevice)
+                    .where(AnalyticsDevice.id == device.id)
+                    .values(last_health_notified=prev)
+                )
+                skipped += 1
+                _record_delivery(
+                    session,
+                    channel="email",
+                    kind="device_health",
+                    recipient=recipient,
+                    user_id=user.id,
+                    status="failed",
+                    error="send_error",
+                )
+
+    return {
+        "scanned": scanned,
+        "notified": notified,
+        "healthy": healthy,
+        "skipped": skipped,
+    }
