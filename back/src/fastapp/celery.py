@@ -21,8 +21,16 @@ from fastapp.settings import get_settings
 
 @lru_cache(maxsize=1)
 def _celery_app() -> Celery:
-    """Broker-only Celery app (no task imports) — cached per process."""
-    return Celery(broker=get_settings().celery_broker_url)
+    """Broker-only Celery app (no task imports) — cached per process.
+
+    Routes ``agriapi.*`` tasks to the ``agriapi`` queue, exactly like Django's
+    ``CELERY_TASK_ROUTES`` — otherwise a bare ``send_task`` lands on the default
+    ``celery`` queue, which the ``-Q agriapi`` worker never consumes, and the
+    on-demand alert / zone-outbound tasks are silently dropped."""
+    app = Celery(broker=get_settings().celery_broker_url)
+    app.conf.task_routes = {"agriapi.*": {"queue": "agriapi"}}
+    app.conf.task_default_queue = "agriapi"
+    return app
 
 
 def send_task(name: str, **kwargs) -> None:
