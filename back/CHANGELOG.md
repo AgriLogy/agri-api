@@ -1,6 +1,31 @@
 # CHANGELOG
 
 
+## v1.104.0 (2026-07-05)
+
+### Features
+
+- **fastapp**: Native Celery app registering all tasks + beat (F10a)
+  ([#353](https://github.com/AgriLogy/agri-api/pull/353),
+  [`7bb7cbe`](https://github.com/AgriLogy/agri-api/commit/7bb7cbefd55d7b26e2d061af3d3a1bafe3489f43))
+
+Closes #352
+
+Strangler **F10a** — `fastapp/celery_app.py`, a native (Django-free) Celery app that registers all
+  13 ported task bodies under the same wire-contract names (`agriapi.tasks.<name>`), a static
+  `beat_schedule` mirroring the prod cadences, and fail-soft `analytics_taskrun` recording from
+  signals. Same broker + `agriapi` queue + routing as `agriapi.celery` so both apps interoperate
+  during overlap.
+
+**Additive** — only creates the app; NO container is switched. The worker/beat cutover (swap
+  `docker-entrypoint.sh` to `celery -A fastapp.celery_app`) is the careful **F10b** step, after
+  diffing this static schedule against the live `PeriodicTask` rows (prod ran the
+  DatabaseScheduler).
+
+4 tests: 13 names registered, tasks wrap the ported bodies, beat matches prod set (simulate
+  excluded), queue/routing/timezone match Django. Full suite **334 passed**.
+
+
 ## v1.103.0 (2026-07-05)
 
 ### Features
