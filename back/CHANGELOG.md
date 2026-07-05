@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v1.99.0 (2026-07-05)
+
+### Features
+
+- **fastapp**: Port flag_idle_zones Celery task (F8b)
+  ([#343](https://github.com/AgriLogy/agri-api/pull/343),
+  [`385ce29`](https://github.com/AgriLogy/agri-api/commit/385ce29bc3593165fd374d653c32222bf38ddd4f))
+
+Closes #342
+
+Strangler **F8b (part 2)** — the idle-zone liveness beat task moves to a Django-free fastapp
+  function. Flags a zone whose newest reading across all sensor models is older than
+  `ZONE_IDLE_THRESHOLD_HOURS` and emails the owner; skips fresh + never-reported zones. The reflag
+  throttle (Django LocMem `cache.add`) becomes a monkeypatchable **Redis `SET NX EX`** (fail-closed
+  on Redis error → no spam). Additive until F10.
+
+4 tests: flagging parity vs Django (throttle+email mocked both sides → same flagged count / email /
+  delivery row), none-idle no-op, no-recipient-consumes-slot, and the throttle's claim-once
+  semantics. Full suite **321 passed**.
+
+Remaining F8b: `send_periodic_notifications`, `scan_device_health`, `scan_proactive_insights`,
+  `run_due_irrigation_programs` → F10 native worker.
+
+
 ## v1.98.0 (2026-07-04)
 
 ### Features
