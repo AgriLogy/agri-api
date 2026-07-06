@@ -1,6 +1,32 @@
 # CHANGELOG
 
 
+## v1.107.0 (2026-07-06)
+
+### Features
+
+- **weather**: Add /weather/et0-series (Open-Meteo daily ET₀ over a range)
+  ([#365](https://github.com/AgriLogy/agri-api/pull/365),
+  [`be75272`](https://github.com/AgriLogy/agri-api/commit/be75272aa002b3c56327738a4d82b6715b7532ce))
+
+## What New owner-scoped `GET /weather/et0-series?zone=&start_date=&end_date=` returning
+  **Open-Meteo's real published FAO-56 ET₀** (mm/day) per day across the window, shaped like a
+  sensor-reading series (`[{timestamp, value, default_unit, available_units}]`, stamped at noon).
+
+## Why The station ET₀ chart's two series are effectively unfeedable right now (`et0weather` has no
+  writer; `et0calculated` needs full weather-sensor coverage). This gives the chart a **real**
+  reference line with zero hardware. agri-web plots it as a third line (separate PR).
+
+## Safety Reuses the keyless best-effort `fetch_openmeteo_et0`; `[]` on
+  unreachable/out-of-window/no-lat-lon. Range capped at 31 days. Owner-scoped 404 identical to
+  `/weather/et-forecast`.
+
+## Tests Route tests: 200 + list shape, missing-zone 404, other-user's-zone 404. ruff + format
+  clean.
+
+Closes #364
+
+
 ## v1.106.0 (2026-07-06)
 
 ### Features
