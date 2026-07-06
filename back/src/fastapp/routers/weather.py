@@ -47,6 +47,22 @@ def _parse_iso_date(value: str | None) -> datetime.date | None:
         return None
 
 
+def _pick_coords(
+    *candidates: tuple[float | None, float | None],
+) -> tuple[float | None, float | None]:
+    """First (lat, lon) pair where both are set, else (None, None).
+
+    Used to source Open-Meteo coordinates: the farmer's picked weather location
+    (passed by the frontend) wins, then the account's lat/lon, then the zone's
+    stored weather coordinates. Most farmer accounts have no server-side lat/lon
+    (the picker is client-side), so the zone fallback keeps the curve populated.
+    """
+    for lat, lon in candidates:
+        if lat is not None and lon is not None:
+            return lat, lon
+    return None, None
+
+
 @router.get(
     "/weather/et-forecast",
     summary="Daily reference-ET0 forecast for one of the caller's zones",
@@ -54,6 +70,8 @@ def _parse_iso_date(value: str | None) -> datetime.date | None:
 def et_forecast(
     zone_id: int,
     days: int = 7,
+    lat: float | None = None,
+    lon: float | None = None,
     user: AuthedUser = Depends(get_current_user),
 ):
     days = max(1, min(_MAX_DAYS, days))
@@ -66,6 +84,8 @@ def et_forecast(
         if zone is None or zone.user_id != user.id:
             raise HTTPException(status_code=404, detail="Zone not found.")
         elevation_m = float(zone.elevation_m or 0.0)
+        zone_lat = getattr(zone, "humidity_weather_latitude", None)
+        zone_lon = getattr(zone, "humidity_weather_longitude", None)
 
         row = session.get(CustomUserCustomuser, user.id)
         latitude = getattr(row, "latitude", None)
@@ -81,10 +101,15 @@ def et_forecast(
     )
 
     # Real reference curve: Open-Meteo's own published FAO-56 ET₀, keyed by ISO
-    # date. Best-effort — an empty map leaves ``et0_openmeteo_mm`` null on every
-    # day and the frontend simply draws no curve.
+    # date. Coordinates: the farmer's picked location (lat/lon params) wins, then
+    # the account lat/lon, then the zone's stored weather coordinates — so the
+    # curve populates even for the common case of a null-coordinate account.
+    # Best-effort — an empty map leaves ``et0_openmeteo_mm`` null on every day.
+    om_lat, om_lon = _pick_coords(
+        (lat, lon), (latitude, longitude), (zone_lat, zone_lon)
+    )
     reference = fetch_openmeteo_et0(
-        start=start, days=days, latitude=latitude, longitude=longitude
+        start=start, days=days, latitude=om_lat, longitude=om_lon
     )
     for day in forecast:
         day["et0_openmeteo_mm"] = reference.get(day["date"])
@@ -105,6 +130,8 @@ def et0_series(
     zone: int,
     start_date: str | None = None,
     end_date: str | None = None,
+    lat: float | None = None,
+    lon: float | None = None,
     user: AuthedUser = Depends(get_current_user),
 ):
     """Daily Open-Meteo FAO-56 ET₀ (mm/day) for the caller's ``zone`` across the
@@ -120,6 +147,8 @@ def et0_series(
         # Owner-scoped: unknown vs not-owned are indistinguishable (same 404).
         if z is None or z.user_id != user.id:
             raise HTTPException(status_code=404, detail="Zone not found.")
+        zone_lat = getattr(z, "humidity_weather_latitude", None)
+        zone_lon = getattr(z, "humidity_weather_longitude", None)
         row = session.get(CustomUserCustomuser, user.id)
         latitude = getattr(row, "latitude", None)
         longitude = getattr(row, "longitude", None)
@@ -131,8 +160,12 @@ def et0_series(
         end = start
     days = min(_MAX_SERIES_DAYS, (end - start).days + 1)
 
+    # Coordinates: farmer's picked location wins, then account, then zone.
+    om_lat, om_lon = _pick_coords(
+        (lat, lon), (latitude, longitude), (zone_lat, zone_lon)
+    )
     reference = fetch_openmeteo_et0(
-        start=start, days=days, latitude=latitude, longitude=longitude
+        start=start, days=days, latitude=om_lat, longitude=om_lon
     )
     return [
         {
