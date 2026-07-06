@@ -177,3 +177,38 @@ def test_missing_auth_is_401_on_both(fast, django, zone):
     fp = fast.get(f"{URL}?zone_id={zone.id}")
     assert dj.status_code == 401
     assert fp.status_code == 401
+
+
+# --- /weather/et0-series (Open-Meteo comparison line; fastapp-only) ----------
+
+_SERIES_URL = "/weather/et0-series"
+
+
+def test_et0_series_ok_and_owner_scoped(fast, owner, zone):
+    tok = _token(owner)
+    # Own zone → 200 + JSON list. Empty here because ET0_OPENMETEO is disabled
+    # in tests (no network), but the contract/shape is exercised.
+    ok = fast.get(
+        f"{_SERIES_URL}?zone={zone.id}", headers={"Authorization": f"Bearer {tok}"}
+    )
+    assert ok.status_code == 200, ok.text
+    assert isinstance(ok.json(), list)
+
+
+def test_et0_series_missing_zone_404(fast, owner):
+    tok = _token(owner)
+    resp = fast.get(
+        f"{_SERIES_URL}?zone=99999999", headers={"Authorization": f"Bearer {tok}"}
+    )
+    assert resp.status_code == 404
+    assert resp.json() == {"detail": "Zone not found."}
+
+
+def test_et0_series_other_users_zone_404(fast, owner, other):
+    foreign = _make_zone(other, name="Autre-série")
+    tok = _token(owner)
+    resp = fast.get(
+        f"{_SERIES_URL}?zone={foreign.id}", headers={"Authorization": f"Bearer {tok}"}
+    )
+    assert resp.status_code == 404
+    assert resp.json() == {"detail": "Zone not found."}
