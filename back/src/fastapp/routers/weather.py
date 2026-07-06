@@ -32,6 +32,19 @@ from fastapp.auth import AuthedUser, get_current_user
 router = APIRouter(tags=["weather"])
 
 _MAX_DAYS = 14
+# Cap the comparison-series range so a wide date picker can't fan out into a
+# huge Open-Meteo request (its forecast window is limited anyway).
+_MAX_SERIES_DAYS = 31
+
+
+def _parse_iso_date(value: str | None) -> datetime.date | None:
+    """'YYYY-MM-DD' → date, anything else → None (matches the sensors router)."""
+    if not value:
+        return None
+    try:
+        return datetime.date.fromisoformat(value)
+    except ValueError:
+        return None
 
 
 @router.get(
@@ -82,3 +95,51 @@ def et_forecast(
         "reference_provider": "open-meteo",
         "days": forecast,
     }
+
+
+@router.get(
+    "/weather/et0-series",
+    summary="Open-Meteo daily reference ET₀ over a date range for one zone",
+)
+def et0_series(
+    zone: int,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    user: AuthedUser = Depends(get_current_user),
+):
+    """Daily Open-Meteo FAO-56 ET₀ (mm/day) for the caller's ``zone`` across the
+    requested range, shaped like a sensor-reading series so the ET₀ comparison
+    chart can plot it as a third line next to the sensor + calculated series.
+
+    Owner-scoped (same 404 as et-forecast). Best-effort: returns ``[]`` when
+    Open-Meteo is unreachable / out of its window, or the user has no lat/lon.
+    Each point is stamped at noon of its day so it sits mid-day on the chart.
+    """
+    with session_scope() as session:
+        z = session.get(AnalyticsZone, zone)
+        # Owner-scoped: unknown vs not-owned are indistinguishable (same 404).
+        if z is None or z.user_id != user.id:
+            raise HTTPException(status_code=404, detail="Zone not found.")
+        row = session.get(CustomUserCustomuser, user.id)
+        latitude = getattr(row, "latitude", None)
+        longitude = getattr(row, "longitude", None)
+
+    today = datetime.datetime.now(datetime.timezone.utc).date()
+    start = _parse_iso_date(start_date) or today
+    end = _parse_iso_date(end_date) or (start + datetime.timedelta(days=6))
+    if end < start:
+        end = start
+    days = min(_MAX_SERIES_DAYS, (end - start).days + 1)
+
+    reference = fetch_openmeteo_et0(
+        start=start, days=days, latitude=latitude, longitude=longitude
+    )
+    return [
+        {
+            "timestamp": f"{iso}T12:00:00",
+            "value": value,
+            "default_unit": "mm/day",
+            "available_units": ["mm/day"],
+        }
+        for iso, value in sorted(reference.items())
+    ]
