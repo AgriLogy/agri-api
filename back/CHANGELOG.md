@@ -1,6 +1,32 @@
 # CHANGELOG
 
 
+## v1.107.1 (2026-07-06)
+
+### Bug Fixes
+
+- **weather**: Source Open-Meteo coords from picked location / zone
+  ([#367](https://github.com/AgriLogy/agri-api/pull/367),
+  [`553d0fe`](https://github.com/AgriLogy/agri-api/commit/553d0fe9ebb59c1f4745dddad691c79197a73e78))
+
+## Problem The Open-Meteo reference curve + comparison line are empty for nearly all farmers.
+  **Verified on prod:** `et0_openmeteo_mm: null` on every day, `/weather/et0-series` → 0 points.
+  Cause: the endpoints read coordinates from `user.latitude/longitude`, which is `None` on most
+  accounts — the weather location picker saves client-side (localStorage) and calls Open-Meteo from
+  the browser; it never sets server coords (those are admin-only).
+
+## Fix `/weather/et-forecast` + `/weather/et0-series` now accept optional `lat`/`lon` and resolve
+  coordinates in priority order: 1. **farmer's picked location** (frontend passes it from
+  `readWeatherLocation()`) 2. account `lat/lon` 3. **zone** weather coordinates
+  (`humidity_weather_latitude/longitude`, non-null on every zone)
+
+Mock/FAO bars unchanged (still account coords). Best-effort fetch unchanged.
+
+Paired with agri-web (frontend passes the picked location).
+
+Closes #366
+
+
 ## v1.107.0 (2026-07-06)
 
 ### Features
