@@ -22,7 +22,11 @@ from agri.core.database.session import session_scope
 from agri.core.et_forecast import et0_forecast
 from agri.db.analytics import AnalyticsZone
 from agri.db.users import CustomUserCustomuser
-from apps.sensors.forecast_provider import active_provider, get_daily_forecast
+from apps.sensors.forecast_provider import (
+    active_provider,
+    fetch_openmeteo_et0,
+    get_daily_forecast,
+)
 from fastapp.auth import AuthedUser, get_current_user
 
 router = APIRouter(tags=["weather"])
@@ -63,8 +67,18 @@ def et_forecast(
         daily, latitude=latitude, longitude=longitude, elevation_m=elevation_m
     )
 
+    # Real reference curve: Open-Meteo's own published FAO-56 ET₀, keyed by ISO
+    # date. Best-effort — an empty map leaves ``et0_openmeteo_mm`` null on every
+    # day and the frontend simply draws no curve.
+    reference = fetch_openmeteo_et0(
+        start=start, days=days, latitude=latitude, longitude=longitude
+    )
+    for day in forecast:
+        day["et0_openmeteo_mm"] = reference.get(day["date"])
+
     return {
         "zone_id": zone_id,
         "provider": active_provider(),
+        "reference_provider": "open-meteo",
         "days": forecast,
     }
