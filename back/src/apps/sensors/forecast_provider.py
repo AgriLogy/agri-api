@@ -161,7 +161,9 @@ def fetch_openmeteo_et0(
     )
     url = f"{_OPENMETEO_URL}?{query}"
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "agri-api/et0-forecast"})
+        req = urllib.request.Request(
+            url, headers={"User-Agent": "agri-api/et0-forecast"}
+        )
         with urllib.request.urlopen(req, timeout=_OPENMETEO_TIMEOUT_S) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
         daily = payload.get("daily") or {}
@@ -174,5 +176,7 @@ def fetch_openmeteo_et0(
             out[iso] = round(float(value), 2)
         return out
     except (urllib.error.URLError, TimeoutError, ValueError, OSError) as exc:
-        logger.warning("Open-Meteo ET₀ fetch failed (%s) — reference curve omitted", exc)
+        logger.warning(
+            "Open-Meteo ET₀ fetch failed (%s) — reference curve omitted", exc
+        )
         return {}
