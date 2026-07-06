@@ -18,14 +18,25 @@ returns the same series, so the endpoint + its tests are reproducible.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
+import urllib.error
+import urllib.parse
+import urllib.request
 from datetime import date, timedelta
 from math import cos, pi, sin
 
 from agri.core.et_forecast import DailyWeatherForecast
 
 logger = logging.getLogger(__name__)
+
+# Open-Meteo — free, keyless forecast API. We read its own published FAO-56
+# reference ET₀ (``et0_fao_evapotranspiration``) so the graph can show a real
+# reference curve next to our computed bars. Best-effort: any failure yields an
+# empty map and the curve is simply omitted (never fatal to the endpoint).
+_OPENMETEO_URL = "https://api.open-meteo.com/v1/forecast"
+_OPENMETEO_TIMEOUT_S = float(os.getenv("OPENMETEO_TIMEOUT_S", "4.0"))
 
 
 def _seasonal_mock_day(day: date, latitude: float | None) -> DailyWeatherForecast:
@@ -114,3 +125,54 @@ def active_provider() -> str:
     if provider == "openweather" and os.getenv("WEATHER_API_KEY"):
         return "openweather"
     return "mock"
+
+
+def fetch_openmeteo_et0(
+    *,
+    start: date,
+    days: int,
+    latitude: float | None,
+    longitude: float | None,
+) -> dict[str, float]:
+    """Return ``{iso_date: et0_mm}`` from Open-Meteo's published FAO-56 reference
+    ET₀, for the ``days`` days starting at ``start``.
+
+    Keyless and best-effort: returns ``{}`` when lat/lon are missing or on any
+    network / timeout / parse error. The ET₀ graph uses this as an optional real
+    reference curve, so an empty map just means "no curve this request" — it is
+    never allowed to fail the forecast endpoint. Set ``ET0_OPENMETEO=off`` to
+    disable the call entirely (e.g. in tests / offline).
+    """
+    if (os.getenv("ET0_OPENMETEO", "on") or "on").strip().lower() == "off":
+        return {}
+    if latitude is None or longitude is None:
+        return {}
+
+    end = start + timedelta(days=max(1, days) - 1)
+    query = urllib.parse.urlencode(
+        {
+            "latitude": round(float(latitude), 4),
+            "longitude": round(float(longitude), 4),
+            "daily": "et0_fao_evapotranspiration",
+            "timezone": "UTC",
+            "start_date": start.isoformat(),
+            "end_date": end.isoformat(),
+        }
+    )
+    url = f"{_OPENMETEO_URL}?{query}"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "agri-api/et0-forecast"})
+        with urllib.request.urlopen(req, timeout=_OPENMETEO_TIMEOUT_S) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+        daily = payload.get("daily") or {}
+        dates = daily.get("time") or []
+        values = daily.get("et0_fao_evapotranspiration") or []
+        out: dict[str, float] = {}
+        for iso, value in zip(dates, values):
+            if value is None:
+                continue
+            out[iso] = round(float(value), 2)
+        return out
+    except (urllib.error.URLError, TimeoutError, ValueError, OSError) as exc:
+        logger.warning("Open-Meteo ET₀ fetch failed (%s) — reference curve omitted", exc)
+        return {}
