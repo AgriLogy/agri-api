@@ -1,6 +1,36 @@
 # CHANGELOG
 
 
+## v1.106.0 (2026-07-06)
+
+### Features
+
+- **weather**: Add a real Open-Meteo reference ET₀ curve
+  ([#363](https://github.com/AgriLogy/agri-api/pull/363),
+  [`ebc4043`](https://github.com/AgriLogy/agri-api/commit/ebc40431e88c0682f8ee37024c65b1baf1024028))
+
+## What `GET /weather/et-forecast` now returns **Open-Meteo's own published FAO-56 reference ET₀**
+  (`et0_fao_evapotranspiration`) per day as `et0_openmeteo_mm`, plus top-level `reference_provider:
+  "open-meteo"`. The frontend plots this as a real reference **curve** next to the computed bars.
+
+## Why The bars are still the deterministic mock; this introduces a genuine, **keyless** data source
+  so users see real reference ET₀ alongside the placeholder — and it goes fully real the moment we
+  trust it for the bars too.
+
+## Safety Best-effort fetch (stdlib `urllib`, ~4s timeout): missing lat/lon, timeout, network error,
+  or `ET0_OPENMETEO=off` → empty map → `et0_openmeteo_mm` null on every day, curve absent. **Never
+  fails the endpoint.** Live by default (`ET0_OPENMETEO=on`); the droplet already allows outbound
+  HTTPS.
+
+## Tests - `test_openmeteo_provider.py` — network-free unit tests (parse/round, disable switch,
+  missing-coords, network-error fallback, null-skip). Logic verified locally + against the live
+  Open-Meteo API. - `test_weather_parity.py` — updated: fastapp is now an intentional superset of
+  the legacy (unrouted) Django endpoint; shared F2 contract still compared, new fields asserted
+  separately.
+
+Closes #362
+
+
 ## v1.105.2 (2026-07-05)
 
 ### Bug Fixes
