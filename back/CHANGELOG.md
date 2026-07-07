@@ -1,6 +1,72 @@
 # CHANGELOG
 
 
+## v1.108.0 (2026-07-07)
+
+### Features
+
+- **ingest**: Consume sensor data over MQTT (ChirpStack + generic + Bivocom)
+  ([#371](https://github.com/AgriLogy/agri-api/pull/371),
+  [`9ca4806`](https://github.com/AgriLogy/agri-api/commit/9ca4806a55b3b0233cdc1e804a412de0aa94e41d))
+
+Closes #369
+
+> Stacked on #368 (base = `refactor/ingest-shared-handlers`). Review/merge that first; this branch
+  retargets to `main` after.
+
+## What A persistent MQTT subscriber — new `mqtt` entrypoint role (`docker-entrypoint.sh mqtt` →
+  `fastapp.mqtt`) — that consumes sensor data over MQTT and writes through the SAME `fastapp.ingest`
+  handlers the HTTP webhooks use. No new business logic, no schema change.
+
+| Topic | Source | Handler | |---|---|---| | `application/+/device/+/event/up` | ChirpStack v4 |
+  `handle_chirpstack_uplink` | | `agrilogy/+/weather` | generic multi-metric | `handle_metrics` | |
+  `agrilogy/+/sensor/+` | generic single reading | `handle_metrics` | | `agrilogy/+/bivocom` |
+  Bivocom (bridge-shaped) | `handle_metrics` |
+
+## Design - **Additive.** HTTP `/ingest/*` keeps working; rollback = stop the container. - **Broker
+  = ChirpStack's own** (LoRaWAN uplinks land there natively). Dev uses a bundled `mosquitto`; the
+  droplet sets `MQTT_HOST`/creds in `back/.env`. - New `agri-api-mqtt` compose service. ⚠️ **Single
+  instance only** — every subscriber gets every message. - Bad payloads are logged and dropped
+  (never crash the loop); `loop_forever` auto-reconnects. - Broker-level auth (user/pass/TLS)
+  instead of the still-TODO webhook shared-secret.
+
+## Out of scope (follow-up) Raw-Modbus-tag Bivocom via `analytics_devicesensor` — blocked on the
+  held `00a3976cb808` migration, the table having no `user_id`, and the string/int `device_id`
+  mismatch. The bridge-shaped path here already covers today's live Bivocom data.
+
+## Test - `pytest src/fastapp/tests/test_mqtt_ingest.py` — 15 pass: topic→handler routing, payload
+  parsing, malformed-drop, and paho filter/topic matching (broker-side wiring proof without a
+  broker). - Row/alert parity of the shared handlers: `test_ingest_parity` (from #368). - `docker
+  compose config` valid; ruff clean.
+
+### Refactoring
+
+- **ingest**: Extract transport-agnostic handle_* handlers
+  ([#370](https://github.com/AgriLogy/agri-api/pull/370),
+  [`a15dd8d`](https://github.com/AgriLogy/agri-api/commit/a15dd8de07f3cb473d02e4d4a738e4bc4bf8888a))
+
+Closes #368
+
+## What Lift the device-webhook persist + alert-dispatch bodies out of the HTTP route functions in
+  `back/src/fastapp/routers/ingest.py` into `back/src/fastapp/ingest.py`:
+
+- `handle_chirpstack_uplink(session, ...)` — raw-uplink store + pH/battery/signal rows under the
+  `lora` zone + alert dispatch - `handle_metrics(session, *, client, metrics, timestamp=None)` —
+  user→zone resolution + per-`sensor_key` write + alert dispatch (shared by weather + single-sensor)
+  - `resolve_user_zone(...)` + `IngestError` — uniform client/zone errors
+
+The `/ingest/*` routes are now thin: parse → one handler → shape response.
+
+## Behaviour **Unchanged.** Response envelopes, status codes, persisted rows, and enqueued alert
+  tasks are byte-identical — `test_ingest_parity` is untouched and still green.
+
+## Why Prep so a second ingest transport (MQTT, #369) reuses the exact same write path with zero
+  duplication.
+
+## Test - `pytest src/fastapp/tests/test_ingest_parity.py` (dual-ORM, Postgres — CI). - Full fastapp
+  suite collects + passes (324 skip without Postgres, 0 fail).
+
+
 ## v1.107.1 (2026-07-06)
 
 ### Bug Fixes
