@@ -94,6 +94,24 @@ def _now() -> datetime.datetime:
     return datetime.datetime.now(datetime.timezone.utc)
 
 
+def parse_timestamp(value: Any) -> datetime.datetime | None:
+    """Best-effort parse of a reading timestamp from an untyped source (an MQTT
+    JSON body). ``None``/empty → ``None`` (caller falls back to ``_now()``); an
+    ISO-8601 string (``Z`` allowed) → aware datetime; a datetime passes through.
+    A malformed string returns ``None`` rather than failing the whole message.
+    """
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime.datetime):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    return None
+
+
 # ---------------------------------------------------------------------------
 # lora_uplink — unmanaged, append-only raw-uplink record.
 #
@@ -623,6 +641,7 @@ __all__ = [
     "grace_period_seconds_for",
     "handle_chirpstack_uplink",
     "handle_metrics",
+    "parse_timestamp",
     "resolve_user_zone",
     "sensor_model_for",
     "store_lora_uplink",
