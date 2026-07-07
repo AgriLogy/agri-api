@@ -438,9 +438,182 @@ def dispatch_alerts_for_reading(
     return enqueued
 
 
+# ---------------------------------------------------------------------------
+# Transport-agnostic ingest handlers.
+#
+# The bodies below were lifted out of the HTTP router (``routers/ingest.py``)
+# so a SECOND transport — the MQTT subscriber (``fastapp.mqtt``) — can persist
+# byte-for-byte the same rows and enqueue the same alert tasks without going
+# through FastAPI. Each ``handle_*`` takes an open ``session`` plus already-
+# parsed primitives; the caller owns transaction scope (``session_scope``) and
+# response/ack shaping. HTTP keeps its exact envelopes; MQTT just logs the count.
+# ---------------------------------------------------------------------------
+class IngestError(Exception):
+    """A caller-visible ingest failure (bad client, no zone, unknown key).
+
+    The HTTP router maps this to the SAME ``{"error": message}`` + status the
+    inline code returned; the MQTT subscriber logs it and drops the message.
+    """
+
+    def __init__(self, message: str, *, status: int = 400):
+        super().__init__(message)
+        self.message = message
+        self.status = status
+
+
+def resolve_user_zone(
+    session: Session, client: str
+) -> tuple[CustomUserCustomuser, AnalyticsZone]:
+    """(user, first zone) for a client username, or raise ``IngestError`` with
+    the exact message/status the weather+sensor routes returned inline."""
+    user = user_by_username(session, client)
+    if not user:
+        raise IngestError(f"User not found for client '{client}'")
+    zone = first_zone_for(session, user.id)
+    if not zone:
+        raise IngestError(f"No zone found for user '{user.username}'")
+    return user, zone
+
+
+def handle_metrics(
+    session: Session,
+    *,
+    client: str,
+    metrics: dict[str, float],
+    timestamp: datetime.datetime | None = None,
+) -> int:
+    """Write one reading per ``{sensor_key: value}`` under the client's first
+    zone and push each through alert dispatch. Returns the inserted count.
+
+    Shared by the weather (multi-metric), single-sensor, and Bivocom paths.
+    Callers pre-filter ``metrics`` to known ``sensor_key``s. Alert dispatch is
+    wrapped so a failure never aborts the write loop (parity with the routers).
+    """
+    user, zone = resolve_user_zone(session, client)
+    now = timestamp or _now()
+    inserted = 0
+    for sensor_key, value in metrics.items():
+        write_reading(
+            session,
+            sensor_key=sensor_key,
+            user_id=user.id,
+            zone_id=zone.id,
+            value=value,
+            timestamp=now,
+        )
+        inserted += 1
+        try:
+            dispatch_alerts_for_reading(
+                session,
+                sensor_key=sensor_key,
+                zone_id=zone.id,
+                user_id=user.id,
+                value=value,
+                timestamp=now,
+            )
+        except Exception:
+            log.exception(
+                "alert dispatch failed for sensor_key=%s user=%s zone=%s",
+                sensor_key,
+                user.username,
+                zone.id,
+            )
+    return inserted
+
+
+def handle_chirpstack_uplink(
+    session: Session,
+    *,
+    dev_eui: str,
+    device_name: str,
+    f_cnt: int | None,
+    f_port: int | None,
+    rssi: float | None,
+    snr: float | None,
+    frequency: int | None,
+    obj: dict,
+    data: str,
+) -> int:
+    """Persist a ChirpStack v4 uplink: append the raw record, then write the
+    metrics present on this frame (pH / battery / signal) under the shared
+    ``lora`` zone and dispatch alerts. Returns the channel (reading) count.
+
+    Ported verbatim from ``routers.ingest.chirpstack_uplink`` so HTTP + MQTT
+    share one code path (see ``test_ingest_parity``).
+    """
+    ph = decode_ph(obj, f_port=f_port, data=data)
+    battery = decode_battery(obj)
+    log.info(
+        "chirpstack.uplink",
+        extra={
+            "dev_eui": dev_eui,
+            "fPort": f_port,
+            "ph": ph,
+            "battery_v": battery,
+            "rssi": rssi,
+        },
+    )
+
+    # Store the complete uplink (every field) for EVERY frame — nothing dropped.
+    store_lora_uplink(
+        session,
+        dev_eui=dev_eui,
+        device_name=device_name or "",
+        f_cnt=f_cnt,
+        f_port=f_port,
+        rssi=rssi,
+        snr=snr,
+        frequency=frequency,
+        battery_v=battery,
+        ph=ph,
+        decoded=obj or {},
+        raw_b64=data or "",
+    )
+
+    # Per-metric graphable series under the ``lora`` zone — only metrics
+    # present on this frame: (sensor_key, value).
+    readings: list[tuple[str, float]] = []
+    if ph is not None:
+        readings.append(("ph_soil", ph))
+    if battery is not None:
+        readings.append(("battery", battery))
+    if rssi is not None:
+        readings.append(("signal", round(float(rssi), 1)))
+
+    if not readings:
+        return 0
+
+    zone = ensure_lora_zone(session)
+    now = _now()
+    for sensor_key, value in readings:
+        write_reading(
+            session,
+            sensor_key=sensor_key,
+            user_id=zone.user_id,
+            zone_id=zone.id,
+            value=value,
+            timestamp=now,
+        )
+        # Alert dispatch must never abort the ingest loop.
+        try:
+            dispatch_alerts_for_reading(
+                session,
+                sensor_key=sensor_key,
+                zone_id=zone.id,
+                user_id=zone.user_id,
+                value=value,
+                timestamp=now,
+            )
+        except Exception:
+            log.exception("alert dispatch failed for %s in lora zone", sensor_key)
+
+    return len(readings)
+
+
 __all__ = [
     "ALERT_GRACE_PERIODS",
     "DEFAULT_ALERT_GRACE_PERIOD",
+    "IngestError",
     "LoraUplinkRow",
     "decode_battery",
     "decode_ph",
@@ -448,6 +621,9 @@ __all__ = [
     "ensure_lora_zone",
     "first_zone_for",
     "grace_period_seconds_for",
+    "handle_chirpstack_uplink",
+    "handle_metrics",
+    "resolve_user_zone",
     "sensor_model_for",
     "store_lora_uplink",
     "user_by_username",
