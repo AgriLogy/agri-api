@@ -124,6 +124,29 @@ class AppSettings(BaseSettings):
         default="false", alias="IRRIGATION_DISPATCH_ENABLED"
     )
 
+    # -- MQTT ingest (fastapp-native transport; NOT mirrored from Django) -----
+    # Unlike every field above, these are NEW variable names: MQTT ingest is a
+    # fastapp-only process (``docker-entrypoint.sh mqtt`` → ``fastapp.mqtt``),
+    # so there is no Django reader to stay in lock-step with. The subscriber
+    # connects to ChirpStack's existing MQTT broker (LoRaWAN uplinks land there
+    # natively) and to a generic ``{prefix}/{client}/...`` topic tree. Dev
+    # defaults target the compose ``mosquitto`` container; the droplet supplies
+    # broker host/creds via back/.env. An empty host disables the subscriber.
+    mqtt_host: str = Field(default="mosquitto", alias="MQTT_HOST")
+    mqtt_port: int = Field(default=1883, alias="MQTT_PORT")
+    mqtt_username: str = Field(default="", alias="MQTT_USERNAME")
+    mqtt_password: str = Field(default="", alias="MQTT_PASSWORD")
+    mqtt_tls_raw: str = Field(default="false", alias="MQTT_TLS")
+    mqtt_client_id: str = Field(default="agri-api-ingest", alias="MQTT_CLIENT_ID")
+    mqtt_qos: int = Field(default=1, alias="MQTT_QOS")
+    # Topic prefix for the generic/Bivocom sensor tree: {prefix}/{client}/...
+    mqtt_topic_prefix: str = Field(default="agrilogy", alias="MQTT_TOPIC_PREFIX")
+    # ChirpStack v4 publishes uplinks here by default (application/{id}/device/
+    # {devEui}/event/up). Override if the tenant uses a non-default topic.
+    mqtt_chirpstack_topic: str = Field(
+        default="application/+/device/+/event/up", alias="MQTT_CHIRPSTACK_TOPIC"
+    )
+
     # -- Derived --------------------------------------------------------------
     version: str = Field(default_factory=_read_project_version)
 
@@ -135,6 +158,16 @@ class AppSettings(BaseSettings):
     def irrigation_dispatch_enabled(self) -> bool:
         """Mirror Django base.py: truthy iff '1' / 'true' / 'yes'."""
         return self.irrigation_dispatch_enabled_raw.lower() in ("1", "true", "yes")
+
+    @property
+    def mqtt_tls(self) -> bool:
+        """TLS to the MQTT broker — truthy iff '1' / 'true' / 'yes'."""
+        return self.mqtt_tls_raw.lower() in ("1", "true", "yes")
+
+    @property
+    def mqtt_enabled(self) -> bool:
+        """Subscriber runs only when a broker host is configured."""
+        return bool(self.mqtt_host.strip())
 
     @property
     def cors_allowed_origins_list(self) -> list[str]:

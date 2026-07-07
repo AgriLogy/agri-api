@@ -10,6 +10,8 @@
 #   beat     Celery beat with the DatabaseScheduler (Django app)
 #   fast-worker  Native Celery worker (celery -A fastapp.celery_app) — F10 cutover of `worker`
 #   fast-beat    Native Celery beat, static schedule — F10 cutover of `beat`
+#   mqtt     MQTT ingest subscriber (fastapp.mqtt) — consumes ChirpStack +
+#            generic sensor topics, writes via the fastapp.ingest handlers
 #   migrate  Apply agri-db Alembic migrations, then exit (run by deploy)
 #   shell    Drop into bash for debugging
 #
@@ -170,6 +172,18 @@ case "$ROLE" in
     exec celery -A fastapp.celery_app beat --loglevel=info \
       --schedule "${CELERYBEAT_SCHEDULE_FILE:-/tmp/fastapp-celerybeat-schedule}"
     ;;
+  mqtt)
+    # MQTT ingest subscriber: a persistent paho loop_forever() client that
+    # consumes ChirpStack LoRaWAN uplinks + the generic sensor topic tree and
+    # writes through the SAME fastapp.ingest handlers the HTTP /ingest/* webhooks
+    # use (additive — HTTP keeps working). Needs Postgres (readings + alert grace
+    # claim) and Redis (alert tasks enqueue via fastapp.celery.send_task).
+    # Run EXACTLY ONE instance — every subscriber gets every message.
+    wait_for_postgres
+    wait_for_redis
+    log "Starting MQTT ingest subscriber (fastapp.mqtt)"
+    exec python -m fastapp.mqtt
+    ;;
   migrate)
     # Apply the bundled agri-db Alembic migrations to the live database, then
     # exit. Run by the deploy pipeline BEFORE the app containers are (re)started,
@@ -216,7 +230,7 @@ case "$ROLE" in
     ;;
   *)
     echo "Unknown role: $ROLE" >&2
-    echo "Use one of: web | fast | worker | beat | migrate | shell" >&2
+    echo "Use one of: web | fast | worker | beat | fast-worker | fast-beat | mqtt | migrate | shell" >&2
     exit 2
     ;;
 esac

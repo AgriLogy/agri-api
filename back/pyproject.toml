@@ -74,6 +74,11 @@ dependencies = [
     "fastapi>=0.139.0",
     "uvicorn[standard]>=0.49.0",
     "pydantic-settings>=2.14.2",
+    # paho-mqtt drives the MQTT ingest subscriber (entrypoint `mqtt` role →
+    # fastapp.mqtt): a persistent loop_forever() client that consumes ChirpStack
+    # LoRaWAN uplinks + the generic sensor topic tree and writes through the same
+    # fastapp.ingest handlers the HTTP webhooks use.
+    "paho-mqtt>=2.1,<3",
 ]
 
 [dependency-groups]

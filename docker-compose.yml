@@ -38,6 +38,21 @@ services:
     restart: unless-stopped
     networks: [agro]
 
+  # ---------- Mosquitto (dev MQTT broker; :1883) ----------------------
+  # Local broker so `make up` exercises the full MQTT ingest path offline.
+  # NOT used in prod: on the droplet MQTT_HOST (back/.env) points at
+  # ChirpStack's own broker, where LoRaWAN uplinks are published natively —
+  # this container just idles there. Config: deploy/mosquitto/mosquitto.conf.
+  mosquitto:
+    container_name: mosquitto
+    image: eclipse-mosquitto:2
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./deploy/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    restart: unless-stopped
+    networks: [agro]
+
   # ---------- agri-bridge — stateless HTTP ingest gateway -----------
   # Receives Router0X-format payloads from field devices, translates to
   # the Bivocom v1 wire format, forwards to agri-api. Sources live in
@@ -186,6 +201,47 @@ services:
     # to the live PeriodicTask rows). Rollback = set this back to "beat"
     # (DatabaseScheduler) and redeploy.
     command: ["bash", "/code/docker-entrypoint.sh", "fast-beat"]
+    volumes:
+      - ./back:/code:delegated
+      - ./shared_data:/shared:rw
+    depends_on:
+      agri-api-web:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [agro]
+
+  # ---------- MQTT ingest subscriber ----------------------------------
+  # Persistent paho subscriber (docker-entrypoint.sh mqtt → fastapp.mqtt) that
+  # consumes ChirpStack LoRaWAN uplinks + the generic {prefix}/{client}/... topic
+  # tree and writes through the SAME fastapp.ingest handlers the HTTP /ingest/*
+  # webhooks use — additive, so HTTP keeps working (rollback = stop this one).
+  #
+  # Broker: MQTT_HOST defaults to the dev `mosquitto` above; the droplet sets
+  # MQTT_HOST (+ MQTT_USERNAME/MQTT_PASSWORD/MQTT_TLS) in back/.env → ChirpStack's
+  # broker. Tolerates the broker being down at boot (connect_async + retry).
+  #
+  # ⚠️ Do NOT scale to >1 replica: every subscriber receives every message, so N
+  # replicas = N× writes and N× alert emails.
+  agri-api-mqtt:
+    container_name: agri-api-mqtt
+    image: agri-api:latest
+    build:
+      context: ./back
+      dockerfile: Dockerfile
+      secrets:
+        - agri_db_token
+    env_file: ./back/.env
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      DJANGO_RUN_MODE: mqtt
+      DJANGO_ENV: ${DJANGO_ENV:-dev}
+      # Dev default targets the mosquitto container; back/.env overrides on prod.
+      MQTT_HOST: ${MQTT_HOST:-mosquitto}
+      MQTT_PORT: ${MQTT_PORT:-1883}
+    command: ["bash", "/code/docker-entrypoint.sh", "mqtt"]
     volumes:
       - ./back:/code:delegated
       - ./shared_data:/shared:rw
