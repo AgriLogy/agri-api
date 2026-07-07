@@ -111,81 +111,25 @@ class ChirpStackUplink(BaseModel):
 @router.post("/ingest/lorawan/chirpstack", summary="ChirpStack v4 uplink webhook")
 def chirpstack_uplink(payload: ChirpStackUplink):
     dev_eui = payload.deviceInfo.devEui
-    ph = ingest.decode_ph(payload.object, f_port=payload.fPort, data=payload.data)
-    battery = ingest.decode_battery(payload.object)
-    rssi = payload.rxInfo[0].rssi if payload.rxInfo else None
-    log.info(
-        "chirpstack.uplink",
-        extra={
-            "dev_eui": dev_eui,
-            "fPort": payload.fPort,
-            "ph": ph,
-            "battery_v": battery,
-            "rssi": rssi,
-        },
-    )
-
+    rx = payload.rxInfo[0] if payload.rxInfo else None
     with session_scope(commit=True) as session:
-        # Store the complete uplink (every field) for EVERY frame — nothing dropped.
-        ingest.store_lora_uplink(
+        channels = ingest.handle_chirpstack_uplink(
             session,
             dev_eui=dev_eui,
             device_name=payload.deviceInfo.deviceName or "",
             f_cnt=payload.fCnt,
             f_port=payload.fPort,
-            rssi=(payload.rxInfo[0].rssi if payload.rxInfo else None),
-            snr=(payload.rxInfo[0].snr if payload.rxInfo else None),
-            frequency=(payload.txInfo.frequency if payload.txInfo else None),
-            battery_v=battery,
-            ph=ph,
-            decoded=payload.object or {},
-            raw_b64=payload.data or "",
+            rssi=rx.rssi if rx else None,
+            snr=rx.snr if rx else None,
+            frequency=payload.txInfo.frequency if payload.txInfo else None,
+            obj=payload.object or {},
+            data=payload.data or "",
         )
-
-        # Per-metric graphable series under the ``lora`` zone — only metrics
-        # present on this frame: (sensor_key, value).
-        readings: list[tuple[str, float]] = []
-        if ph is not None:
-            readings.append(("ph_soil", ph))
-        if battery is not None:
-            readings.append(("battery", battery))
-        if rssi is not None:
-            readings.append(("signal", round(float(rssi), 1)))
-
-        if not readings:
-            return DjangoStyleJSONResponse(
-                {"accepted": True, "devEui": dev_eui, "channels": 0},
-                status_code=202,
-            )
-
-        zone = ingest.ensure_lora_zone(session)
-        now = ingest._now()
-        for sensor_key, value in readings:
-            ingest.write_reading(
-                session,
-                sensor_key=sensor_key,
-                user_id=zone.user_id,
-                zone_id=zone.id,
-                value=value,
-                timestamp=now,
-            )
-            # Alert dispatch must never abort the ingest loop.
-            try:
-                ingest.dispatch_alerts_for_reading(
-                    session,
-                    sensor_key=sensor_key,
-                    zone_id=zone.id,
-                    user_id=zone.user_id,
-                    value=value,
-                    timestamp=now,
-                )
-            except Exception:
-                log.exception("alert dispatch failed for %s in lora zone", sensor_key)
-
-        return DjangoStyleJSONResponse(
-            {"accepted": True, "devEui": dev_eui, "channels": len(readings)},
-            status_code=201,
-        )
+    # No metrics on this frame (e.g. an fPort-5 status frame) → 202; else 201.
+    return DjangoStyleJSONResponse(
+        {"accepted": True, "devEui": dev_eui, "channels": channels},
+        status_code=202 if channels == 0 else 201,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -222,47 +166,11 @@ async def weather_ingest(request: Request):
         )
     client = client.strip()
 
-    with session_scope(commit=True) as session:
-        user = ingest.user_by_username(session, client)
-        if not user:
-            return DjangoStyleJSONResponse(
-                {"error": f"User not found for client '{client}'"}, status_code=400
-            )
-        zone = ingest.first_zone_for(session, user.id)
-        if not zone:
-            return DjangoStyleJSONResponse(
-                {"error": f"No zone found for user '{user.username}'"},
-                status_code=400,
-            )
-
-        now = ingest._now()
-        inserted = 0
-        for sensor_key, value in metrics.items():
-            ingest.write_reading(
-                session,
-                sensor_key=sensor_key,
-                user_id=user.id,
-                zone_id=zone.id,
-                value=value,
-                timestamp=now,
-            )
-            inserted += 1
-            try:
-                ingest.dispatch_alerts_for_reading(
-                    session,
-                    sensor_key=sensor_key,
-                    zone_id=zone.id,
-                    user_id=user.id,
-                    value=value,
-                    timestamp=now,
-                )
-            except Exception:
-                log.exception(
-                    "alert dispatch failed for sensor_key=%s user=%s zone=%s",
-                    sensor_key,
-                    user.username,
-                    zone.id,
-                )
+    try:
+        with session_scope(commit=True) as session:
+            inserted = ingest.handle_metrics(session, client=client, metrics=metrics)
+    except ingest.IngestError as exc:
+        return DjangoStyleJSONResponse({"error": exc.message}, status_code=exc.status)
 
     return DjangoStyleJSONResponse({"inserted": inserted}, status_code=201)
 
@@ -290,44 +198,16 @@ def sensor_ingest(payload: SensorReadingIn):
     if not client:
         return DjangoStyleJSONResponse({"error": "client is required"}, status_code=400)
 
-    with session_scope(commit=True) as session:
-        user = ingest.user_by_username(session, client)
-        if not user:
-            return DjangoStyleJSONResponse(
-                {"error": f"User not found for client '{client}'"}, status_code=400
-            )
-        zone = ingest.first_zone_for(session, user.id)
-        if not zone:
-            return DjangoStyleJSONResponse(
-                {"error": f"No zone found for user '{user.username}'"},
-                status_code=400,
-            )
-
-        ts = payload.timestamp or ingest._now()
-        ingest.write_reading(
-            session,
-            sensor_key=sensor_key,
-            user_id=user.id,
-            zone_id=zone.id,
-            value=payload.value,
-            timestamp=ts,
-        )
-        try:
-            ingest.dispatch_alerts_for_reading(
+    try:
+        with session_scope(commit=True) as session:
+            ingest.handle_metrics(
                 session,
-                sensor_key=sensor_key,
-                zone_id=zone.id,
-                user_id=user.id,
-                value=payload.value,
-                timestamp=ts,
+                client=client,
+                metrics={sensor_key: payload.value},
+                timestamp=payload.timestamp,
             )
-        except Exception:
-            log.exception(
-                "alert dispatch failed for sensor_key=%s user=%s zone=%s",
-                sensor_key,
-                user.username,
-                zone.id,
-            )
+    except ingest.IngestError as exc:
+        return DjangoStyleJSONResponse({"error": exc.message}, status_code=exc.status)
 
     return DjangoStyleJSONResponse(
         {"inserted": 1, "sensor_key": sensor_key}, status_code=201
