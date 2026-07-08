@@ -57,3 +57,76 @@ jobs:
         EMAIL_BACKEND=django.core.mail.backends.locmem.EmailBackend
         CELERY_TASK_ALWAYS_EAGER=True
     secrets: inherit
+
+  # MQTT ingest broker + end-to-end tests. Self-contained (not the shared
+  # python-test.yml) because it needs an extra system package the shared
+  # workflow doesn't provide: a real `mosquitto` broker. The broker/e2e tests
+  # (test_mqtt_broker.py, test_mqtt_e2e.py) SKIP when mosquitto is absent — so
+  # they must run in a job that installs it, otherwise they'd never gate a
+  # merge. Postgres 16 (same as `test`) backs the dual-ORM e2e assertions.
+  mqtt-e2e:
+    needs: lint
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    defaults:
+      run:
+        working-directory: back
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the mosquitto broker
+        run: sudo apt-get update && sudo apt-get install -y mosquitto
+
+      - name: Authenticate git for the private agri-db dependency
+        run: |
+          git config --global \
+            url."https://x-access-token:${{ secrets.AGRI_DB_RO_TOKEN }}@github.com/".insteadOf \
+            "https://github.com/"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.11.6"
+          enable-cache: true
+          cache-dependency-glob: back/uv.lock
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Sync dependencies
+        run: uv sync --frozen
+
+      - name: Run MQTT broker + e2e tests (real mosquitto + Postgres)
+        env:
+          DJANGO_SETTINGS_MODULE: agriapi.settings
+          SECRET_KEY: ci-placeholder-secret-key
+          DEBUG: "True"
+          ALLOWED_HOSTS: "*"
+          USE_POSTGRES: "True"
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: "5432"
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+          EMAIL_BACKEND: django.core.mail.backends.locmem.EmailBackend
+          CELERY_TASK_ALWAYS_EAGER: "True"
+          # Fail (don't skip) if the broker is somehow unavailable — the gate
+          # must never silently no-op.
+          MQTT_REQUIRE_BROKER: "1"
+        run: |
+          uv run pytest \
+            src/fastapp/tests/test_mqtt_broker.py \
+            src/fastapp/tests/test_mqtt_e2e.py -v
