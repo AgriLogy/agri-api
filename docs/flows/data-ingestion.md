@@ -4,6 +4,13 @@ How a sensor reading travels from a field device into the database, and
 how it is later turned into derived series (ET0, VPD) by the periodic
 Celery jobs. Last verified 2026-05-20.
 
+> **Note (2026-07):** this doc describes the original **HTTP** path (and
+> predates the FastAPI strangler — the live HTTP ingest now runs on `fastapp`,
+> not the Django `WeatherIngestAPIView` shown below). A second transport,
+> **MQTT**, was added alongside it and is documented in full in
+> [`mqtt-ingest.md`](./mqtt-ingest.md) — both transports share the same
+> `fastapp.ingest` write/alert handlers.
+
 ## TL;DR
 
 ```

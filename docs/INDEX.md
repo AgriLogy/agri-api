@@ -11,7 +11,8 @@
 
 - `.claude/CONTINUE.md` — current handoff state. Read when user says "continue".
 - `docs/flows/notifications.md` — alert / email / push notification flow
-- `docs/flows/data-ingestion.md` — how sensor readings flow from device to DB
+- `docs/flows/data-ingestion.md` — how sensor readings flow from device to DB (HTTP path)
+- `docs/flows/mqtt-ingest.md` — the MQTT transport end-to-end (subscriber + agri-bridge publisher, topics, config, deploy, testing)
 - `docs/flows/alerts.md` — alert rule evaluation + delivery
 - `readme.md` — user-facing repo description
 - `CHANGELOG.md` — release history
