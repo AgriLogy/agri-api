@@ -1,6 +1,32 @@
 # CHANGELOG
 
 
+## v1.108.1 (2026-07-08)
+
+### Bug Fixes
+
+- **ingest**: Provision the lora user with explicit notification defaults
+  ([#374](https://github.com/AgriLogy/agri-api/pull/374),
+  [`6f06fa9`](https://github.com/AgriLogy/agri-api/commit/6f06fa93899f6aa9149bee2e2280ab79b63d7c8a))
+
+Closes #372
+
+## What `ensure_lora_zone` lazily creates the `lora` CustomUser via SQLAlchemy, omitting
+  `notify_every` / `preferred_language` and relying on a DB **server default**. That default exists
+  in the agri.db (Alembic) schema but NOT in a Django-migration-built schema (the test DB, and any
+  non-Alembic bootstrap), so the insert raises `NotNullViolation` the first time the `lora` user is
+  provisioned over a non-Django ingest path.
+
+The HTTP ChirpStack route never hit this because Django (`get_or_create`) created the row first; the
+  new MQTT path has no Django call.
+
+## Fix Set `notify_every=240` and `preferred_language="fr"` explicitly — byte-for-byte what Django's
+  `get_or_create` writes — so provisioning works on any schema.
+
+## Test Regression coverage lands in the stacked e2e PR (#373): its ChirpStack case exercises
+  first-time `lora` provisioning and failed before this fix.
+
+
 ## v1.108.0 (2026-07-07)
 
 ### Features
