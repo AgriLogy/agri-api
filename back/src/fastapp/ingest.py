@@ -212,8 +212,13 @@ def ensure_lora_zone(session: Session) -> AnalyticsZone:
     user = user_by_username(session, LORA_USER_NAME)
     if user is None:
         # Django CustomUser field defaults for a get_or_create with only email
-        # overridden (see apps/users/models.py). notify_every / preferred_language
-        # carry DB server_defaults → omitted so Postgres fills them.
+        # overridden (see apps/users/models.py). notify_every (240) and
+        # preferred_language ('fr') are set EXPLICITLY to the Django app-level
+        # defaults: the agri.db model declares server_defaults, but a Django-
+        # migration-built schema (e.g. the test DB) has none, so relying on the
+        # DB to fill them raises NotNullViolation on the first lora uplink over a
+        # Django-only ingest path (HTTP had Django create this row first). These
+        # values match what the Django get_or_create writes, byte-for-byte.
         user = CustomUserCustomuser(
             username=LORA_USER_NAME,
             email="lora@local.invalid",
@@ -225,6 +230,8 @@ def ensure_lora_zone(session: Session) -> AnalyticsZone:
             is_active=True,
             is_staff=False,
             is_technician=False,
+            notify_every=240,
+            preferred_language="fr",
             date_joined=_now(),
         )
         session.add(user)
