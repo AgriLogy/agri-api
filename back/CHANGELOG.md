@@ -1,6 +1,49 @@
 # CHANGELOG
 
 
+## v1.114.0 (2026-07-12)
+
+### Features
+
+- **users**: Self-service profile + change-password on /users/me
+  ([#397](https://github.com/AgriLogy/agri-api/pull/397),
+  [`74f5a70`](https://github.com/AgriLogy/agri-api/commit/74f5a70c3d4662652a7e6377e97365560d8384e7))
+
+Closes #396.
+
+Backs the new agri-web Profile settings page (**mks-zakaria/agri-web#54**, ticket
+  **AgriLogy/agrilogy-front#15**) by extending the caller's self endpoints. The frontend is wired to
+  the live **fastapp** surface, so the real change is in `fastapp/routers/selfreads.py`; the
+  Django-ninja original (`apps/users/router_admin.py`) is updated in lockstep to keep the strangler
+  byte-parity intact.
+
+## What changed - **`GET /users/me`** now returns `email`, `phone_number`, `first_name`, `last_name`
+  alongside `username`/`preferred_language`/`notify_every`. `first_name`/`last_name` are the wire
+  names for the model's `firstname`/`lastname` columns. - **`PATCH /users/me`** accepts those fields
+  (all optional): - email format check + **uniqueness** (rejects if another user owns it) → 400 bare
+  field-map `{"email": "This email is already in use."}`, - basic phone length check, - only
+  supplied fields are written; existing `preferred_language` behaviour unchanged. - **`POST
+  /users/me/change-password`** (new) — body `{current_password, new_password}`. Verifies
+  `current_password` against the stored **Django pbkdf2 hash** and rejects a wrong one; runs the
+  standard validators (min length 8 + common + numeric); on success sets the new password and
+  returns `{"detail": "Password updated."}`.
+
+## Password hashing Reuses `fastapp.passwords` (`verify_password` / `make_password` /
+  `validate_password`) — the same Django-`check_password`-compatible pbkdf2_sha256 mechanism the
+  technician-create and admin password-reset paths already use. No hand-rolled hasher, so stored
+  hashes stay Django-compatible.
+
+## Tests Added to `fastapp/tests/test_selfreads_parity.py`: GET returns the new fields
+  (byte-identical across both surfaces), PATCH profile update persists, email-uniqueness +
+  invalid-email rejection (byte-identical 400 maps), change-password happy path (new hash verifies
+  via Django `check_password`), wrong-current-password rejection, too-short rejection. Verified
+  green against a local Postgres (the full `test_selfreads_parity` + `test_users_parity` +
+  `apps/users` suites: 146 passed); dual-ORM so CI runs them on Postgres too. ruff check + format
+  clean.
+
+Unblocks the agri-web profile page.
+
+
 ## v1.113.0 (2026-07-12)
 
 ### Features
