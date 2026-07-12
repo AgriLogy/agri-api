@@ -23,7 +23,7 @@ from celery import Celery
 from celery.schedules import crontab
 from celery.signals import task_failure, task_postrun, task_prerun
 
-from fastapp import tasks_comms, tasks_compute, tasks_scan
+from fastapp import tasks_comms, tasks_compute, tasks_devices, tasks_scan
 from fastapp.settings import get_settings
 
 log = logging.getLogger(__name__)
@@ -59,6 +59,8 @@ _TASK_BODIES = {
     "agriapi.tasks.scan_device_health": tasks_scan.scan_device_health,
     "agriapi.tasks.scan_proactive_insights": tasks_scan.scan_proactive_insights,
     "agriapi.tasks.run_due_irrigation_programs": tasks_scan.run_due_irrigation_programs,
+    # on-demand device maintenance (enqueued by /devices/bulk-assign)
+    "agriapi.tasks.backfill_device_readings": tasks_devices.backfill_device_readings,
 }
 
 for _name, _fn in _TASK_BODIES.items():

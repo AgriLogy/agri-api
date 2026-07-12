@@ -22,6 +22,7 @@ from typing import Any
 
 from sqlalchemy import BigInteger, DateTime, Double, Integer, String, select, update
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 from agri.core.alerts import (
@@ -35,6 +36,7 @@ from agri.db.analytics import (
     AnalyticsNotificationzonesensor,
     AnalyticsZone,
 )
+from agri.db.devices import AnalyticsDevice
 from agri.db.users import CustomUserCustomuser
 from fastapp import celery
 
@@ -147,6 +149,8 @@ class LoraUplinkRow(_IngestBase):
 # ---------------------------------------------------------------------------
 LORA_ZONE_NAME = "lora"
 LORA_USER_NAME = "lora"
+# ``analytics_device.device_type`` value for a LoRaWAN device (serial == DevEUI).
+LORA_DEVICE_TYPE = "lora"
 
 _PH_SCALE = 100.0
 _STATUS_FPORT = 5  # RS485-LB device-status frame — carries no measurement
@@ -262,6 +266,65 @@ def ensure_lora_zone(session: Session) -> AnalyticsZone:
         session.add(zone)
         session.flush()
     return zone
+
+
+def auto_register_lora_device(
+    session: Session, dev_eui: str, device_name: str = ""
+) -> None:
+    """Lazily create an ``analytics_device`` row for a never-before-seen LoRa
+    DevEUI so it surfaces in the admin device list as *unassigned* (owned by the
+    ``lora`` placeholder user, ``zone_id`` NULL) ready for an admin to attribute.
+
+    Idempotent on the unique ``serial`` constraint via ``ON CONFLICT DO NOTHING``
+    (a caught IntegrityError would poison the surrounding transaction, so the
+    conflict is handled in SQL instead).
+    """
+    lora_zone = ensure_lora_zone(session)  # guarantees the ``lora`` owner exists
+    session.execute(
+        pg_insert(AnalyticsDevice)
+        .values(
+            device_type=LORA_DEVICE_TYPE,
+            serial=dev_eui,
+            name=(device_name or dev_eui)[:120],
+            user_id=lora_zone.user_id,
+            zone_id=None,
+            is_active=True,
+            created_at=_now(),
+        )
+        .on_conflict_do_nothing(index_elements=["serial"])
+    )
+    session.flush()
+
+
+def resolve_device_zone(
+    session: Session, dev_eui: str, *, device_name: str = ""
+) -> tuple[int, int] | None:
+    """Resolve ``(user_id, zone_id)`` for a LoRaWAN device from the
+    ``analytics_device`` attribution table (``serial`` == DevEUI).
+
+    - Registered, active, and assigned (``zone_id`` set) → that ``(user_id,
+      zone_id)`` — the device's uplinks route to its owner's zone.
+    - Registered but unassigned (``zone_id`` NULL) or inactive → ``None``.
+    - Unknown DevEUI → auto-register it under the ``lora`` placeholder
+      (:func:`auto_register_lora_device`), then ``None``.
+
+    ``None`` means "fall back to the shared ``lora`` catch-all" — byte-parity
+    with the pre-attribution behavior. Existence is keyed on the unique
+    ``serial`` (not filtered by ``is_active``) so an inactive device is never
+    re-inserted.
+    """
+    device = session.scalars(
+        select(AnalyticsDevice)
+        .where(AnalyticsDevice.serial == dev_eui)
+        .order_by(AnalyticsDevice.id)
+        .limit(1)
+    ).first()
+    if device is None:
+        auto_register_lora_device(session, dev_eui, device_name)
+        return None
+    if device.is_active and device.zone_id is not None:
+        return device.user_id, device.zone_id
+    return None
 
 
 def sensor_model_for(sensor_key: str):
@@ -605,17 +668,29 @@ def handle_chirpstack_uplink(
     if rssi is not None:
         readings.append(("signal", round(float(rssi), 1)))
 
+    # Attribute this device (auto-registers an unknown DevEUI) even when the
+    # frame carries no graphable metric, so status-only devices still surface in
+    # the admin device list.
+    resolved = resolve_device_zone(session, dev_eui, device_name=device_name)
+
     if not readings:
         return 0
 
-    zone = ensure_lora_zone(session)
+    if resolved is not None:
+        # Registered + assigned → route to the owning account's zone.
+        user_id, zone_id = resolved
+    else:
+        # Unregistered / unassigned device → shared ``lora`` catch-all.
+        lora_zone = ensure_lora_zone(session)
+        user_id, zone_id = lora_zone.user_id, lora_zone.id
+
     now = _now()
     for sensor_key, value in readings:
         write_reading(
             session,
             sensor_key=sensor_key,
-            user_id=zone.user_id,
-            zone_id=zone.id,
+            user_id=user_id,
+            zone_id=zone_id,
             value=value,
             timestamp=now,
         )
@@ -624,13 +699,15 @@ def handle_chirpstack_uplink(
             dispatch_alerts_for_reading(
                 session,
                 sensor_key=sensor_key,
-                zone_id=zone.id,
-                user_id=zone.user_id,
+                zone_id=zone_id,
+                user_id=user_id,
                 value=value,
                 timestamp=now,
             )
         except Exception:
-            log.exception("alert dispatch failed for %s in lora zone", sensor_key)
+            log.exception(
+                "alert dispatch failed for %s (dev_eui=%s)", sensor_key, dev_eui
+            )
 
     return len(readings)
 
@@ -640,6 +717,7 @@ __all__ = [
     "DEFAULT_ALERT_GRACE_PERIOD",
     "IngestError",
     "LoraUplinkRow",
+    "auto_register_lora_device",
     "decode_battery",
     "decode_ph",
     "dispatch_alerts_for_reading",
@@ -649,6 +727,7 @@ __all__ = [
     "handle_chirpstack_uplink",
     "handle_metrics",
     "parse_timestamp",
+    "resolve_device_zone",
     "resolve_user_zone",
     "sensor_model_for",
     "store_lora_uplink",
