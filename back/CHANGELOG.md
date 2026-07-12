@@ -1,6 +1,29 @@
 # CHANGELOG
 
 
+## v1.110.0 (2026-07-12)
+
+### Features
+
+- **devices**: Support backfill on the single-device Edit (PATCH)
+  ([#383](https://github.com/AgriLogy/agri-api/pull/383),
+  [`d6ba3f3`](https://github.com/AgriLogy/agri-api/commit/d6ba3f393c53458f0519e20a260a74a72ec0a670))
+
+Closes #382 · follow-up to #379/#381
+
+Operators naturally transfer a captor via the **Edit** drawer, which changed ownership but never ran
+  the backfill — leaving history behind. This adds an opt-in migrate on `PATCH /devices/{id}`:
+
+- transient `backfill` flag on the payload; - when the edit moves the device to a real zone (owner
+  or zone changed) and `backfill` is set, enqueue `backfill_device_readings` with the device's
+  **prior** (user, zone) as source — identical task/behavior to bulk-assign; - no-op when the edit
+  doesn't move the device.
+
+Tests: PATCH enqueues on transfer with the right source/target; no enqueue without the flag or on
+  same-zone. Full `fastapp` suite green (392). PATCH response byte-parity unchanged (device parity
+  tests pass). Pairs with agri-admin (Edit-drawer toggle).
+
+
 ## v1.109.1 (2026-07-12)
 
 ### Bug Fixes
