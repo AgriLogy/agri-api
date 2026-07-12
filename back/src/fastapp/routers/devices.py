@@ -20,6 +20,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 
 from agri.core.database import session_scope
+from fastapp import celery
 from fastapp.auth import AuthedUser, get_current_user
 from fastapp.json import DjangoStyleJSONResponse
 
@@ -36,6 +37,15 @@ class DeviceWriteIn(BaseModel):
     username: str | None = None  # owner
     zone_id: int | None = None
     is_active: bool | None = None
+
+
+class BulkAssignIn(BaseModel):
+    """Attribute many existing devices to one account + zone in a single call."""
+
+    device_ids: list[int] = []
+    username: str | None = None  # target owner
+    zone_id: int | None = None  # target zone (must belong to ``username``)
+    backfill: bool = False  # also migrate each device's past ``lora`` readings
 
 
 def _require_admin(user: AuthedUser) -> None:
@@ -179,6 +189,64 @@ def create_device(payload: DeviceWriteIn, user: AuthedUser = Depends(get_current
         return DjangoStyleJSONResponse(
             _serialize(_fetch(session, new_id)), status_code=201
         )
+
+
+@router.post(
+    "/devices/bulk-assign",
+    summary="Admin: attribute many devices to one account/zone",
+)
+def bulk_assign_devices(
+    payload: BulkAssignIn, user: AuthedUser = Depends(get_current_user)
+):
+    _require_admin(user)
+    if not payload.device_ids:
+        return DjangoStyleJSONResponse(
+            {"detail": "device_ids is required."}, status_code=400
+        )
+    if not payload.username or payload.zone_id is None:
+        return DjangoStyleJSONResponse(
+            {"detail": "username and zone_id are required."}, status_code=400
+        )
+    with session_scope(commit=True) as session:
+        # Reuse the single-device owner/zone validation (owner exists + zone is
+        # owned by that owner).
+        user_id, zone_id, err = _resolve_owner_zone(
+            session,
+            DeviceWriteIn(username=payload.username, zone_id=payload.zone_id),
+        )
+        if err is not None:
+            return err
+        assigned: list[int] = []
+        failed: list[dict[str, Any]] = []
+        for device_id in payload.device_ids:
+            updated = session.execute(
+                text(
+                    "UPDATE analytics_device SET user_id = :u, zone_id = :z "
+                    "WHERE id = :id RETURNING id"
+                ),
+                {"u": user_id, "z": zone_id, "id": device_id},
+            ).first()
+            if updated is None:
+                failed.append({"id": device_id, "reason": "device not found."})
+            else:
+                assigned.append(device_id)
+    # Enqueue historical backfill AFTER commit so the task sees the new
+    # attribution (and only for devices that were actually assigned).
+    if payload.backfill and assigned:
+        for device_id in assigned:
+            celery.send_task(
+                "agriapi.tasks.backfill_device_readings",
+                device_id=device_id,
+                target_user_id=user_id,
+                target_zone_id=zone_id,
+            )
+    return DjangoStyleJSONResponse(
+        {
+            "assigned": assigned,
+            "failed": failed,
+            "backfill_enqueued": bool(payload.backfill and assigned),
+        }
+    )
 
 
 @router.patch("/devices/{pk}", summary="Admin: update a device")
