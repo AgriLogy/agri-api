@@ -1,6 +1,28 @@
 # CHANGELOG
 
 
+## v1.112.0 (2026-07-12)
+
+### Features
+
+- **sensors**: Flip reads to device-JOIN ownership resolution (device-keyed, phase 3)
+  ([#387](https://github.com/AgriLogy/agri-api/pull/387),
+  [`65cf200`](https://github.com/AgriLogy/agri-api/commit/65cf200dae0d0675c99c76122ba154b381ff15d5))
+
+Closes #386 · phase 3 of device-keyed ownership (agri-core 0.21.0)
+
+The read flip. A device transfer (one-row `analytics_device` update) now instantly moves its whole
+  graph history — **no reading rewrite, no backfill**. - agri-core 0.20.0 → 0.21.0 (device-JOIN in
+  hourly_averages/average/sum/latest_reading + alert reads) - `fastapp/sensors.py`: `raw_readings` +
+  `hourly_readings` sample query device-aware - `admin_sensor_data.py`: explorer filter device-aware
+
+**Safe to deploy now** — the live pH device has `device.zone == row.zone`, so no visible change; the
+  payoff is instant future transfers. Non-device readings unchanged (COALESCE fallback).
+
+Tests: 3 new (transfer moves graph with zero rewrite / raw follows / weather unaffected); full
+  fastapp suite green (397).
+
+
 ## v1.111.0 (2026-07-12)
 
 ### Features
