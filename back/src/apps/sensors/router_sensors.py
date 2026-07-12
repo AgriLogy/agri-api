@@ -36,7 +36,11 @@ def _serialize_reading(obj) -> dict[str, Any]:
     """Match ``BaseSensorSerializer``: every model field + computed
     ``default_unit`` / ``available_units`` + ISO timestamp format.
     """
-    d = model_to_dict(obj)
+    # ``device_id`` is an internal attribution column (device-keyed ownership),
+    # not part of the public sensor-reading contract — exclude it so the response
+    # shape is unchanged (and the fastapp port, which builds a fixed dict, stays
+    # byte-parity).
+    d = model_to_dict(obj, exclude=["device_id"])
     d["id"] = obj.pk
     ts: datetime | None = getattr(obj, "timestamp", None)
     if ts is not None:

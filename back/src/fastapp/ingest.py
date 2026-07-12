@@ -296,22 +296,20 @@ def auto_register_lora_device(
     session.flush()
 
 
-def resolve_device_zone(
+def resolve_device(
     session: Session, dev_eui: str, *, device_name: str = ""
-) -> tuple[int, int] | None:
-    """Resolve ``(user_id, zone_id)`` for a LoRaWAN device from the
+) -> tuple[int | None, int | None, int | None]:
+    """Resolve ``(device_id, user_id, zone_id)`` for a LoRaWAN device from the
     ``analytics_device`` attribution table (``serial`` == DevEUI).
 
-    - Registered, active, and assigned (``zone_id`` set) → that ``(user_id,
-      zone_id)`` — the device's uplinks route to its owner's zone.
-    - Registered but unassigned (``zone_id`` NULL) or inactive → ``None``.
-    - Unknown DevEUI → auto-register it under the ``lora`` placeholder
-      (:func:`auto_register_lora_device`), then ``None``.
+    ``device_id`` is ALWAYS returned (an unknown DevEUI is auto-registered under
+    the ``lora`` placeholder first) so every device reading can be stamped with
+    it — ownership then follows the device on transfer, no reading rewrite.
 
-    ``None`` means "fall back to the shared ``lora`` catch-all" — byte-parity
-    with the pre-attribution behavior. Existence is keyed on the unique
-    ``serial`` (not filtered by ``is_active``) so an inactive device is never
-    re-inserted.
+    ``user_id`` / ``zone_id`` are the device's owner only when it is active AND
+    assigned (``zone_id`` set); otherwise ``(None, None)`` → the caller routes to
+    the shared ``lora`` catch-all. Existence is keyed on the unique ``serial``
+    (not filtered by ``is_active``) so an inactive device is never re-inserted.
     """
     device = session.scalars(
         select(AnalyticsDevice)
@@ -321,10 +319,26 @@ def resolve_device_zone(
     ).first()
     if device is None:
         auto_register_lora_device(session, dev_eui, device_name)
-        return None
+        device = session.scalars(
+            select(AnalyticsDevice)
+            .where(AnalyticsDevice.serial == dev_eui)
+            .order_by(AnalyticsDevice.id)
+            .limit(1)
+        ).first()
+    if device is None:  # pragma: no cover - insert raced away
+        return None, None, None
     if device.is_active and device.zone_id is not None:
-        return device.user_id, device.zone_id
-    return None
+        return device.id, device.user_id, device.zone_id
+    return device.id, None, None
+
+
+def resolve_device_zone(
+    session: Session, dev_eui: str, *, device_name: str = ""
+) -> tuple[int, int] | None:
+    """Back-compat shim over :func:`resolve_device`: returns ``(user_id,
+    zone_id)`` when the device is active+assigned, else ``None`` (→ lora)."""
+    _, user_id, zone_id = resolve_device(session, dev_eui, device_name=device_name)
+    return (user_id, zone_id) if user_id is not None and zone_id is not None else None
 
 
 def sensor_model_for(sensor_key: str):
@@ -341,10 +355,20 @@ def write_reading(
     zone_id: int,
     value: float,
     timestamp: datetime.datetime,
+    device_id: int | None = None,
 ):
-    """INSERT one sensor reading row (user/zone/value/timestamp)."""
+    """INSERT one sensor reading row. ``device_id`` (when the reading came from a
+    registered hardware device) stamps the row so ownership can later be resolved
+    by JOIN to ``analytics_device``; ``user_id``/``zone_id`` are still written as
+    the resolved-at-ingest snapshot (fallback for non-device readings)."""
     model = sensor_model_for(sensor_key)
-    row = model(user_id=user_id, zone_id=zone_id, value=value, timestamp=timestamp)
+    row = model(
+        user_id=user_id,
+        zone_id=zone_id,
+        value=value,
+        timestamp=timestamp,
+        device_id=device_id,
+    )
     session.add(row)
     session.flush()
     return row
@@ -670,17 +694,18 @@ def handle_chirpstack_uplink(
 
     # Attribute this device (auto-registers an unknown DevEUI) even when the
     # frame carries no graphable metric, so status-only devices still surface in
-    # the admin device list.
-    resolved = resolve_device_zone(session, dev_eui, device_name=device_name)
+    # the admin device list. ``device_id`` is stamped on every reading so
+    # ownership follows the device on transfer (resolved by JOIN in later phases).
+    device_id, user_id, zone_id = resolve_device(
+        session, dev_eui, device_name=device_name
+    )
 
     if not readings:
         return 0
 
-    if resolved is not None:
-        # Registered + assigned → route to the owning account's zone.
-        user_id, zone_id = resolved
-    else:
-        # Unregistered / unassigned device → shared ``lora`` catch-all.
+    if user_id is None or zone_id is None:
+        # Unregistered / unassigned / inactive device → shared ``lora`` catch-all
+        # (the reading still carries ``device_id`` so it follows on assignment).
         lora_zone = ensure_lora_zone(session)
         user_id, zone_id = lora_zone.user_id, lora_zone.id
 
@@ -693,6 +718,7 @@ def handle_chirpstack_uplink(
             zone_id=zone_id,
             value=value,
             timestamp=now,
+            device_id=device_id,
         )
         # Alert dispatch must never abort the ingest loop.
         try:
@@ -727,6 +753,7 @@ __all__ = [
     "handle_chirpstack_uplink",
     "handle_metrics",
     "parse_timestamp",
+    "resolve_device",
     "resolve_device_zone",
     "resolve_user_zone",
     "sensor_model_for",

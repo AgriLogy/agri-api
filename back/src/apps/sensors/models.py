@@ -24,7 +24,26 @@ class _SensorBase(models.Model):
         app_label = "analytics"
 
 
-class Et0Calculated(_SensorBase):
+class _ReadingBase(_SensorBase):
+    """Abstract base for the sensor-*reading* tables (those carrying a ``value``).
+
+    Adds the optional ``device_id`` soft-FK to ``analytics_device`` — a plain
+    BigInteger column (NO Django FK / DB constraint, matching the agri-db side
+    and the ``db_constraint=False`` convention). Ownership of a device-sourced
+    reading is resolved by JOINing to ``analytics_device`` at query time, so a
+    device transfer is a one-row update with no reading rewrite. Config models
+    (SensorColor / SensorLocation / UserSensorUnitPreference) stay on
+    ``_SensorBase`` and do NOT get this column.
+    """
+
+    device_id = models.BigIntegerField(null=True, blank=True)
+
+    class Meta:
+        abstract = True
+        app_label = "analytics"
+
+
+class Et0Calculated(_ReadingBase):
     zone = models.ForeignKey(
         "analytics.Zone",
         on_delete=models.CASCADE,
@@ -59,7 +78,7 @@ class Et0Calculated(_SensorBase):
 # `Notification.objects.create()`; the email-notifications work does invoke it,
 # which surfaced the bug. If a real signal handler is needed here in the
 # future, define a function below this class and decorate that.
-class Et0Weather(_SensorBase):
+class Et0Weather(_ReadingBase):
     zone = models.ForeignKey(
         "analytics.Zone", on_delete=models.CASCADE, related_name="et0_weather"
     )
@@ -84,7 +103,7 @@ class Et0Weather(_SensorBase):
 
 
 # receive data each : 10 minutes
-class PrecipitationRate(_SensorBase):
+class PrecipitationRate(_ReadingBase):
     zone = models.ForeignKey(
         "analytics.Zone", on_delete=models.CASCADE, related_name="precipitation_rates"
     )
@@ -109,7 +128,7 @@ class PrecipitationRate(_SensorBase):
         return ["mm/h"]
 
 
-class HumidityWeather(_SensorBase):
+class HumidityWeather(_ReadingBase):
     zone = models.ForeignKey(
         "analytics.Zone", on_delete=models.CASCADE, related_name="humidity_weather"
     )
@@ -132,7 +151,7 @@ class HumidityWeather(_SensorBase):
         return ["%"]
 
 
-class WindSpeed(_SensorBase):
+class WindSpeed(_ReadingBase):
     zone = models.ForeignKey(
         "analytics.Zone", on_delete=models.CASCADE, related_name="wind_speeds"
     )
@@ -151,7 +170,7 @@ class WindSpeed(_SensorBase):
         return ["m/s", "km/h"]
 
 
-class SolarRadiation(_SensorBase):
+class SolarRadiation(_ReadingBase):
     zone = models.ForeignKey(
         "analytics.Zone", on_delete=models.CASCADE, related_name="solar_radiations"
     )
@@ -172,7 +191,7 @@ class SolarRadiation(_SensorBase):
         return ["W/m²"]  # mj/m2 add
 
 
-class PressureWeather(_SensorBase):
+class PressureWeather(_ReadingBase):
     zone = models.ForeignKey(
         "analytics.Zone", on_delete=models.CASCADE, related_name="pressure_weather"
     )
@@ -193,7 +212,7 @@ class PressureWeather(_SensorBase):
         return ["hPa", "bar", "kpa"]
 
 
-class WindDirection(_SensorBase):
+class WindDirection(_ReadingBase):
     zone = models.ForeignKey(
         "analytics.Zone", on_delete=models.CASCADE, related_name="wind_directions"
     )
@@ -214,7 +233,7 @@ class WindDirection(_SensorBase):
         return ["°"]
 
 
-class TemperatureWeather(_SensorBase):
+class TemperatureWeather(_ReadingBase):
     zone = models.ForeignKey(
         "analytics.Zone", on_delete=models.CASCADE, related_name="temperature_weather"
     )
@@ -235,7 +254,7 @@ class TemperatureWeather(_SensorBase):
         return ["°C", "°F"]
 
 
-class ECSoilMedium(_SensorBase):
+class ECSoilMedium(_ReadingBase):
     zone = models.ForeignKey(
         "analytics.Zone", on_delete=models.CASCADE, related_name="ec_soil_medium"
     )
@@ -258,7 +277,7 @@ class ECSoilMedium(_SensorBase):
         return ["dS/m"]  # add ms/cm
 
 
-class ECSoilHigh(_SensorBase):
+class ECSoilHigh(_ReadingBase):
     zone = models.ForeignKey(
         "analytics.Zone", on_delete=models.CASCADE, related_name="soil_ec_high"
     )
@@ -281,7 +300,7 @@ class ECSoilHigh(_SensorBase):
         return ["dS/m"]  # the same
 
 
-class ECSoilLow(_SensorBase):
+class ECSoilLow(_ReadingBase):
     zone = models.ForeignKey(
         "analytics.Zone", on_delete=models.CASCADE, related_name="ec_soil_low"
     )
@@ -304,7 +323,7 @@ class ECSoilLow(_SensorBase):
         return ["dS/m"]  # the same
 
 
-class SoilMoistureMedium(_SensorBase):
+class SoilMoistureMedium(_ReadingBase):
     zone = models.ForeignKey(
         "analytics.Zone", on_delete=models.CASCADE, related_name="soil_moisture_medium"
     )
@@ -325,7 +344,7 @@ class SoilMoistureMedium(_SensorBase):
         return ["%"]
 
 
-class SoilMoistureHigh(_SensorBase):
+class SoilMoistureHigh(_ReadingBase):
     zone = models.ForeignKey(
         "analytics.Zone", on_delete=models.CASCADE, related_name="soil_moisture_high"
     )
@@ -346,7 +365,7 @@ class SoilMoistureHigh(_SensorBase):
         return ["%"]
 
 
-class SoilMoistureLow(_SensorBase):
+class SoilMoistureLow(_ReadingBase):
     zone = models.ForeignKey(
         "analytics.Zone", on_delete=models.CASCADE, related_name="soil_moisture_low"
     )
@@ -367,7 +386,7 @@ class SoilMoistureLow(_SensorBase):
         return ["%"]
 
 
-class PhSoil(_SensorBase):
+class PhSoil(_ReadingBase):
     zone = models.ForeignKey(
         "analytics.Zone", on_delete=models.CASCADE, related_name="ph_soil"
     )
@@ -386,7 +405,7 @@ class PhSoil(_SensorBase):
         return ["pH"]
 
 
-class BatterySensor(_SensorBase):
+class BatterySensor(_ReadingBase):
     """Device battery voltage (V) — reported by LoRaWAN nodes."""
 
     zone = models.ForeignKey(
@@ -409,7 +428,7 @@ class BatterySensor(_SensorBase):
         return ["V"]
 
 
-class SignalSensor(_SensorBase):
+class SignalSensor(_ReadingBase):
     """Device radio signal strength, RSSI (dBm) — LoRaWAN nodes + Bivocom."""
 
     zone = models.ForeignKey(
@@ -432,7 +451,7 @@ class SignalSensor(_SensorBase):
         return ["dBm"]
 
 
-class SoilTemperatureLow(_SensorBase):
+class SoilTemperatureLow(_ReadingBase):
     zone = models.ForeignKey(
         "analytics.Zone", on_delete=models.CASCADE, related_name="soil_temperature_low"
     )
@@ -453,7 +472,7 @@ class SoilTemperatureLow(_SensorBase):
         return ["°C", "°F"]
 
 
-class SoilTemperatureMedium(_SensorBase):
+class SoilTemperatureMedium(_ReadingBase):
     zone = models.ForeignKey(
         "analytics.Zone",
         on_delete=models.CASCADE,
@@ -476,7 +495,7 @@ class SoilTemperatureMedium(_SensorBase):
         return ["°C", "°F"]
 
 
-class SoilTemperatureHigh(_SensorBase):
+class SoilTemperatureHigh(_ReadingBase):
     zone = models.ForeignKey(
         "analytics.Zone", on_delete=models.CASCADE, related_name="soil_temperature_high"
     )
@@ -497,7 +516,7 @@ class SoilTemperatureHigh(_SensorBase):
         return ["°C", "°F"]
 
 
-class WaterFlowSensor(_SensorBase):
+class WaterFlowSensor(_ReadingBase):
     zone = models.ForeignKey(
         "analytics.Zone", on_delete=models.CASCADE, related_name="water_flow_sensors"
     )
@@ -520,7 +539,7 @@ class WaterFlowSensor(_SensorBase):
         return ["L/s", "m³/h"]  # l/min hayd l/s
 
 
-class WaterPressureSensor(_SensorBase):
+class WaterPressureSensor(_ReadingBase):
     zone = models.ForeignKey(
         "analytics.Zone",
         on_delete=models.CASCADE,
@@ -545,7 +564,7 @@ class WaterPressureSensor(_SensorBase):
         return ["Bar/s"]
 
 
-class WaterECSensor(_SensorBase):
+class WaterECSensor(_ReadingBase):
     zone = models.ForeignKey(
         "analytics.Zone", on_delete=models.CASCADE, related_name="water_ec_sensors"
     )
@@ -566,7 +585,7 @@ class WaterECSensor(_SensorBase):
         return ["μS/cm", "mS/cm"]
 
 
-class PhWaterSensor(_SensorBase):
+class PhWaterSensor(_ReadingBase):
     zone = models.ForeignKey(
         "analytics.Zone", on_delete=models.CASCADE, related_name="ph_water_sensors"
     )
@@ -585,7 +604,7 @@ class PhWaterSensor(_SensorBase):
         return ["pH"]
 
 
-class ElectricityConsumptionSensor(_SensorBase):
+class ElectricityConsumptionSensor(_ReadingBase):
     zone = models.ForeignKey(
         "analytics.Zone",
         on_delete=models.CASCADE,
@@ -610,7 +629,7 @@ class ElectricityConsumptionSensor(_SensorBase):
         return ["kWh", "Wh"]  # not preority don't change it
 
 
-class LeafMoistureSensor(_SensorBase):
+class LeafMoistureSensor(_ReadingBase):
     zone = models.ForeignKey(
         "analytics.Zone", on_delete=models.CASCADE, related_name="leaf_moisture_sensors"
     )
@@ -631,7 +650,7 @@ class LeafMoistureSensor(_SensorBase):
         return ["%"]
 
 
-class LeafTemperatureSensor(_SensorBase):
+class LeafTemperatureSensor(_ReadingBase):
     zone = models.ForeignKey(
         "analytics.Zone",
         on_delete=models.CASCADE,
@@ -654,7 +673,7 @@ class LeafTemperatureSensor(_SensorBase):
         return ["C", "°F"]
 
 
-class MultiDepthSoilMoistureSensor(_SensorBase):
+class MultiDepthSoilMoistureSensor(_ReadingBase):
     zone = models.ForeignKey(
         "analytics.Zone",
         on_delete=models.CASCADE,
@@ -679,7 +698,7 @@ class MultiDepthSoilMoistureSensor(_SensorBase):
         return ["%"]
 
 
-class LargeFruitDiameterSensor(_SensorBase):
+class LargeFruitDiameterSensor(_ReadingBase):
     zone = models.ForeignKey(
         "analytics.Zone",
         on_delete=models.CASCADE,
@@ -704,7 +723,7 @@ class LargeFruitDiameterSensor(_SensorBase):
         return ["mm", "cm"]
 
 
-class WaterLevelSensor(_SensorBase):
+class WaterLevelSensor(_ReadingBase):
     zone = models.ForeignKey(
         "analytics.Zone", on_delete=models.CASCADE, related_name="water_level_sensors"
     )
@@ -725,7 +744,7 @@ class WaterLevelSensor(_SensorBase):
         return ["cm", "m"]
 
 
-class SoilSalinitySensor(_SensorBase):
+class SoilSalinitySensor(_ReadingBase):
     zone = models.ForeignKey(
         "analytics.Zone", on_delete=models.CASCADE, related_name="soil_salinity_sensors"
     )
@@ -747,7 +766,7 @@ class SoilSalinitySensor(_SensorBase):
         return f"Salinity at {self.timestamp} — {self.value} {self.default_unit}"
 
 
-class SoilConductivitySensor(_SensorBase):
+class SoilConductivitySensor(_ReadingBase):
     zone = models.ForeignKey(
         "analytics.Zone",
         on_delete=models.CASCADE,
@@ -775,7 +794,7 @@ class SoilConductivitySensor(_SensorBase):
         return f"Conductivity at {self.timestamp} — {self.value} {self.default_unit}"
 
 
-class NpkSensor(_SensorBase):
+class NpkSensor(_ReadingBase):
     zone = models.ForeignKey(
         "analytics.Zone", on_delete=models.CASCADE, related_name="npk_sensors"
     )
@@ -826,7 +845,7 @@ class NpkSensor(_SensorBase):
         return ["mg/kg", "ppm"]
 
 
-class FruitSizeSensor(_SensorBase):
+class FruitSizeSensor(_ReadingBase):
     zone = models.ForeignKey(
         "analytics.Zone", on_delete=models.CASCADE, related_name="fruit_size_sensors"
     )
@@ -847,7 +866,7 @@ class FruitSizeSensor(_SensorBase):
         return ["mm", "cm"]
 
 
-class EcSalinitySensor(_SensorBase):
+class EcSalinitySensor(_ReadingBase):
     zone = models.ForeignKey(
         "analytics.Zone", on_delete=models.CASCADE, related_name="ec_salinity_sensors"
     )
@@ -999,7 +1018,7 @@ class SensorLocation(_SensorBase):
         return f"Sensor locations for {self.user.username} in {self.zone.name}"
 
 
-class VPDWeather(_SensorBase):
+class VPDWeather(_ReadingBase):
     zone = models.ForeignKey(
         "analytics.Zone", on_delete=models.CASCADE, related_name="vpd_weather"
     )
