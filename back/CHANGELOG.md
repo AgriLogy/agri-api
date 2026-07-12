@@ -1,6 +1,35 @@
 # CHANGELOG
 
 
+## v1.111.0 (2026-07-12)
+
+### Features
+
+- **ingest**: Dual-write device_id on LoRa readings (device-keyed ownership, phase 1)
+  ([#385](https://github.com/AgriLogy/agri-api/pull/385),
+  [`08a78c0`](https://github.com/AgriLogy/agri-api/commit/08a78c0b5994b33ef293323339ca3814293cb67c))
+
+Closes #384 · phase 1 of device-keyed ownership (agri-db #59 / agri-core 0.20.0)
+
+Stamps `device_id` on every LoRa reading; **reads are unchanged** this phase (the query flip is
+  phase 3).
+
+- agri-core pin 0.19.0 → 0.20.0 (brings the agri-db 0.15.0 `device_id` column) - Django
+  `_ReadingBase` adds `device_id` to the 37 reading models + migration `0067` (config models
+  SensorColor/SensorLocation/UserSensorUnitPreference stay on `_SensorBase`) - fastapp
+  `resolve_device` → `(device_id, user, zone)`; `write_reading` + `handle_chirpstack_uplink` stamp
+  it on every reading (incl. the lora fallback, so it follows on assignment); `user_id`/`zone_id`
+  still written as snapshot - exclude `device_id` from the public sensor serializer (keeps contract
+  + parity)
+
+Tests: 2 new stamping tests; full fastapp suite green (394) on local Postgres; sensor parity
+  restored.
+
+## ⚠️ DO NOT MERGE/DEPLOY until the live `agrydata` DB has the `device_id` columns The additive `ADD
+  COLUMN`s must be applied to `agrydata` first (staged SQL, run by the user), else ingest INSERTs
+  fail on a missing column.
+
+
 ## v1.110.0 (2026-07-12)
 
 ### Features
