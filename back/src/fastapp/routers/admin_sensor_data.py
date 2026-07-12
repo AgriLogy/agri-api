@@ -21,6 +21,7 @@ from pydantic import BaseModel
 from sqlalchemy import Date, cast, delete, select
 
 from agri.core.database import session_scope
+from agri.core.database.client import _owner_user, _owner_zone, _with_device_join
 from fastapp.adminutil import record_audit, username_for
 from fastapp.auth import AuthedUser, get_current_staff_user
 from fastapp.json import DjangoStyleJSONResponse
@@ -178,12 +179,16 @@ def list_readings(
                     CustomUserCustomuser.username == username
                 )
             )
-            criteria.append(model.user_id == (uid if uid is not None else -1))
+            # device-keyed ownership: resolve via analytics_device (COALESCE).
+            criteria.append(_owner_user(model) == (uid if uid is not None else -1))
         if zone_id is not None:
-            criteria.append(model.zone_id == zone_id)
+            criteria.append(_owner_zone(model) == zone_id)
         criteria += _range_criteria(model, frm, to)
         objs = session.scalars(
-            select(model).where(*criteria).order_by(model.timestamp.desc()).limit(limit)
+            _with_device_join(select(model), model)
+            .where(*criteria)
+            .order_by(model.timestamp.desc())
+            .limit(limit)
         ).all()
         rows = [_row(session, o) for o in objs]
         return {"sensor": sensor, "count": len(rows), "rows": rows}

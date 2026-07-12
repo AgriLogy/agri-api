@@ -20,6 +20,7 @@ from sqlalchemy import select
 
 import agri.db.analytics as analytics
 from agri.core.database import AgriMainDBClient, session_scope
+from agri.core.database.client import _owner_user, _owner_zone, _with_device_join
 
 
 @dataclass(frozen=True)
@@ -398,12 +399,17 @@ def hourly_readings(
     with session_scope() as session:
         # Presentation metadata is constant per user/zone → one sample row
         # supplies char fields + zone/user, mirroring the Django engine's
-        # ``.first()`` (an unordered queryset .first() orders by pk).
-        criteria = [model.user_id == user_id]
+        # ``.first()`` (an unordered queryset .first() orders by pk). Ownership
+        # is resolved via the device (COALESCE) so a transferred device's rows
+        # are still found under the new owner.
+        criteria = [_owner_user(model) == user_id]
         if zone_id is not None:
-            criteria.append(model.zone_id == zone_id)
+            criteria.append(_owner_zone(model) == zone_id)
         sample = session.scalars(
-            select(model).where(*criteria).order_by(model.id).limit(1)
+            _with_device_join(select(model), model)
+            .where(*criteria)
+            .order_by(model.id)
+            .limit(1)
         ).first()
         if sample is None:
             return []
@@ -448,7 +454,9 @@ def raw_readings(
     the Django ``raw=true`` branch: filter by owner + inclusive date range +
     optional zone, ordered by timestamp ascending."""
     model = agri_db_model(spec)
-    criteria = [model.user_id == user_id]
+    # Ownership resolved via the device (COALESCE) so a transferred device's
+    # history follows it; non-device rows fall back to their own user/zone.
+    criteria = [_owner_user(model) == user_id]
     if start is not None:
         criteria.append(
             model.timestamp
@@ -467,10 +475,12 @@ def raw_readings(
             )
         )
     if zone_id is not None:
-        criteria.append(model.zone_id == zone_id)
+        criteria.append(_owner_zone(model) == zone_id)
     with session_scope() as session:
         rows = session.scalars(
-            select(model).where(*criteria).order_by(model.timestamp)
+            _with_device_join(select(model), model)
+            .where(*criteria)
+            .order_by(model.timestamp)
         ).all()
         return [serialize_raw(r, spec) for r in rows]
 
