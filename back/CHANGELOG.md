@@ -1,6 +1,47 @@
 # CHANGELOG
 
 
+## v1.109.1 (2026-07-12)
+
+### Bug Fixes
+
+- **devices**: Migrate a device's full history from its prior zone on transfer
+  ([#381](https://github.com/AgriLogy/agri-api/pull/381),
+  [`5878d04`](https://github.com/AgriLogy/agri-api/commit/5878d04d73924154ac4ef88e30d9c914f95b2642))
+
+Closes #380 · follow-up to #379
+
+## Why
+
+Captors are commissioned under a **technician** account, then transferred to the **client** — who
+  must see the device's full history from day one. The initial backfill missed this: it only
+  migrated from the shared `lora` zone, and matched readings to raw uplinks by timestamp (leaving
+  older, uplink-less readings behind). This is exactly the "I still see data in the old account"
+  symptom.
+
+## Changes
+
+- **`bulk_assign`** now captures each device's **prior** `(user_id, zone_id)` before reassigning and
+  forwards it to the backfill as `source_user_id`/`source_zone_id`. - **`backfill_device_readings`**
+  migrates from that source (a technician zone, or the `lora` catch-all when the device was
+  unassigned) and: - does a **complete move** of all the source zone's ph/battery/signal readings
+  when that zone holds **only this one device** (the common commissioning case — moves the *entire*
+  history, including readings with no uplink row); - falls back to **timestamp-correlation** only
+  when the source zone is shared by several devices (so it never steals another device's data). -
+  Returns `mode: full|correlated`. Idempotent; no-op on same-zone.
+
+## Tests
+
+New: full-move from a technician zone incl. a reading with no uplink row; correlated fallback for a
+  shared source zone. Updated the enqueue test to assert the source is forwarded. Full `fastapp`
+  suite green (390 passed) on local Postgres.
+
+## Note
+
+The single-device **Edit** drawer still doesn't backfill — transfers should use **Assign selected**
+  (which has the *migrate past readings* toggle). No schema change.
+
+
 ## v1.109.0 (2026-07-12)
 
 ### Documentation
