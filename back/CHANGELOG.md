@@ -1,6 +1,113 @@
 # CHANGELOG
 
 
+## v1.109.0 (2026-07-12)
+
+### Documentation
+
+- **mqtt**: Authoritative end-to-end MQTT ingest knowledge
+  ([#377](https://github.com/AgriLogy/agri-api/pull/377),
+  [`f372edc`](https://github.com/AgriLogy/agri-api/commit/f372edc4012f10a2b436ab8b4ffab2c134939a1c))
+
+Closes #376
+
+Adds **`docs/flows/mqtt-ingest.md`** — one authoritative doc for the whole MQTT path, spanning
+  agri-api (subscriber) + agri-bridge (publisher).
+
+### Contents - **Diagrams (Mermaid):** full flow + happy-path sequence, using the real function
+  names. - **Topic + payload contract:** the four subscribed filters and their bodies. -
+  **Components with `file:line`:** the bridge publisher (`createMqttPublisher`, dual-publish),
+  ChirpStack native MQTT, the subscriber (`MqttIngest.run/_on_connect/_guard/_on_*`), the shared
+  `fastapp.ingest` handlers (`handle_chirpstack_uplink`, `handle_metrics`, `write_reading`,
+  `dispatch_alerts_for_reading`, …), the HTTP webhooks, and the read/graph path (`list_readings` →
+  `hourly_readings`). - **Config** for both repos, **deploy topology** (`mqtt` role +
+  `agri-api-mqtt` service + dev mosquitto), the **production activation runbook** (incl. disabling
+  the ChirpStack HTTP integration to avoid double-delivery), **testing/CI** (the `mqtt-e2e` gate +
+  `MQTT_REQUIRE_BROKER`), **gotchas**, **rollback**, and the deferred follow-ups.
+
+### Also - Wired into `docs/INDEX.md`. - Cross-linked from `docs/flows/data-ingestion.md` (the older
+  HTTP-era doc) with a note that the live HTTP ingest now runs on `fastapp`.
+
+Docs-only — no code change, no release.
+
+### Features
+
+- **ingest**: Attribute LoRaWAN uplinks to device-owner accounts
+  ([#379](https://github.com/AgriLogy/agri-api/pull/379),
+  [`b38af82`](https://github.com/AgriLogy/agri-api/commit/b38af822e3f73acd7142a2e8a7d9a9a369b68135))
+
+Closes #378
+
+## What
+
+Route each ChirpStack/LoRaWAN uplink to the account/zone that **owns** the device, instead of the
+  single shared `lora` catch-all. Groundwork already existed (the `analytics_device` table +
+  `/devices` CRUD); this wires it into the ingest path and adds bulk attribution.
+
+## Changes
+
+- **`resolve_device_zone(session, dev_eui)`** (`fastapp/ingest.py`) — looks up `analytics_device` by
+  serial(=DevEUI). Registered + active + assigned → the owner's `(user_id, zone_id)`; otherwise
+  `None` → the `lora` fallback (byte-parity with prior behavior). Replaces the hardcoded
+  `ensure_lora_zone` in `handle_chirpstack_uplink`. - **Auto-registration** — an unknown DevEUI is
+  lazily inserted as an *unassigned* device (owned by the `lora` placeholder, `zone_id` NULL) via
+  `INSERT … ON CONFLICT DO NOTHING`, so every device surfaces in the admin list on first uplink
+  without disrupting routing. - **`POST /devices/bulk-assign`** (`fastapp/routers/devices.py`,
+  staff-only) — attribute many devices to one account+zone in a call; reuses `_resolve_owner_zone`
+  for validation; returns `assigned`/`failed` per id; optionally enqueues backfill. -
+  **`backfill_device_readings`** Celery task (`fastapp/tasks_devices.py`) — migrates a device's past
+  readings from the `lora` zone to its new zone, correlating readings to the device via
+  `lora_uplink.dev_eui` (readings carry no DevEUI). Idempotent; exact for a single-device `lora`
+  zone, best-effort when multiple devices are mixed.
+
+## Tests
+
+`test_device_routing.py` (5) + `test_device_bulk_assign.py` (8) — routing across
+  registered/assigned/unassigned/inactive/unknown, auto-register idempotency, bulk-assign
+  happy/partial/403/validation/not-owned/backfill-enqueue, and the backfill move + idempotency. Full
+  `fastapp` suite green (388 passed) against local Postgres; chirpstack parity + MQTT e2e
+  unaffected.
+
+## Notes
+
+- No DB migration — `analytics_device` already exists; this is code + data only. - The legacy Django
+  chirpstack route is unchanged (all ingest traffic is on fastapp); parity tests exercise only the
+  unregistered→fallback path, so they stay green.
+
+### Testing
+
+- **ingest**: Real-broker MQTT end-to-end + broker tests, gated in CI
+  ([#375](https://github.com/AgriLogy/agri-api/pull/375),
+  [`85e1ab7`](https://github.com/AgriLogy/agri-api/commit/85e1ab7aeaec04f17f30bbf753d99a5e536a53a5))
+
+Closes #373
+
+> Stacked on #372 (base = `fix/lora-user-notify-defaults`). Review/merge that first; this branch
+  retargets to `main` after.
+
+## What Two test tiers over a **real mosquitto broker** (the existing `test_mqtt_ingest` mocks paho
+  entirely):
+
+- **`test_mqtt_broker.py`** — real paho publish → subscriber network thread → the right
+  `fastapp.ingest` handler (recorded), no DB. Proves the socket plumbing per topic + malformed-drop
+  + liveness. - **`test_mqtt_e2e.py`** — real broker + **real Postgres + unmocked handlers**. Every
+  topic and branch asserted against DB rows + the same alert enqueue the HTTP path makes: -
+  ChirpStack data frame → LoraUplink + pH/battery/signal rows - ChirpStack status frame (fPort 5) →
+  uplink only, no metric rows - weather multi-metric, single sensor,
+  **single-sensor-triggers-alert** - Bivocom (bridge-shaped), unknown user, unknown sensor_key,
+  malformed - negative cases use a trailing **sentinel** so "no row written" is deterministic.
+
+Shared `conftest.py` fixtures launch a throwaway `mosquitto` on an ephemeral port and SKIP when it
+  is absent.
+
+## CI gate New **`mqtt-e2e`** job (Postgres 16 service + `apt-get install mosquitto`) runs both
+  files for real on every PR + push. Sets `MQTT_REQUIRE_BROKER=1` so a missing broker **fails** the
+  job rather than silently skipping — the gate can never quietly no-op.
+
+## Verified locally - Full `src/` suite: **923 passed** against real mosquitto + Postgres; total
+  coverage **90.9%** (floor 85). - The e2e caught a real latent bug → fixed in #372.
+
+
 ## v1.108.1 (2026-07-08)
 
 ### Bug Fixes
