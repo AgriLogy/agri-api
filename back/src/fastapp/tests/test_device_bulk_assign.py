@@ -97,6 +97,12 @@ def _uplink(dev_eui):
     }
 
 
+def _uplink_ph(dev_eui, ph):
+    u = _uplink(dev_eui)
+    u["object"]["pH"] = ph
+    return u
+
+
 # --- bulk-assign endpoint ---------------------------------------------------
 def test_bulk_assign_routes_devices(fast, admin, owner, zone):
     from apps.irrigation.models import Device
@@ -208,6 +214,12 @@ def test_bulk_assign_backfill_enqueues(fast, admin, owner, zone, monkeypatch):
         c[1]["target_user_id"] == owner.id and c[1]["target_zone_id"] == zone.id
         for c in calls
     )
+    # The device's PRIOR (user, zone) is forwarded as the migration source
+    # (here: owned by owner, unassigned → source_zone_id None → lora catch-all).
+    assert all(
+        c[1]["source_user_id"] == owner.id and c[1]["source_zone_id"] is None
+        for c in calls
+    )
 
 
 # --- backfill task ----------------------------------------------------------
@@ -227,6 +239,9 @@ def test_backfill_moves_lora_readings_to_target(fast, owner, zone):
     device = Device.objects.get(serial=dev_eui)
     result = backfill_device_readings(device.id, owner.id, zone.id)
 
+    # Source defaults to the lora catch-all; the device's one reading migrates
+    # (mode depends on how many other unassigned devices share lora — the
+    # deterministic full/correlated split is covered by the two tests below).
     assert result["moved"]["analytics_phsoil"] == 1
     assert _ph_rows(zone_id=lora_zone.id) == []  # left the lora zone
     assert _ph_rows(user_id=owner.id, zone_id=zone.id) == [6.5]  # arrived at target
@@ -239,3 +254,99 @@ def test_backfill_moves_lora_readings_to_target(fast, owner, zone):
 def test_backfill_missing_device_is_noop(owner, zone):
     result = backfill_device_readings(999999, owner.id, zone.id)
     assert result["skipped"] == "device_not_found"
+
+
+def test_backfill_full_move_from_technician_zone_includes_no_uplink_rows(
+    fast, owner, zone, django_user_model
+):
+    """Tech→client transfer: the source (technician) zone holds only this device,
+    so its ENTIRE history moves — including a commissioning reading that has no
+    uplink row (which the correlated mode would miss)."""
+    from django.utils import timezone
+
+    from apps.alerts.engine import get_sensor_model
+    from apps.irrigation.models import Zone
+
+    tech = django_user_model.objects.create_user(
+        username="bf-tech", email="bf-tech@x.com", password="pw-1", is_technician=True
+    )
+    tech_zone = Zone.objects.create(
+        user=tech,
+        name="bf-tech-zone",
+        space=1000.0,
+        critical_moisture_threshold=20.0,
+        pomp_flow_rate=1.0,
+    )
+    dev_eui = "bf00000000000010"
+    dev = _mk_device(tech, dev_eui, zone=tech_zone)
+
+    # (a) a commissioning reading in the tech zone with NO uplink row
+    get_sensor_model("ph_soil").objects.create(
+        user_id=tech.id, zone_id=tech_zone.id, value=6.11, timestamp=timezone.now()
+    )
+    # (b) a real uplink while assigned to tech → routes to the tech zone (+uplink)
+    assert (
+        fast.post(
+            "/ingest/lorawan/chirpstack", json=_uplink_ph(dev_eui, 6.22)
+        ).status_code
+        == 201
+    )
+    assert sorted(_ph_rows(zone_id=tech_zone.id)) == [6.11, 6.22]
+
+    res = backfill_device_readings(
+        dev.id, owner.id, zone.id, source_user_id=tech.id, source_zone_id=tech_zone.id
+    )
+    assert res["mode"] == "full"
+    assert res["moved"]["analytics_phsoil"] == 2
+    assert _ph_rows(zone_id=tech_zone.id) == []
+    assert sorted(_ph_rows(user_id=owner.id, zone_id=zone.id)) == [6.11, 6.22]
+
+
+def test_backfill_correlated_when_source_zone_shared(
+    fast, owner, zone, django_user_model
+):
+    """When the source zone holds several devices, only the transferred device's
+    (uplink-correlated) readings move — the others stay put."""
+    import time
+
+    from apps.irrigation.models import Zone
+
+    shared_user = django_user_model.objects.create_user(
+        username="bf-shared", email="bf-shared@x.com", password="pw-1"
+    )
+    shared_zone = Zone.objects.create(
+        user=shared_user,
+        name="bf-shared-zone",
+        space=1000.0,
+        critical_moisture_threshold=20.0,
+        pomp_flow_rate=1.0,
+    )
+    d1 = _mk_device(shared_user, "bf00000000000021", zone=shared_zone)
+    _mk_device(shared_user, "bf00000000000022", zone=shared_zone)
+
+    assert (
+        fast.post(
+            "/ingest/lorawan/chirpstack", json=_uplink_ph("bf00000000000021", 6.31)
+        ).status_code
+        == 201
+    )
+    time.sleep(2.5)  # keep d2 outside d1's ±2s correlation window
+    assert (
+        fast.post(
+            "/ingest/lorawan/chirpstack", json=_uplink_ph("bf00000000000022", 6.32)
+        ).status_code
+        == 201
+    )
+    assert sorted(_ph_rows(zone_id=shared_zone.id)) == [6.31, 6.32]
+
+    res = backfill_device_readings(
+        d1.id,
+        owner.id,
+        zone.id,
+        source_user_id=shared_user.id,
+        source_zone_id=shared_zone.id,
+    )
+    assert res["mode"] == "correlated"
+    assert res["moved"]["analytics_phsoil"] == 1
+    assert _ph_rows(user_id=owner.id, zone_id=zone.id) == [6.31]
+    assert _ph_rows(zone_id=shared_zone.id) == [6.32]
