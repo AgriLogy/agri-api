@@ -54,6 +54,9 @@ def owner(django_user_model):
         username="sr-owner",
         email="sr-owner@example.com",
         password="irrelevant-3921",
+        firstname="Sr",
+        lastname="Owner",
+        phone_number="+212600000009",
     )
 
 
@@ -111,10 +114,22 @@ def test_users_me_get_is_identical(fast, django, owner):
     assert dj.status_code == fp.status_code
     assert dj.content == fp.content
     body = fp.json()
-    assert set(body.keys()) == {"username", "preferred_language", "notify_every"}
+    assert set(body.keys()) == {
+        "username",
+        "preferred_language",
+        "notify_every",
+        "email",
+        "phone_number",
+        "first_name",
+        "last_name",
+    }
     assert body["username"] == "sr-owner"
     assert body["preferred_language"] == "fr"
     assert body["notify_every"] == 240
+    assert body["email"] == "sr-owner@example.com"
+    assert body["phone_number"] == "+212600000009"
+    assert body["first_name"] == "Sr"
+    assert body["last_name"] == "Owner"
 
 
 # ---------------------------------------------------------------------------
@@ -147,6 +162,132 @@ def test_users_me_patch_invalid_language_400_is_identical(fast, django, owner):
     assert fp.status_code == 400
     assert dj.json() == fp.json() == {"preferred_language": "Must be 'fr' or 'ar'."}
     assert dj.content == fp.content  # byte-identical 400 field map
+
+
+# ---------------------------------------------------------------------------
+# PATCH /users/me — profile fields (email / phone / names)
+# ---------------------------------------------------------------------------
+
+
+def test_users_me_patch_profile_updates(fast, django, owner):
+    # Drive only fastapp (the live surface) so the single row is mutated once.
+    tok = _token(owner)
+    body = {
+        "email": "sr-owner-new@example.com",
+        "phone_number": "+212611111111",
+        "first_name": "Newf",
+        "last_name": "Newl",
+    }
+    resp = fast.patch(
+        "/users/me", json=body, headers={"Authorization": f"Bearer {tok}"}
+    )
+    assert resp.status_code == 200, resp.text
+    j = resp.json()
+    assert j["email"] == "sr-owner-new@example.com"
+    assert j["phone_number"] == "+212611111111"
+    assert j["first_name"] == "Newf"
+    assert j["last_name"] == "Newl"
+    # Persisted to the DB (Django ORM reads the same row fastapp wrote).
+    owner.refresh_from_db()
+    assert owner.email == "sr-owner-new@example.com"
+    assert owner.firstname == "Newf"
+    assert owner.lastname == "Newl"
+    assert owner.phone_number == "+212611111111"
+
+
+def test_users_me_patch_email_uniqueness_rejected_is_identical(
+    fast, django, owner, other
+):
+    # `other` already owns this address → both surfaces reject with the same
+    # 400 field map, and neither writes (safe to drive both).
+    body = {"email": "sr-other@example.com"}
+    dj, fp = _both_patch(fast, django, owner, "/users/me", body)
+    assert dj.status_code == 400
+    assert fp.status_code == 400
+    assert dj.json() == fp.json() == {"email": "This email is already in use."}
+    assert dj.content == fp.content
+    owner.refresh_from_db()
+    assert owner.email == "sr-owner@example.com"  # unchanged
+
+
+def test_users_me_patch_invalid_email_rejected_is_identical(fast, django, owner):
+    dj, fp = _both_patch(fast, django, owner, "/users/me", {"email": "not-an-email"})
+    assert dj.status_code == 400
+    assert fp.status_code == 400
+    assert dj.json() == fp.json() == {"email": "Enter a valid email address."}
+    assert dj.content == fp.content
+
+
+# ---------------------------------------------------------------------------
+# POST /users/me/change-password
+# ---------------------------------------------------------------------------
+
+
+def test_change_password_happy_path(fast, django, owner):
+    tok = _token(owner)
+    resp = fast.post(
+        "/users/me/change-password",
+        json={"current_password": "irrelevant-3921", "new_password": "Brand-New-Pw-1"},
+        headers={"Authorization": f"Bearer {tok}"},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {"detail": "Password updated."}
+    # New hash is Django-compatible: check_password verifies it.
+    owner.refresh_from_db()
+    assert owner.check_password("Brand-New-Pw-1")
+    assert not owner.check_password("irrelevant-3921")
+
+
+def test_change_password_wrong_current_rejected_is_identical(fast, django, owner):
+    body = {"current_password": "totally-wrong", "new_password": "Brand-New-Pw-1"}
+    tok = _token(owner)
+    dj = django.post(
+        "/users/me/change-password",
+        body,
+        format="json",
+        HTTP_AUTHORIZATION=f"Bearer {tok}",
+    )
+    fp = fast.post(
+        "/users/me/change-password",
+        json=body,
+        headers={"Authorization": f"Bearer {tok}"},
+    )
+    assert dj.status_code == 400
+    assert fp.status_code == 400
+    assert (
+        dj.json() == fp.json() == {"current_password": "Current password is incorrect."}
+    )
+    assert dj.content == fp.content
+    # No mutation on rejection.
+    owner.refresh_from_db()
+    assert owner.check_password("irrelevant-3921")
+
+
+def test_change_password_too_short_rejected_is_identical(fast, django, owner):
+    body = {"current_password": "irrelevant-3921", "new_password": "Ab2!x"}
+    tok = _token(owner)
+    dj = django.post(
+        "/users/me/change-password",
+        body,
+        format="json",
+        HTTP_AUTHORIZATION=f"Bearer {tok}",
+    )
+    fp = fast.post(
+        "/users/me/change-password",
+        json=body,
+        headers={"Authorization": f"Bearer {tok}"},
+    )
+    assert dj.status_code == 400
+    assert fp.status_code == 400
+    assert dj.json() == fp.json()
+    assert fp.json() == {
+        "new_password": [
+            "This password is too short. It must contain at least 8 characters."
+        ]
+    }
+    assert dj.content == fp.content
+    owner.refresh_from_db()
+    assert owner.check_password("irrelevant-3921")
 
 
 # ---------------------------------------------------------------------------

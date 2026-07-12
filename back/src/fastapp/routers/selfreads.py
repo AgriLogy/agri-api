@@ -31,11 +31,12 @@ agri.db ORM model, so they're read with parameterised raw SQL.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from agri.core.database import session_scope
@@ -43,11 +44,38 @@ from agri.db.analytics import AnalyticsActivegraph, AnalyticsZone
 from agri.db.users import CustomUserCustomuser
 from fastapp.auth import AuthedUser, get_current_user
 from fastapp.json import DjangoStyleJSONResponse
+from fastapp.passwords import make_password, validate_password, verify_password
 
 router = APIRouter(tags=["self"])
 
 # CustomUser.LANGUAGE_CHOICES keys, verbatim (apps/users/models.py).
 _LANGUAGE_CHOICES = {"fr", "ar"}
+
+# Basic e-mail shape check. Kept as a plain-python reproduction (never imports
+# Django at runtime, mirroring fastapp.passwords) so the sidecar stays
+# Django-free; the rejection message string matches Django's EmailField
+# ("Enter a valid email address.") for cross-surface parity.
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+# CustomUser.phone_number is a CharField(max_length=15); enforce a basic
+# length window so obviously-bad values are rejected before the DB write.
+_PHONE_MIN_LEN = 6
+_PHONE_MAX_LEN = 15
+
+
+def _serialize_me(row: CustomUserCustomuser) -> dict[str, object]:
+    """The /users/me profile shape. ``first_name``/``last_name`` are the wire
+    names for the model's ``firstname``/``lastname`` columns."""
+    return {
+        "username": row.username,
+        "preferred_language": row.preferred_language,
+        "notify_every": row.notify_every,
+        "email": row.email,
+        "phone_number": row.phone_number,
+        "first_name": row.firstname,
+        "last_name": row.lastname,
+    }
+
 
 # ActiveGraph status fields in the Django model's field-declaration order — the
 # order ``model_to_dict`` emits them (``apps/irrigation/models.py``). Byte
@@ -160,42 +188,97 @@ def _resolve_read_scope(session: Session, user: CustomUserCustomuser) -> _ReadSc
 
 class MePreferencesIn(BaseModel):
     preferred_language: str | None = None
+    email: str | None = None
+    phone_number: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+
+
+class MeChangePasswordIn(BaseModel):
+    current_password: str
+    new_password: str
 
 
 @router.get("/users/me", summary="Caller's profile (identity)")
 def get_me(user: AuthedUser = Depends(get_current_user)):
     with session_scope() as session:
         row = session.get(CustomUserCustomuser, user.id)
-        return {
-            "username": row.username,
-            "preferred_language": row.preferred_language,
-            "notify_every": row.notify_every,
-        }
+        return _serialize_me(row)
 
 
-@router.patch("/users/me", summary="Caller updates their own preferences (language)")
+@router.patch("/users/me", summary="Caller updates their own profile")
 def patch_me(
     payload: MePreferencesIn,
     user: AuthedUser = Depends(get_current_user),
 ):
     lang = payload.preferred_language
-    # Validate BEFORE touching the DB — invalid language returns a bare field
-    # map (NOT the {"detail": ...} envelope), matching ninja's
-    # Response({"preferred_language": ...}, status=400).
+    # Validate everything BEFORE touching the DB — a rejection returns a bare
+    # field map (NOT the {"detail": ...} envelope), matching ninja's
+    # Response({"<field>": ...}, status=400).
     if lang is not None and lang not in _LANGUAGE_CHOICES:
         return DjangoStyleJSONResponse(
             {"preferred_language": "Must be 'fr' or 'ar'."}, status_code=400
         )
+    if payload.email is not None and not _EMAIL_RE.match(payload.email):
+        return DjangoStyleJSONResponse(
+            {"email": "Enter a valid email address."}, status_code=400
+        )
+    if payload.phone_number is not None:
+        phone = payload.phone_number.strip()
+        if not (_PHONE_MIN_LEN <= len(phone) <= _PHONE_MAX_LEN):
+            return DjangoStyleJSONResponse(
+                {"phone_number": "Enter a valid phone number."}, status_code=400
+            )
     with session_scope(commit=True) as session:
         row = session.get(CustomUserCustomuser, user.id)
+        # Uniqueness is enforced against committed rows (another user already
+        # owning the address), mirroring the model's unique=True on email.
+        if payload.email is not None and payload.email != row.email:
+            clash = session.execute(
+                select(CustomUserCustomuser.id).where(
+                    func.lower(CustomUserCustomuser.email) == payload.email.lower(),
+                    CustomUserCustomuser.id != row.id,
+                )
+            ).first()
+            if clash is not None:
+                return DjangoStyleJSONResponse(
+                    {"email": "This email is already in use."}, status_code=400
+                )
         if lang is not None:
             row.preferred_language = lang
+        if payload.email is not None:
+            row.email = payload.email
+        if payload.phone_number is not None:
+            row.phone_number = payload.phone_number
+        if payload.first_name is not None:
+            row.firstname = payload.first_name
+        if payload.last_name is not None:
+            row.lastname = payload.last_name
         session.flush()
-        return {
-            "username": row.username,
-            "preferred_language": row.preferred_language,
-            "notify_every": row.notify_every,
-        }
+        return _serialize_me(row)
+
+
+@router.post("/users/me/change-password", summary="Caller changes their password")
+def change_password_me(
+    payload: MeChangePasswordIn,
+    user: AuthedUser = Depends(get_current_user),
+):
+    with session_scope(commit=True) as session:
+        row = session.get(CustomUserCustomuser, user.id)
+        # Verify the current password against the stored Django pbkdf2 hash
+        # (fastapp.passwords.verify_password == Django check_password).
+        if not verify_password(payload.current_password, row.password):
+            return DjangoStyleJSONResponse(
+                {"current_password": "Current password is incorrect."}, status_code=400
+            )
+        # Reuse the Django-compatible validators (min length 8 + common +
+        # numeric), returning the same message list the admin reset does.
+        pw_errors = validate_password(payload.new_password)
+        if pw_errors:
+            return DjangoStyleJSONResponse({"new_password": pw_errors}, status_code=400)
+        row.password = make_password(payload.new_password)
+        session.flush()
+        return {"detail": "Password updated."}
 
 
 # ---------------------------------------------------------------------------

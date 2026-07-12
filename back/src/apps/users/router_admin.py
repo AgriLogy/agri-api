@@ -13,6 +13,7 @@ All routes require JWT + ``is_staff`` (checked inline).
 from __future__ import annotations
 
 import logging
+import re
 import secrets
 from typing import Any
 
@@ -188,41 +189,117 @@ class AdminResetPasswordIn(Schema):
 # ---------------------------------------------------------------------------
 
 
+# Basic e-mail shape + phone length checks — kept identical to the fastapp
+# selfreads router so the two surfaces reject the same inputs with the same
+# byte-for-byte field map (strangler parity).
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_PHONE_MIN_LEN = 6
+_PHONE_MAX_LEN = 15
+
+
+def _serialize_me(user: CustomUser) -> dict[str, Any]:
+    """The /me profile shape. ``first_name``/``last_name`` are the wire names
+    for the model's ``firstname``/``lastname`` columns."""
+    return {
+        "username": user.username,
+        "preferred_language": user.preferred_language,
+        "notify_every": user.notify_every,
+        "email": user.email,
+        "phone_number": user.phone_number,
+        "first_name": user.firstname,
+        "last_name": user.lastname,
+    }
+
+
 @router.get(
     "/me",
     auth=JwtAuth(),
     summary="Caller's profile (identity)",
 )
 def get_me_top(request):
-    return {
-        "username": request.auth.username,
-        "preferred_language": request.auth.preferred_language,
-        "notify_every": request.auth.notify_every,
-    }
+    return _serialize_me(request.auth)
 
 
 class MePreferencesIn(Schema):
     preferred_language: str | None = None
+    email: str | None = None
+    phone_number: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+
+
+class MeChangePasswordIn(Schema):
+    current_password: str
+    new_password: str
 
 
 @router.patch(
     "/me",
     auth=JwtAuth(),
-    summary="Caller updates their own preferences (language)",
+    summary="Caller updates their own profile",
 )
 def patch_me(request, payload: MePreferencesIn):
     user = request.auth
     lang = payload.preferred_language
+    # Validate BEFORE any write — a rejection returns a bare field map.
+    if lang is not None and lang not in dict(CustomUser.LANGUAGE_CHOICES):
+        return Response({"preferred_language": "Must be 'fr' or 'ar'."}, status=400)
+    if payload.email is not None and not _EMAIL_RE.match(payload.email):
+        return Response({"email": "Enter a valid email address."}, status=400)
+    if payload.phone_number is not None:
+        phone = payload.phone_number.strip()
+        if not (_PHONE_MIN_LEN <= len(phone) <= _PHONE_MAX_LEN):
+            return Response({"phone_number": "Enter a valid phone number."}, status=400)
+    if payload.email is not None and payload.email != user.email:
+        clash = (
+            CustomUser.objects.filter(email__iexact=payload.email)
+            .exclude(pk=user.pk)
+            .exists()
+        )
+        if clash:
+            return Response({"email": "This email is already in use."}, status=400)
+
+    update_fields: list[str] = []
     if lang is not None:
-        if lang not in dict(CustomUser.LANGUAGE_CHOICES):
-            return Response({"preferred_language": "Must be 'fr' or 'ar'."}, status=400)
         user.preferred_language = lang
-        user.save(update_fields=["preferred_language"])
-    return {
-        "username": user.username,
-        "preferred_language": user.preferred_language,
-        "notify_every": user.notify_every,
-    }
+        update_fields.append("preferred_language")
+    if payload.email is not None:
+        user.email = payload.email
+        update_fields.append("email")
+    if payload.phone_number is not None:
+        user.phone_number = payload.phone_number
+        update_fields.append("phone_number")
+    if payload.first_name is not None:
+        user.firstname = payload.first_name
+        update_fields.append("firstname")
+    if payload.last_name is not None:
+        user.lastname = payload.last_name
+        update_fields.append("lastname")
+    if update_fields:
+        user.save(update_fields=update_fields)
+    return _serialize_me(user)
+
+
+@router.post(
+    "/me/change-password",
+    auth=JwtAuth(),
+    summary="Caller changes their password",
+)
+def change_password_me(request, payload: MeChangePasswordIn):
+    user = request.auth
+    # Verify the current password against the stored hash, then apply Django's
+    # own validators (min length 8 + common + numeric) before setting.
+    if not user.check_password(payload.current_password):
+        return Response(
+            {"current_password": "Current password is incorrect."}, status=400
+        )
+    try:
+        validate_password(payload.new_password)
+    except DjangoValidationError as exc:
+        return Response({"new_password": list(exc.messages)}, status=400)
+    user.set_password(payload.new_password)
+    user.save(update_fields=["password"])
+    return {"detail": "Password updated."}
 
 
 @router.post(
