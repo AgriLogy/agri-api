@@ -218,27 +218,39 @@ def bulk_assign_devices(
             return err
         assigned: list[int] = []
         failed: list[dict[str, Any]] = []
+        # Capture each device's PRIOR (user, zone) before reassigning so the
+        # backfill knows where to migrate its history from (technician zone /
+        # lora catch-all), not just the final destination.
+        prior_by_id: dict[int, tuple[int | None, int | None]] = {}
         for device_id in payload.device_ids:
-            updated = session.execute(
+            prior = session.execute(
+                text("SELECT user_id, zone_id FROM analytics_device WHERE id = :id"),
+                {"id": device_id},
+            ).first()
+            if prior is None:
+                failed.append({"id": device_id, "reason": "device not found."})
+                continue
+            session.execute(
                 text(
                     "UPDATE analytics_device SET user_id = :u, zone_id = :z "
-                    "WHERE id = :id RETURNING id"
+                    "WHERE id = :id"
                 ),
                 {"u": user_id, "z": zone_id, "id": device_id},
-            ).first()
-            if updated is None:
-                failed.append({"id": device_id, "reason": "device not found."})
-            else:
-                assigned.append(device_id)
+            )
+            assigned.append(device_id)
+            prior_by_id[device_id] = (prior.user_id, prior.zone_id)
     # Enqueue historical backfill AFTER commit so the task sees the new
     # attribution (and only for devices that were actually assigned).
     if payload.backfill and assigned:
         for device_id in assigned:
+            src_user, src_zone = prior_by_id[device_id]
             celery.send_task(
                 "agriapi.tasks.backfill_device_readings",
                 device_id=device_id,
                 target_user_id=user_id,
                 target_zone_id=zone_id,
+                source_user_id=src_user,
+                source_zone_id=src_zone,
             )
     return DjangoStyleJSONResponse(
         {
