@@ -1,6 +1,25 @@
 # CHANGELOG
 
 
+## v1.113.0 (2026-07-12)
+
+### Features
+
+- **devices**: Retire the backfill (history follows the device via the JOIN, phase 4)
+  ([#389](https://github.com/AgriLogy/agri-api/pull/389),
+  [`a4aba7c`](https://github.com/AgriLogy/agri-api/commit/a4aba7c318afa37e0908dee5cd049b08fb4fdce4))
+
+Closes #388 · phase 4 (final) of device-keyed ownership
+
+With P3 live, a transfer is just a one-row `analytics_device` UPDATE and the device's whole history
+  follows via the JOIN — the backfill is obsolete. - `bulk_assign` + `patch_device`: plain UPDATE,
+  no backfill enqueue / prior-zone capture - deleted `backfill_device_readings` (task + celery
+  registration) - `backfill` request field kept **accepted-but-ignored** (deprecated) so the
+  currently-deployed admin doesn't 422 before its own P4 ships - pruned the backfill tests
+
+Full fastapp suite green (392). Pairs with agri-admin (drop the migrate toggle).
+
+
 ## v1.112.0 (2026-07-12)
 
 ### Features
