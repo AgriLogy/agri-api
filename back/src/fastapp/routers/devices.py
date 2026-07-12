@@ -20,7 +20,6 @@ from pydantic import BaseModel
 from sqlalchemy import text
 
 from agri.core.database import session_scope
-from fastapp import celery
 from fastapp.auth import AuthedUser, get_current_user
 from fastapp.json import DjangoStyleJSONResponse
 
@@ -37,8 +36,8 @@ class DeviceWriteIn(BaseModel):
     username: str | None = None  # owner
     zone_id: int | None = None
     is_active: bool | None = None
-    # PATCH only: also migrate the device's history when this edit moves it to a
-    # new owner/zone. Transient (never written to analytics_device).
+    # Deprecated + ignored: history now follows the device via the device JOIN,
+    # so no migration is needed. Kept so older admin clients don't 422.
     backfill: bool | None = None
 
 
@@ -48,7 +47,7 @@ class BulkAssignIn(BaseModel):
     device_ids: list[int] = []
     username: str | None = None  # target owner
     zone_id: int | None = None  # target zone (must belong to ``username``)
-    backfill: bool = False  # also migrate each device's past ``lora`` readings
+    backfill: bool = False  # deprecated + ignored (history follows the device)
 
 
 def _require_admin(user: AuthedUser) -> None:
@@ -221,47 +220,22 @@ def bulk_assign_devices(
             return err
         assigned: list[int] = []
         failed: list[dict[str, Any]] = []
-        # Capture each device's PRIOR (user, zone) before reassigning so the
-        # backfill knows where to migrate its history from (technician zone /
-        # lora catch-all), not just the final destination.
-        prior_by_id: dict[int, tuple[int | None, int | None]] = {}
+        # Just re-point each device at the new owner/zone. Readings resolve
+        # ownership via the device JOIN, so the device's whole history follows
+        # this update instantly — no backfill / reading rewrite.
         for device_id in payload.device_ids:
-            prior = session.execute(
-                text("SELECT user_id, zone_id FROM analytics_device WHERE id = :id"),
-                {"id": device_id},
-            ).first()
-            if prior is None:
-                failed.append({"id": device_id, "reason": "device not found."})
-                continue
-            session.execute(
+            updated = session.execute(
                 text(
                     "UPDATE analytics_device SET user_id = :u, zone_id = :z "
-                    "WHERE id = :id"
+                    "WHERE id = :id RETURNING id"
                 ),
                 {"u": user_id, "z": zone_id, "id": device_id},
-            )
-            assigned.append(device_id)
-            prior_by_id[device_id] = (prior.user_id, prior.zone_id)
-    # Enqueue historical backfill AFTER commit so the task sees the new
-    # attribution (and only for devices that were actually assigned).
-    if payload.backfill and assigned:
-        for device_id in assigned:
-            src_user, src_zone = prior_by_id[device_id]
-            celery.send_task(
-                "agriapi.tasks.backfill_device_readings",
-                device_id=device_id,
-                target_user_id=user_id,
-                target_zone_id=zone_id,
-                source_user_id=src_user,
-                source_zone_id=src_zone,
-            )
-    return DjangoStyleJSONResponse(
-        {
-            "assigned": assigned,
-            "failed": failed,
-            "backfill_enqueued": bool(payload.backfill and assigned),
-        }
-    )
+            ).first()
+            if updated is None:
+                failed.append({"id": device_id, "reason": "device not found."})
+            else:
+                assigned.append(device_id)
+    return DjangoStyleJSONResponse({"assigned": assigned, "failed": failed})
 
 
 @router.patch("/devices/{pk}", summary="Admin: update a device")
@@ -273,10 +247,6 @@ def patch_device(
         device = _fetch(session, pk)
         if device is None:
             raise HTTPException(status_code=404, detail="device not found.")
-        # Capture the device's attribution BEFORE the edit, so an owner/zone
-        # change can migrate its history from there (see backfill below).
-        prior_user_id = device.user_id
-        prior_zone_id = device.zone_id
         updates: dict[str, Any] = {}
         if payload.device_type is not None:
             if payload.device_type not in _VALID_TYPES:
@@ -315,26 +285,10 @@ def patch_device(
                 text(f"UPDATE analytics_device SET {set_clause} WHERE id = :pk"),
                 {**updates, "pk": pk},
             )
-        final = _fetch(session, pk)
-        result = _serialize(final)
-        new_user_id, new_zone_id = final.user_id, final.zone_id
-    # After commit: if the edit moved the device to a real zone and backfill was
-    # requested, migrate its history from the prior account/zone. Same task the
-    # bulk-assign path uses; a no-op if nothing actually moved.
-    if (
-        payload.backfill
-        and new_zone_id is not None
-        and (new_user_id != prior_user_id or new_zone_id != prior_zone_id)
-    ):
-        celery.send_task(
-            "agriapi.tasks.backfill_device_readings",
-            device_id=pk,
-            target_user_id=new_user_id,
-            target_zone_id=new_zone_id,
-            source_user_id=prior_user_id,
-            source_zone_id=prior_zone_id,
-        )
-    return DjangoStyleJSONResponse(result)
+        # An owner/zone change needs no data migration: readings resolve
+        # ownership via the device JOIN, so the device's history follows this
+        # update automatically.
+        return DjangoStyleJSONResponse(_serialize(_fetch(session, pk)))
 
 
 @router.delete("/devices/{pk}", summary="Admin: delete a device")
