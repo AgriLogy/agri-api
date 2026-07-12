@@ -222,6 +222,65 @@ def test_bulk_assign_backfill_enqueues(fast, admin, owner, zone, monkeypatch):
     )
 
 
+# --- PATCH (single-device edit) backfill ------------------------------------
+def test_patch_backfill_enqueues_on_transfer(fast, admin, owner, zone, monkeypatch):
+    """Editing a device to a new zone with ``backfill`` migrates its history
+    from the prior zone — same task the bulk-assign path uses."""
+    from apps.irrigation.models import Zone
+
+    zone_b = Zone.objects.create(
+        user=owner,
+        name="ba-zone-b",
+        space=1000.0,
+        critical_moisture_threshold=20.0,
+        pomp_flow_rate=1.0,
+    )
+    dev = _mk_device(owner, "PA-1", zone=zone)  # starts in ``zone``
+    calls: list[tuple[str, dict]] = []
+    monkeypatch.setattr(
+        celery, "send_task", lambda name, **kw: calls.append((name, kw))
+    )
+
+    r = fast.patch(
+        f"/devices/{dev.id}",
+        headers=_auth(admin),
+        json={"username": "ba-owner", "zone_id": zone_b.id, "backfill": True},
+    )
+    assert r.status_code == 200, r.text
+    assert len(calls) == 1
+    name, kw = calls[0]
+    assert name == "agriapi.tasks.backfill_device_readings"
+    assert kw["device_id"] == dev.id
+    assert kw["source_user_id"] == owner.id and kw["source_zone_id"] == zone.id
+    assert kw["target_user_id"] == owner.id and kw["target_zone_id"] == zone_b.id
+
+
+def test_patch_no_backfill_without_flag_or_move(fast, admin, owner, zone, monkeypatch):
+    dev = _mk_device(owner, "PA-2", zone=zone)
+    calls: list[tuple[str, dict]] = []
+    monkeypatch.setattr(
+        celery, "send_task", lambda name, **kw: calls.append((name, kw))
+    )
+
+    # (a) no backfill flag → no enqueue, even on a rename.
+    assert (
+        fast.patch(
+            f"/devices/{dev.id}", headers=_auth(admin), json={"name": "renamed"}
+        ).status_code
+        == 200
+    )
+    # (b) backfill requested but the zone didn't change → no move, no enqueue.
+    assert (
+        fast.patch(
+            f"/devices/{dev.id}",
+            headers=_auth(admin),
+            json={"zone_id": zone.id, "backfill": True},
+        ).status_code
+        == 200
+    )
+    assert calls == []
+
+
 # --- backfill task ----------------------------------------------------------
 def test_backfill_moves_lora_readings_to_target(fast, owner, zone):
     from apps.irrigation.models import Device, Zone

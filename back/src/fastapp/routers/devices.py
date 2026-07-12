@@ -37,6 +37,9 @@ class DeviceWriteIn(BaseModel):
     username: str | None = None  # owner
     zone_id: int | None = None
     is_active: bool | None = None
+    # PATCH only: also migrate the device's history when this edit moves it to a
+    # new owner/zone. Transient (never written to analytics_device).
+    backfill: bool | None = None
 
 
 class BulkAssignIn(BaseModel):
@@ -270,6 +273,10 @@ def patch_device(
         device = _fetch(session, pk)
         if device is None:
             raise HTTPException(status_code=404, detail="device not found.")
+        # Capture the device's attribution BEFORE the edit, so an owner/zone
+        # change can migrate its history from there (see backfill below).
+        prior_user_id = device.user_id
+        prior_zone_id = device.zone_id
         updates: dict[str, Any] = {}
         if payload.device_type is not None:
             if payload.device_type not in _VALID_TYPES:
@@ -308,7 +315,26 @@ def patch_device(
                 text(f"UPDATE analytics_device SET {set_clause} WHERE id = :pk"),
                 {**updates, "pk": pk},
             )
-        return DjangoStyleJSONResponse(_serialize(_fetch(session, pk)))
+        final = _fetch(session, pk)
+        result = _serialize(final)
+        new_user_id, new_zone_id = final.user_id, final.zone_id
+    # After commit: if the edit moved the device to a real zone and backfill was
+    # requested, migrate its history from the prior account/zone. Same task the
+    # bulk-assign path uses; a no-op if nothing actually moved.
+    if (
+        payload.backfill
+        and new_zone_id is not None
+        and (new_user_id != prior_user_id or new_zone_id != prior_zone_id)
+    ):
+        celery.send_task(
+            "agriapi.tasks.backfill_device_readings",
+            device_id=pk,
+            target_user_id=new_user_id,
+            target_zone_id=new_zone_id,
+            source_user_id=prior_user_id,
+            source_zone_id=prior_zone_id,
+        )
+    return DjangoStyleJSONResponse(result)
 
 
 @router.delete("/devices/{pk}", summary="Admin: delete a device")
