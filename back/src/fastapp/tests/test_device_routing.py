@@ -169,3 +169,43 @@ def test_auto_register_is_idempotent(fast):
         resp = fast.post("/ingest/lorawan/chirpstack", json=_uplink(dev_eui))
         assert resp.status_code == 201, resp.text
     assert Device.objects.filter(serial=dev_eui).count() == 1
+
+
+# --- Phase 1: every device reading is stamped with device_id ----------------
+def test_assigned_uplink_stamps_device_id(fast, owner, zone):
+    from apps.alerts.engine import get_sensor_model
+    from apps.irrigation.models import Device
+
+    dev_eui = "dddddddd000000aa"
+    Device.objects.create(
+        user=owner, zone=zone, device_type="lora", serial=dev_eui, is_active=True
+    )
+    assert (
+        fast.post("/ingest/lorawan/chirpstack", json=_uplink(dev_eui)).status_code
+        == 201
+    )
+
+    dev = Device.objects.get(serial=dev_eui)
+    ph = get_sensor_model("ph_soil").objects.get(zone_id=zone.id)
+    assert ph.device_id == dev.id
+    # battery + signal rows carry it too
+    assert get_sensor_model("battery").objects.get(zone_id=zone.id).device_id == dev.id
+    assert get_sensor_model("signal").objects.get(zone_id=zone.id).device_id == dev.id
+
+
+def test_unassigned_uplink_still_stamps_device_id(fast):
+    """Even when the device is unassigned (reading routes to the lora zone), the
+    row is stamped with device_id so it follows the device on assignment."""
+    from apps.alerts.engine import get_sensor_model
+    from apps.irrigation.models import Device, Zone
+
+    dev_eui = "dddddddd000000bb"
+    assert (
+        fast.post("/ingest/lorawan/chirpstack", json=_uplink(dev_eui)).status_code
+        == 201
+    )
+
+    dev = Device.objects.get(serial=dev_eui)  # auto-registered, unassigned
+    lora_zone = Zone.objects.get(name="lora")
+    ph = get_sensor_model("ph_soil").objects.get(zone_id=lora_zone.id)
+    assert ph.device_id == dev.id  # stamped despite the lora fallback
