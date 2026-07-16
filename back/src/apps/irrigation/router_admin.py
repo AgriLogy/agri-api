@@ -158,6 +158,15 @@ def overview(request):
     return {
         "users_total": User.objects.count(),
         "users_active": User.objects.filter(is_active=True).count(),
+        # Clients = customer accounts (non-staff, non-technician) — the same
+        # population /admin/analytics calls "customers". Kept separate from
+        # users_active, which counts all enabled accounts (staff included).
+        "clients_total": User.objects.filter(
+            is_staff=False, is_technician=False
+        ).count(),
+        "clients_active": User.objects.filter(
+            is_staff=False, is_technician=False, is_active=True
+        ).count(),
         "staff_total": User.objects.filter(is_staff=True).count(),
         "zones_total": Zone.objects.count(),
         "alerts_24h": Alert.objects.filter(last_triggered_at__gte=since).count(),

@@ -26,6 +26,8 @@ class TestAdminOverview:
         for key in (
             "users_total",
             "users_active",
+            "clients_total",
+            "clients_active",
             "staff_total",
             "zones_total",
             "alerts_24h",
@@ -35,3 +37,7 @@ class TestAdminOverview:
         assert body["users_total"] >= 3
         assert body["staff_total"] >= 1
         assert body["zones_total"] >= 2
+        # normal_user + other_user are non-staff customers.
+        assert body["clients_total"] >= 2
+        # Clients exclude staff, so never exceed the total user base.
+        assert body["clients_total"] <= body["users_total"]
