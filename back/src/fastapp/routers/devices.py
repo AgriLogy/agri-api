@@ -36,6 +36,10 @@ class DeviceWriteIn(BaseModel):
     username: str | None = None  # owner
     zone_id: int | None = None
     is_active: bool | None = None
+    # GPS position of the physical device (WGS-84 decimal degrees), so the
+    # farmer map can plot each sensor at its real location.
+    latitude: float | None = None
+    longitude: float | None = None
     # Deprecated + ignored: history now follows the device via the device JOIN,
     # so no migration is needed. Kept so older admin clients don't 422.
     backfill: bool | None = None
@@ -68,12 +72,14 @@ def _serialize(row) -> dict[str, Any]:
         "zone": row.zone_id,
         "is_active": row.is_active,
         "created_at": row.created_at.isoformat() if row.created_at else None,
+        "latitude": row.latitude,
+        "longitude": row.longitude,
     }
 
 
 _SELECT = (
     "SELECT d.id, d.device_type, d.serial, d.name, d.user_id, d.zone_id, "
-    "d.is_active, d.created_at, u.username "
+    "d.is_active, d.created_at, d.latitude, d.longitude, u.username "
     "FROM analytics_device d "
     'JOIN "CustomUser_customuser" u ON u.id = d.user_id'
 )
@@ -172,9 +178,10 @@ def create_device(payload: DeviceWriteIn, user: AuthedUser = Depends(get_current
         new_id = session.execute(
             text(
                 "INSERT INTO analytics_device "
-                "(user_id, zone_id, device_type, serial, name, is_active, created_at) "
+                "(user_id, zone_id, device_type, serial, name, is_active, "
+                "created_at, latitude, longitude) "
                 "VALUES (:user_id, :zone_id, :device_type, :serial, :name, "
-                ":is_active, :created_at) RETURNING id"
+                ":is_active, :created_at, :latitude, :longitude) RETURNING id"
             ),
             {
                 "user_id": user_id,
@@ -186,6 +193,8 @@ def create_device(payload: DeviceWriteIn, user: AuthedUser = Depends(get_current
                     payload.is_active if payload.is_active is not None else True
                 ),
                 "created_at": datetime.datetime.now(datetime.timezone.utc),
+                "latitude": payload.latitude,
+                "longitude": payload.longitude,
             },
         ).scalar_one()
         return DjangoStyleJSONResponse(
@@ -271,6 +280,10 @@ def patch_device(
             updates["name"] = payload.name.strip()
         if payload.is_active is not None:
             updates["is_active"] = payload.is_active
+        if payload.latitude is not None:
+            updates["latitude"] = payload.latitude
+        if payload.longitude is not None:
+            updates["longitude"] = payload.longitude
         if payload.username is not None or payload.zone_id is not None:
             user_id, zone_id, err = _resolve_owner_zone(session, payload)
             if err is not None:

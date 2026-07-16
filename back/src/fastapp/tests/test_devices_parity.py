@@ -197,12 +197,59 @@ def test_devices_create_persists_row(fast, django, admin, owner, zone):
         "zone",
         "is_active",
         "created_at",
+        "latitude",
+        "longitude",
     }
     assert data["serial"] == "SNX" and data["name"] == "gw"
     assert data["user"] == "dv-owner" and data["zone"] == zone.id
     assert data["is_active"] is True
     row = Device.objects.get(id=data["id"])
     assert row.serial == "SNX" and row.user_id == owner.id and row.zone_id == zone.id
+
+
+def test_devices_gps_coordinates_persist_and_patch(fast, django, admin, owner):
+    """MAP-1: a device carries lat/long; create sets them, patch moves them,
+    and both surfaces serialise them identically."""
+    from apps.irrigation.models import Device
+
+    body = {
+        "device_type": "lora",
+        "serial": "GPS-1",
+        "name": "Sensor A",
+        "username": "dv-owner",
+        "latitude": 33.5731,
+        "longitude": -7.5898,
+    }
+    fp = fast.post(
+        "/devices", json=body, headers={"Authorization": f"Bearer {_token(admin)}"}
+    )
+    assert fp.status_code == 201, fp.text
+    created = fp.json()
+    assert created["latitude"] == 33.5731 and created["longitude"] == -7.5898
+    row = Device.objects.get(id=created["id"])
+    assert row.latitude == 33.5731 and row.longitude == -7.5898
+
+    # Move it — PATCH updates only the coords, on both surfaces byte-identically.
+    dj, fp2 = _both(
+        fast,
+        django,
+        admin,
+        f"/devices/{created['id']}",
+        method="patch",
+        data={"latitude": 34.02, "longitude": -6.83},
+    )
+    assert dj.status_code == fp2.status_code == 200, fp2.text
+    assert dj.content == fp2.content
+    assert fp2.json()["latitude"] == 34.02 and fp2.json()["longitude"] == -6.83
+
+    # A device created without coordinates keeps them NULL (the "—" case).
+    fp3 = fast.post(
+        "/devices",
+        json={"device_type": "lora", "serial": "GPS-2", "username": "dv-owner"},
+        headers={"Authorization": f"Bearer {_token(admin)}"},
+    )
+    assert fp3.status_code == 201, fp3.text
+    assert fp3.json()["latitude"] is None and fp3.json()["longitude"] is None
 
 
 def test_devices_create_duplicate_serial_400_identical(fast, django, admin, owner):
