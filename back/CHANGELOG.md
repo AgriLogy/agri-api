@@ -1,6 +1,33 @@
 # CHANGELOG
 
 
+## v1.115.0 (2026-07-17)
+
+### Features
+
+- **admin**: Expose a true Clients count on overview KPIs
+  ([#401](https://github.com/AgriLogy/agri-api/pull/401),
+  [`2ac9e96`](https://github.com/AgriLogy/agri-api/commit/2ac9e96b40a519f51791c253c7ba8255c3ca07cf))
+
+Closes #400 · pairs with agri-admin ADM-1 (#56) — **merge together**.
+
+## Why The dashboard's 'active users' KPI counts every enabled account (staff + technicians
+  included), so the business couldn't see its real customer count — the root of ADM-1 ('active
+  clients shows 1, should be 5').
+
+## What Adds `clients_total` and `clients_active` to `GET /admin/overview`: - **client = non-staff,
+  non-technician** account — the exact population `/admin/analytics` already calls 'customers'
+  (matches `tasks_scan.py`'s customer filter). - Updated in **both** the live `fastapp` router and
+  its django-ninja source (`apps/irrigation/router_admin.py`) so the byte-parity test stays green
+  (identical keys + order). - `test_admin_overview.py` asserts the new keys.
+
+## Note on the assumption 'Client' here = customer account. If you meant something else by 'active
+  client' (e.g. recent login, or has an active device), tell me and I'll adjust the definition —
+  it's a one-line query change.
+
+Postgres tests run in CI (dual-ORM tests can't run locally).
+
+
 ## v1.114.0 (2026-07-12)
 
 ### Features
