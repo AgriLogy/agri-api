@@ -252,6 +252,22 @@ def overview(user: AuthedUser = Depends(get_current_staff_user)):
             "users_active": _count(
                 CustomUserCustomuser, CustomUserCustomuser.is_active.is_(True)
             ),
+            # Clients = customer accounts (non-staff, non-technician) — the same
+            # population the /admin/analytics endpoint calls "customers".
+            # `clients_total` is the customer base; `clients_active` the enabled
+            # ones. Kept separate from users_active, which counts *all* enabled
+            # accounts (staff/technicians included).
+            "clients_total": _count(
+                CustomUserCustomuser,
+                CustomUserCustomuser.is_staff.is_(False),
+                CustomUserCustomuser.is_technician.is_(False),
+            ),
+            "clients_active": _count(
+                CustomUserCustomuser,
+                CustomUserCustomuser.is_staff.is_(False),
+                CustomUserCustomuser.is_technician.is_(False),
+                CustomUserCustomuser.is_active.is_(True),
+            ),
             "staff_total": _count(
                 CustomUserCustomuser, CustomUserCustomuser.is_staff.is_(True)
             ),
