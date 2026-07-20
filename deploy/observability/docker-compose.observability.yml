@@ -86,6 +86,22 @@ services:
     restart: unless-stopped
     networks: [observability]
 
+  # ---------- Health beacon — disk% + container states → Loki ------------
+  # Emits JSON health lines Promtail already scrapes (auto-discovered like every
+  # container), so Grafana can alert on disk-fill and container-down without a
+  # metrics stack. Reads host / (ro) + docker.sock (ro). See health-beacon.sh.
+  health-beacon:
+    container_name: agri-health-beacon
+    image: docker:27-cli
+    entrypoint: ["sh", "/beacon.sh"]
+    logging: *default-logging
+    volumes:
+      - ./health-beacon.sh:/beacon.sh:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /:/host:ro
+    restart: unless-stopped
+    networks: [observability]
+
 networks:
   observability:
     name: observability

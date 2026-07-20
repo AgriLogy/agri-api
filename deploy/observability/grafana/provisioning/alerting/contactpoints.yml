@@ -20,9 +20,9 @@ contactPoints:
           url: ${GF_ALERT_WEBHOOK_URL}
         disableResolveMessage: false
 
-# Route the critical Resend-429 alert to Discord; everything else stays on the
-# built-in default receiver (which, with SMTP blocked, effectively no-ops — we
-# only have the one critical rule today).
+# Route every critical/warning alert (Resend-429 + the health rules) to Discord;
+# anything unlabeled stays on the built-in default receiver (a no-op with SMTP
+# blocked). group_by keeps a burst of the same alert to one grouped message.
 policies:
   - orgId: 1
     receiver: grafana-default-email
@@ -30,4 +30,4 @@ policies:
     routes:
       - receiver: Agri Discord
         object_matchers:
-          - ["severity", "=", "critical"]
+          - ["severity", "=~", "critical|warning"]

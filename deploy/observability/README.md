@@ -88,11 +88,29 @@ local dev.
 
 ---
 
-## Alerting (Resend-429)
+## Alerting
 
-The rule `resend-quota-429` is provisioned and evaluates every minute; it shows
-in **Alerting → Alert rules** and turns the dashboard tile red the moment a 429
-appears. Delivery is wired to **Discord** (SMTP is blocked on the droplet):
+All rules are provisioned (folder **Agrilogy Alerts**), evaluate every minute,
+and route to **Discord** (SMTP is blocked on the droplet). Thresholds are
+conservative starting points — tune in the UI or in the YAML.
+
+| Rule | Fires when | Sev |
+|---|---|---|
+| `resend-quota-429` | Resend returns HTTP 429 (email quota exhausted) | critical |
+| `http-5xx-spike` | >5 HTTP 5xx from agri-api-fast in 5 min | critical |
+| `app-error-rate` | >30 ERROR log lines across agri-api-* in 5 min | warning |
+| `celery-task-failures` | worker/beat logs an ERROR in 10 min | warning |
+| `celery-worker-silent` | no worker logs in 15 min (pipeline stalled) | critical |
+| `host-disk-high` | droplet root disk >85% | critical |
+| `agri-container-down` | an agri-api-* container is not running | critical |
+
+`host-disk-high` and `agri-container-down` read the **`agri-health-beacon`**
+container (`health-beacon.sh`) — a ~20MB `docker:cli` sidecar that prints disk%
++ container states as JSON every 60s (so Loki can alert on things logs alone
+can't see, without a Prometheus stack). It's part of the observability compose;
+nothing else to run.
+
+**Delivery** is wired to **Discord**:
 
 - Contact point `Agri Discord` + a route sending `severity=critical` there are
   provisioned in `grafana/provisioning/alerting/contactpoints.yml`.

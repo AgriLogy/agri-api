@@ -1,0 +1,270 @@
+# Health/error alert rules (Loki-derived) → Discord. Companion to rules.yml
+# (Resend-429). Disk + container-down read the agri-health-beacon container's
+# JSON (see health-beacon.sh); the rest read app logs directly. Thresholds are
+# deliberately conservative starting points — tune in the Grafana UI or here.
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: health
+    folder: Agrilogy Alerts
+    interval: 1m
+    rules:
+      # --- HTTP 5xx spike on the FastAPI sidecar -------------------------
+      - uid: http-5xx-spike
+        title: API 5xx spike (agri-api-fast)
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: OK
+        labels: { severity: critical, service: api }
+        annotations:
+          summary: >-
+            More than 5 HTTP 5xx responses from agri-api-fast in the last 5 min.
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: loki
+            model:
+              refId: A
+              datasource: { type: loki, uid: loki }
+              queryType: range
+              intervalMs: 60000
+              maxDataPoints: 43200
+              expr: >-
+                sum(count_over_time({container="agri-api-fast"} | json |
+                event=`http.access` | status>=500 [5m]))
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              datasource: { type: __expr__, uid: __expr__ }
+              expression: A
+              reducer: last
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              datasource: { type: __expr__, uid: __expr__ }
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [5] }
+
+      # --- Elevated ERROR-level log rate across the app -----------------
+      - uid: app-error-rate
+        title: Elevated error log rate (agri-api)
+        condition: C
+        for: 2m
+        noDataState: OK
+        execErrState: OK
+        labels: { severity: warning, service: api }
+        annotations:
+          summary: >-
+            More than 30 ERROR-level log lines across agri-api-* in the last
+            5 min — something is failing repeatedly.
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: loki
+            model:
+              refId: A
+              datasource: { type: loki, uid: loki }
+              queryType: range
+              intervalMs: 60000
+              maxDataPoints: 43200
+              expr: >-
+                sum(count_over_time({job="docker", container=~"agri-api-.+",
+                level="ERROR"} [5m]))
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              datasource: { type: __expr__, uid: __expr__ }
+              expression: A
+              reducer: last
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              datasource: { type: __expr__, uid: __expr__ }
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [30] }
+
+      # --- Celery task failures ----------------------------------------
+      - uid: celery-task-failures
+        title: Celery task failures
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: OK
+        labels: { severity: warning, service: celery }
+        annotations:
+          summary: >-
+            Celery worker/beat logged an ERROR in the last 10 min — a scheduled
+            task (ET0, notifications, device scan, irrigation) is failing.
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: loki
+            model:
+              refId: A
+              datasource: { type: loki, uid: loki }
+              queryType: range
+              intervalMs: 60000
+              maxDataPoints: 43200
+              expr: >-
+                sum(count_over_time({container=~"agri-api-(worker|beat)",
+                level="ERROR"} [10m]))
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              datasource: { type: __expr__, uid: __expr__ }
+              expression: A
+              reducer: last
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              datasource: { type: __expr__, uid: __expr__ }
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+
+      # --- Celery pipeline stalled (worker silent) ---------------------
+      # Beat fires tasks every 2-4 min, so the worker logs within any 15-min
+      # window when healthy. No logs at all → NoData → alert.
+      - uid: celery-worker-silent
+        title: Celery worker silent (no task logs in 15m)
+        condition: C
+        for: 5m
+        noDataState: Alerting
+        execErrState: OK
+        labels: { severity: critical, service: celery }
+        annotations:
+          summary: >-
+            agri-api-worker produced no logs in 15 min — the Celery pipeline
+            (ET0, periodic notifications, scans, irrigation) is likely stalled.
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: loki
+            model:
+              refId: A
+              datasource: { type: loki, uid: loki }
+              queryType: range
+              intervalMs: 60000
+              maxDataPoints: 43200
+              expr: >-
+                sum(count_over_time({container="agri-api-worker"} [15m]))
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              datasource: { type: __expr__, uid: __expr__ }
+              expression: A
+              reducer: last
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              datasource: { type: __expr__, uid: __expr__ }
+              expression: B
+              conditions:
+                - evaluator: { type: lt, params: [1] }
+
+      # --- Host disk usage high (from the health beacon) ---------------
+      - uid: host-disk-high
+        title: Host disk usage high (>85%)
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: OK
+        labels: { severity: critical, service: host }
+        annotations:
+          summary: >-
+            Droplet root filesystem is over 85% full — Loki chunks, Docker logs
+            or Postgres/ChirpStack data may be filling the disk.
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: loki
+            model:
+              refId: A
+              datasource: { type: loki, uid: loki }
+              queryType: range
+              intervalMs: 60000
+              maxDataPoints: 43200
+              expr: >-
+                max_over_time({container="agri-health-beacon"} | json |
+                event=`host.disk` | unwrap use_percent [5m])
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              datasource: { type: __expr__, uid: __expr__ }
+              expression: A
+              reducer: last
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              datasource: { type: __expr__, uid: __expr__ }
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [85] }
+
+      # --- Agri container not running (from the health beacon) ---------
+      - uid: agri-container-down
+        title: Agri container not running
+        condition: C
+        for: 2m
+        noDataState: OK
+        execErrState: OK
+        labels: { severity: critical, service: host }
+        annotations:
+          summary: >-
+            An agri-api-* container reported a non-running state (exited /
+            restarting) in the last few minutes.
+        data:
+          - refId: A
+            relativeTimeRange: { from: 180, to: 0 }
+            datasourceUid: loki
+            model:
+              refId: A
+              datasource: { type: loki, uid: loki }
+              queryType: range
+              intervalMs: 60000
+              maxDataPoints: 43200
+              expr: >-
+                sum(count_over_time({container="agri-health-beacon"} | json |
+                event=`container.state` | name=~`agri-api-.+` |
+                state!=`running` [3m]))
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              datasource: { type: __expr__, uid: __expr__ }
+              expression: A
+              reducer: last
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              datasource: { type: __expr__, uid: __expr__ }
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [0] }
