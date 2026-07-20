@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v1.118.0 (2026-07-20)
+
+### Features
+
+- **observability**: Health + error alerts to Discord (+ disk/container beacon)
+  ([#411](https://github.com/AgriLogy/agri-api/pull/411),
+  [`a37f3f9`](https://github.com/AgriLogy/agri-api/commit/a37f3f9a6b9595a7eb4728363ab200d0064a4f4d))
+
+Closes #410
+
+
 ## v1.117.0 (2026-07-20)
 
 ### Features
