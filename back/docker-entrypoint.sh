@@ -102,6 +102,8 @@ case "$ROLE" in
     python scripts/ensure_device_tables.py || log "  (device table ensure skipped/failed; continuing)"
     python scripts/ensure_irrigation_tables.py || log "  (irrigation table ensure skipped/failed; continuing)"
     python scripts/ensure_notification_zone_tables.py || log "  (notification-zone table ensure skipped/failed; continuing)"
+    log "Ensuring sector table + zone.sector_id exist (idempotent)"
+    python scripts/ensure_sector_tables.py || log "  (sector table ensure skipped/failed; continuing)"
     log "Ensuring device-health sensor tables exist (idempotent)"
     python scripts/ensure_sensor_health_tables.py || log "  (sensor-health table ensure skipped/failed; continuing)"
     log "Ensuring monitoring tables exist (idempotent)"

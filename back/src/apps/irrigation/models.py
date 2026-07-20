@@ -27,6 +27,23 @@ class _IrrigationBase(models.Model):
         app_label = "analytics"
 
 
+class Sector(_IrrigationBase):
+    """Organizational grouping of zones under a user's farm: User → Sector →
+    Zone. No geometry — just a named bucket. Schema-of-record lives in agri-db;
+    self-deploys on prod via scripts/ensure_sector_tables.py (Django doesn't run
+    migrate on boot). ``managed = False`` keeps it out of the migration graph."""
+
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="sectors", db_constraint=False
+    )
+    name = models.CharField(max_length=100)
+
+    class Meta:
+        app_label = "analytics"
+        db_table = "analytics_sector"
+        managed = False
+
+
 class Zone(_IrrigationBase):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="zones")
 
@@ -57,6 +74,18 @@ class Zone(_IrrigationBase):
     elevation_m = models.FloatField(
         default=0,
         help_text="Elevation above sea level in metres (for clear-sky radiation Rso).",
+    )
+    # User → Sector → Zone grouping (organizational; nullable = unassigned).
+    # db_constraint=False mirrors the schema-of-record FK (ON DELETE SET NULL) in
+    # agri-db without a Django-managed DB constraint. Column self-deploys via
+    # scripts/ensure_sector_tables.py.
+    sector = models.ForeignKey(
+        "Sector",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="zones",
+        db_constraint=False,
     )
 
 
