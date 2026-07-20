@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v1.116.0 (2026-07-20)
+
+### Features
+
+- **observability**: Structured JSON logging + Loki/Grafana log stack
+  ([#405](https://github.com/AgriLogy/agri-api/pull/405),
+  [`a8e0b16`](https://github.com/AgriLogy/agri-api/commit/a8e0b16bda3b51aba356d8ba2a8f2adffe98899b))
+
+Closes #404
+
+
 ## v1.115.0 (2026-07-17)
 
 ### Features
