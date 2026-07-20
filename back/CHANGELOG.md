@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v1.116.1 (2026-07-20)
+
+### Bug Fixes
+
+- **observability**: Drop duplicate uvicorn.access log + default Grafana host port to 3300
+  ([#407](https://github.com/AgriLogy/agri-api/pull/407),
+  [`2752585`](https://github.com/AgriLogy/agri-api/commit/27525859e5c50cbd83c4661bf5263889af70e7da))
+
+Closes #406
+
+
 ## v1.116.0 (2026-07-20)
 
 ### Features
