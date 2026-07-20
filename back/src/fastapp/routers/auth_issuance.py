@@ -182,9 +182,17 @@ class TokenRefreshIn(BaseModel):
 
 def _authenticate(session, username: str, password: str) -> CustomUserCustomuser | None:
     """Django ``authenticate()`` + ModelBackend: username lookup, password
-    check, and ``is_active`` gate (inactive users never authenticate)."""
+    check, and ``is_active`` gate (inactive users never authenticate).
+
+    The username match is case-insensitive and whitespace-trimmed: admins create
+    users with mixed case (e.g. "Ahmed"), but people sign in however they type it
+    ("ahmed", " ahmed"). Uniqueness is already enforced case-insensitively at
+    creation (``func.lower(username)`` in users.py / signup), so at most one row
+    matches."""
     user = session.scalars(
-        select(CustomUserCustomuser).where(CustomUserCustomuser.username == username)
+        select(CustomUserCustomuser).where(
+            func.lower(CustomUserCustomuser.username) == username.strip().lower()
+        )
     ).first()
     if user is None or not user.password:
         return None
@@ -212,7 +220,12 @@ def signup(payload: SignUpIn):
         if session.scalar(
             select(func.count())
             .select_from(CustomUserCustomuser)
-            .where(CustomUserCustomuser.username == payload.username)
+            # Case-insensitive, matching the admin-create check (users.py) and the
+            # case-insensitive login lookup — never allow "Bob" alongside "bob".
+            .where(
+                func.lower(CustomUserCustomuser.username)
+                == payload.username.strip().lower()
+            )
         ):
             return DjangoStyleJSONResponse(
                 {"username": "This username is already in use."}, status_code=400
