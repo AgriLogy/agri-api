@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v1.118.1 (2026-07-20)
+
+### Bug Fixes
+
+- **auth**: Case-insensitive, trimmed username login
+  ([#413](https://github.com/AgriLogy/agri-api/pull/413),
+  [`ea55fc0`](https://github.com/AgriLogy/agri-api/commit/ea55fc0c8c8e5f6c31261ac5ce4552c839ebbec0))
+
+Closes #412
+
+
 ## v1.118.0 (2026-07-20)
 
 ### Features
