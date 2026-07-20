@@ -123,7 +123,12 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
-      start_period: 30s
+      # 180s grace: the web role runs a chain of ensure_*_tables scripts (each a
+      # Supabase/agrydata round-trip) + the dev-server reloader before it serves,
+      # which can take >3min. A short start_period made `compose up --wait` mark
+      # web unhealthy → the deploy FAILED and left worker/beat stranded in
+      # `created` (Celery silently down). See the depends_on note below.
+      start_period: 180s
     restart: unless-stopped
     networks: [agro]
 
@@ -191,8 +196,12 @@ services:
       - ./back:/code:delegated
       - ./shared_data:/shared:rw
     depends_on:
+      # service_started, NOT service_healthy: worker/beat/mqtt wait for Postgres
+      # + Redis themselves (docker-entrypoint.sh), so they don't need web to be
+      # HEALTHY — only started. Gating on health meant web's slow startup left
+      # these stranded in `created` when the deploy's --wait timed out.
       agri-api-web:
-        condition: service_healthy
+        condition: service_started
       redis:
         condition: service_healthy
     restart: unless-stopped
@@ -223,8 +232,12 @@ services:
       - ./back:/code:delegated
       - ./shared_data:/shared:rw
     depends_on:
+      # service_started, NOT service_healthy: worker/beat/mqtt wait for Postgres
+      # + Redis themselves (docker-entrypoint.sh), so they don't need web to be
+      # HEALTHY — only started. Gating on health meant web's slow startup left
+      # these stranded in `created` when the deploy's --wait timed out.
       agri-api-web:
-        condition: service_healthy
+        condition: service_started
       redis:
         condition: service_healthy
     restart: unless-stopped
@@ -265,8 +278,12 @@ services:
       - ./back:/code:delegated
       - ./shared_data:/shared:rw
     depends_on:
+      # service_started, NOT service_healthy: worker/beat/mqtt wait for Postgres
+      # + Redis themselves (docker-entrypoint.sh), so they don't need web to be
+      # HEALTHY — only started. Gating on health meant web's slow startup left
+      # these stranded in `created` when the deploy's --wait timed out.
       agri-api-web:
-        condition: service_healthy
+        condition: service_started
       redis:
         condition: service_healthy
     restart: unless-stopped
