@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v1.117.0 (2026-07-20)
+
+### Features
+
+- **observability**: Route Resend-429 alert to Discord
+  ([#409](https://github.com/AgriLogy/agri-api/pull/409),
+  [`d7fc600`](https://github.com/AgriLogy/agri-api/commit/d7fc600f063df0dba212077c8dc84b46ccf01b83))
+
+Closes #408
+
+
 ## v1.116.1 (2026-07-20)
 
 ### Bug Fixes
