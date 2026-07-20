@@ -14,7 +14,7 @@ the app. Nothing leaves the box.
   host nginx logs; ships both to Loki.
 * **Loki** stores + indexes them (filesystem, ~30-day retention).
 * **Grafana** is the UI: pre-provisioned Loki datasource, two dashboards, and a
-  Resend-429 alert rule. Bound to `127.0.0.1:3000`; public only via nginx.
+  Resend-429 alert rule. Bound to `127.0.0.1:3300`; public only via nginx.
 
 The app already emits **one JSON object per log line** (`fastapp.logging_config`)
 with stable keys — `ts, level, logger, msg, request_id`, plus structured extras
@@ -130,7 +130,7 @@ Then `docker compose -f docker-compose.observability.yml restart grafana`.
   then `up -d`.
 - **Check Promtail is shipping:** `curl -s localhost:9080/metrics | grep promtail_sent_entries` (inside the droplet).
 - **Security:** Grafana binds `127.0.0.1` only (droplet has no firewall). Never
-  change it to `0.0.0.0` / publish `3000` — go through nginx TLS.
+  change it to `0.0.0.0` / publish it — go through nginx TLS.
 
 ## Related
 

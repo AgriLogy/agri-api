@@ -9,7 +9,7 @@
 ##   cp .env.observability.example .env   # set GF_SECURITY_ADMIN_PASSWORD (+ optional Postgres/webhook)
 ##   docker compose -f docker-compose.observability.yml up -d
 ##
-## Grafana is published ONLY on 127.0.0.1:3000 — the droplet has no firewall,
+## Grafana is published ONLY on 127.0.0.1:3300 — the droplet has no firewall,
 ## so it must never bind 0.0.0.0. Public access is via nginx TLS on
 ## grafana.agrogo-datafarm.com (deploy/nginx/grafana.conf). See README.md.
 
@@ -75,7 +75,10 @@ services:
       - grafana-data:/var/lib/grafana
     ports:
       # 127.0.0.1 ONLY — nginx (host) reverse-proxies the public subdomain.
-      - "127.0.0.1:3000:3000"
+      # Host port 3300 (not 3000): the droplet already runs other apps on
+      # 3000/3001. Override with GF_HOST_PORT if needed; keep nginx grafana.conf
+      # in sync.
+      - "127.0.0.1:${GF_HOST_PORT:-3300}:3000"
     depends_on: [loki]
     restart: unless-stopped
     networks: [observability]

@@ -83,6 +83,20 @@ class RequestIdFilter(logging.Filter):
         return True
 
 
+class DropUvicornAccessFilter(logging.Filter):
+    """Drop uvicorn's own ``uvicorn.access`` records at the sink.
+
+    RequestContextMiddleware already emits the canonical ``http.access`` line
+    (with request_id + duration_ms, and ``/healthz`` filtered). uvicorn's
+    access log duplicates every request and — via the 10s Docker healthcheck —
+    spams ``/healthz``. ``--no-access-log`` doesn't fully suppress it once a
+    custom root handler is installed, so we drop it here where it can't escape
+    (any uvicorn.access record reaching this handler is discarded)."""
+
+    def filter(self, record: logging.LogRecord) -> bool:  # noqa: A003
+        return record.name != "uvicorn.access"
+
+
 class JsonFormatter(logging.Formatter):
     """One JSON object per line. Referenced by name from Django's LOGGING dict
     (``"()": "fastapp.logging_config.JsonFormatter"``) as well as here."""
@@ -149,6 +163,7 @@ def configure_logging(
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(build_formatter(fmt))
     handler.addFilter(RequestIdFilter())
+    handler.addFilter(DropUvicornAccessFilter())
 
     root = logging.getLogger()
     for existing in list(root.handlers):
@@ -156,10 +171,10 @@ def configure_logging(
     root.addHandler(handler)
     root.setLevel(level.upper())
 
-    # Let uvicorn's access/error records flow through OUR root handler instead
-    # of uvicorn's private plain-text ones, so they're JSON too. (The fast
-    # entrypoint also passes --no-access-log; the middleware emits the
-    # canonical structured access line.)
+    # Route uvicorn's startup/error records through OUR root handler (JSON).
+    # uvicorn.access is intentionally included so it propagates here too — where
+    # DropUvicornAccessFilter discards it (see that filter). The fast entrypoint
+    # also passes --no-access-log; the middleware emits the canonical access line.
     for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
         lg = logging.getLogger(name)
         lg.handlers.clear()
