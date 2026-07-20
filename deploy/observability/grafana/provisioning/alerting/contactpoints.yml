@@ -1,0 +1,33 @@
+# Discord delivery for provisioned alerts (Resend-429 + any future critical).
+#
+# SMTP is blocked on the droplet, so Discord (a channel webhook) is the delivery
+# channel. The webhook URL is a secret: it lives in GF_ALERT_WEBHOOK_URL in the
+# untracked deploy/observability/.env and is forwarded into the Grafana
+# container by docker-compose.observability.yml — it is NEVER committed here.
+#
+# If GF_ALERT_WEBHOOK_URL is empty, Grafana logs a provisioning warning and this
+# contact point simply can't deliver (the alert still fires + shows red in the
+# UI). Set the env, then `docker compose -f docker-compose.observability.yml up -d grafana`.
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: Agri Discord
+    receivers:
+      - uid: agri-discord
+        type: discord
+        settings:
+          url: ${GF_ALERT_WEBHOOK_URL}
+        disableResolveMessage: false
+
+# Route the critical Resend-429 alert to Discord; everything else stays on the
+# built-in default receiver (which, with SMTP blocked, effectively no-ops — we
+# only have the one critical rule today).
+policies:
+  - orgId: 1
+    receiver: grafana-default-email
+    group_by: ["grafana_folder", "alertname"]
+    routes:
+      - receiver: Agri Discord
+        object_matchers:
+          - ["severity", "=", "critical"]

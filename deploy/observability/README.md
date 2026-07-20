@@ -92,29 +92,19 @@ local dev.
 
 The rule `resend-quota-429` is provisioned and evaluates every minute; it shows
 in **Alerting → Alert rules** and turns the dashboard tile red the moment a 429
-appears. To actually *notify* you, add a contact point + route. **SMTP is
-blocked on the droplet**, so use a webhook (Slack/Discord/n8n/…):
+appears. Delivery is wired to **Discord** (SMTP is blocked on the droplet):
 
-Set `GF_ALERT_WEBHOOK_URL` in `.env`, then create
-`grafana/provisioning/alerting/contactpoints.yml`:
-```yaml
-apiVersion: 1
-contactPoints:
-  - orgId: 1
-    name: Agri webhook
-    receivers:
-      - uid: agri-webhook
-        type: webhook
-        settings: { url: ${GF_ALERT_WEBHOOK_URL}, httpMethod: POST }
-policies:
-  - orgId: 1
-    receiver: grafana-default-email        # keep the default as root…
-    routes:
-      - receiver: Agri webhook             # …but route our critical alert to the webhook
-        matchers: [ "severity = critical" ]
-```
-Then `docker compose -f docker-compose.observability.yml restart grafana`.
-(You can also do all of this in the Grafana UI instead of YAML.)
+- Contact point `Agri Discord` + a route sending `severity=critical` there are
+  provisioned in `grafana/provisioning/alerting/contactpoints.yml`.
+- The Discord channel-webhook URL is the only secret: set `GF_ALERT_WEBHOOK_URL`
+  in `deploy/observability/.env` (the compose file forwards it into Grafana), then
+  reprovision:
+  ```bash
+  docker compose -f docker-compose.observability.yml up -d grafana
+  ```
+- Test it: **Alerting → Contact points → Agri Discord → Test**, or wait for a real
+  429. To switch channels later, change the contact-point `type` (`slack`,
+  `webhook`, …) in that file — the URL stays in `.env`.
 
 ---
 
