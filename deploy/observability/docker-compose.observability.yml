@@ -1,0 +1,91 @@
+## Agrilogy log-observability stack — Loki + Promtail + Grafana.
+##
+## SEPARATE from the app compose (../../docker-compose.yml) on purpose: the
+## deploy pipeline recreates only the agri-api-* services with `--no-deps`, so
+## keeping this here means a backend deploy NEVER restarts (or forgets to
+## restart) the logging stack. Bring it up by hand, once:
+##
+##   cd deploy/observability
+##   cp .env.observability.example .env   # set GF_SECURITY_ADMIN_PASSWORD (+ optional Postgres/webhook)
+##   docker compose -f docker-compose.observability.yml up -d
+##
+## Grafana is published ONLY on 127.0.0.1:3000 — the droplet has no firewall,
+## so it must never bind 0.0.0.0. Public access is via nginx TLS on
+## grafana.agrogo-datafarm.com (deploy/nginx/grafana.conf). See README.md.
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  # ---------- Loki — log store + query engine (internal only) -----------
+  loki:
+    container_name: loki
+    image: grafana/loki:3.2.1
+    command: ["-config.file=/etc/loki/loki-config.yml"]
+    logging: *default-logging
+    volumes:
+      - ./loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki-data:/loki
+    restart: unless-stopped
+    networks: [observability]
+
+  # ---------- Promtail — ships container + nginx logs to Loki ------------
+  promtail:
+    container_name: promtail
+    image: grafana/promtail:3.2.1
+    command: ["-config.file=/etc/promtail/promtail-config.yml"]
+    logging: *default-logging
+    # Root so it can read the Docker socket and the host nginx logs.
+    user: root
+    volumes:
+      - ./promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      - promtail-positions:/promtail
+      # Read container logs via the Docker daemon (docker_sd_configs).
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Host nginx access/error logs (default paths).
+      - /var/log/nginx:/var/log/nginx:ro
+    depends_on: [loki]
+    restart: unless-stopped
+    networks: [observability]
+
+  # ---------- Grafana — dashboards + alerting (nginx-fronted) ------------
+  grafana:
+    container_name: grafana
+    image: grafana/grafana:11.3.0
+    logging: *default-logging
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GF_SECURITY_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD:?set GF_SECURITY_ADMIN_PASSWORD in deploy/observability/.env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: ${GF_SERVER_ROOT_URL:-https://grafana.agrogo-datafarm.com}
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      # Optional Postgres datasource (deliveries history) — unset = not connected.
+      GF_POSTGRES_HOST: ${GF_POSTGRES_HOST:-}
+      GF_POSTGRES_PORT: ${GF_POSTGRES_PORT:-5432}
+      GF_POSTGRES_DB: ${GF_POSTGRES_DB:-}
+      GF_POSTGRES_USER: ${GF_POSTGRES_USER:-}
+      GF_POSTGRES_PASSWORD: ${GF_POSTGRES_PASSWORD:-}
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/etc/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      # 127.0.0.1 ONLY — nginx (host) reverse-proxies the public subdomain.
+      - "127.0.0.1:3000:3000"
+    depends_on: [loki]
+    restart: unless-stopped
+    networks: [observability]
+
+networks:
+  observability:
+    name: observability
+    driver: bridge
+
+volumes:
+  loki-data:
+  promtail-positions:
+  grafana-data:

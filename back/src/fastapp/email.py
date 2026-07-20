@@ -36,7 +36,15 @@ def send_email(
     empty recipient list is a logged no-op (matches the Django backend's
     fail_silently path)."""
     if not api_key:
-        logger.info("fastapp email: RESEND_API_KEY missing — dropping mail")
+        logger.info(
+            "notify.email.skipped",
+            extra={
+                "event": "notify.email.skipped",
+                "provider": "resend",
+                "reason": "no_api_key",
+                "recipient_count": len(to),
+            },
+        )
         return False
     if not to:
         return False
@@ -64,12 +72,44 @@ def send_email(
     )
     try:
         with urllib.request.urlopen(request, timeout=timeout) as resp:
+            status = resp.status
             resp.read()
+        logger.info(
+            "notify.email.sent",
+            extra={
+                "event": "notify.email.sent",
+                "provider": "resend",
+                "status_code": status,
+                "recipient_count": len(to),
+            },
+        )
         return True
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", "replace")
-        logger.error("fastapp Resend send failed (HTTP %s): %s", exc.code, body)
+        # HTTP 429 = Resend daily quota exhausted — the known prod blocker for
+        # notifications. Surfaced as its own boolean so a Loki alert can fire on
+        # `quota_exceeded=true` the moment it starts, not hours later.
+        logger.error(
+            "notify.email.failed",
+            extra={
+                "event": "notify.email.failed",
+                "provider": "resend",
+                "status_code": exc.code,
+                "quota_exceeded": exc.code == 429,
+                "recipient_count": len(to),
+                "error": body[:500],
+            },
+        )
         return False
-    except Exception:
-        logger.exception("fastapp Resend send failed")
+    except Exception as exc:
+        logger.error(
+            "notify.email.error",
+            extra={
+                "event": "notify.email.error",
+                "provider": "resend",
+                "recipient_count": len(to),
+                "error": str(exc)[:500],
+            },
+            exc_info=True,
+        )
         return False

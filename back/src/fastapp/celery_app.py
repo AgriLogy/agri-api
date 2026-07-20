@@ -21,13 +21,29 @@ import time
 
 from celery import Celery
 from celery.schedules import crontab
-from celery.signals import task_failure, task_postrun, task_prerun
+from celery.signals import (
+    setup_logging,
+    task_failure,
+    task_postrun,
+    task_prerun,
+)
 
 from fastapp import tasks_comms, tasks_compute, tasks_scan
+from fastapp.logging_config import configure_logging
 from fastapp.settings import get_settings
 
 log = logging.getLogger(__name__)
 _settings = get_settings()
+
+
+@setup_logging.connect
+def _configure_worker_logging(**_kwargs):
+    """Own the worker/beat logging setup. Connecting to ``setup_logging`` tells
+    Celery NOT to install its own handlers, so our JSON formatter (with the
+    request-id filter) is the single formatter — task log lines land in Loki
+    with the same shape as the web sidecar's."""
+    configure_logging(_settings.log_level, _settings.log_format, force=True)
+
 
 # set_as_current=False: creating this app must NOT hijack the global current_app.
 # The Django app (agriapi) and this one register the SAME task names

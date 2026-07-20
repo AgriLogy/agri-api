@@ -17,6 +17,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapp.auth import AuthedUser, get_current_user
 from fastapp.errors import register_exception_handlers
 from fastapp.json import DjangoStyleJSONResponse, register_django_style_json
+from fastapp.logging_config import configure_logging
+from fastapp.middleware import RequestContextMiddleware
+from fastapp.settings import get_settings
+
+# Configure structured logging BEFORE anything else logs (module import order:
+# routers below emit at import time via their module-level loggers). uvicorn
+# re-applies its own dictConfig on run() but leaves the root logger's handler
+# in place, so application + access records keep flowing through this one.
+_settings = get_settings()
+configure_logging(_settings.log_level, _settings.log_format)
 from fastapp.routers import (
     admin_analytics,
     admin_audit,
@@ -46,7 +56,6 @@ from fastapp.routers import (
     users,
     weather,
 )
-from fastapp.settings import get_settings
 
 # django-cors-headers' corsheaders.defaults.default_headers, verbatim — the
 # Django side runs CORS_ALLOW_HEADERS = list(default_headers), so the sidecar
@@ -94,6 +103,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=_CORS_ALLOW_HEADERS,
 )
+# Added last → outermost: binds the request-id and emits the structured access
+# line around everything else (including CORS). See fastapp.middleware.
+app.add_middleware(RequestContextMiddleware)
 
 register_exception_handlers(app)
 # Django-style JSON for the framework's own error envelopes (HTTPException /
