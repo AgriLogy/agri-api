@@ -79,6 +79,35 @@ def _create_technician_tables(django_db_setup, django_db_blocker):
 
 
 @pytest.fixture(scope="session", autouse=True)
+def _create_sector_schema(django_db_setup, django_db_blocker):
+    """``analytics_sector`` is unmanaged and ``analytics_zone.sector_id`` is
+    added out-of-band in prod (scripts/ensure_sector_tables.py, Alembic
+    b33c23723140). Create the table + column once for the test DB so zone
+    inserts don't choke on the missing ``sector_id``.
+    """
+    from django.db import connection
+
+    from apps.irrigation.models import Sector, Zone
+
+    with django_db_blocker.unblock():
+        existing = set(connection.introspection.table_names())
+        if Sector._meta.db_table not in existing:
+            with connection.schema_editor() as editor:
+                editor.create_model(Sector)
+        with connection.cursor() as cursor:
+            cols = {
+                c.name
+                for c in connection.introspection.get_table_description(
+                    cursor, Zone._meta.db_table
+                )
+            }
+        if "sector_id" not in cols:
+            with connection.schema_editor() as editor:
+                editor.add_field(Zone, Zone._meta.get_field("sector"))
+    yield
+
+
+@pytest.fixture(scope="session", autouse=True)
 def _create_admin_tables(django_db_setup, django_db_blocker):
     """The business-admin tables (analytics_plan / _subscription / _invoice /
     _auditevent / _systemsetting) are unmanaged (self-deployed in prod via
