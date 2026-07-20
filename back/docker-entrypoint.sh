@@ -130,8 +130,12 @@ case "$ROLE" in
     # ensure/seed scripts stay web-only so the two roles never race them.
     wait_for_postgres
     log "Starting uvicorn (fastapp) on :8001 (workers=${UVICORN_WORKERS:-2})"
+    # --no-access-log: RequestContextMiddleware emits the structured JSON access
+    # line (event=http.access) with request-id; uvicorn's plain line would just
+    # duplicate it. Application + error records still flow through our root JSON
+    # handler (configured in fastapp.main at import).
     exec uvicorn fastapp.main:app --host 0.0.0.0 --port 8001 \
-      --workers "${UVICORN_WORKERS:-2}"
+      --workers "${UVICORN_WORKERS:-2}" --no-access-log
     ;;
   worker)
     wait_for_postgres

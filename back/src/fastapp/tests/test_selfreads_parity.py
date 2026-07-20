@@ -355,3 +355,70 @@ def test_missing_auth_is_401_on_both(fast, django):
     fp = fast.get("/users/me")
     assert dj.status_code == 401
     assert fp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# GET /my-devices  (fastapp-native; farmer-scoped device list for the map)
+# ---------------------------------------------------------------------------
+
+
+def test_my_devices_returns_owner_active_devices_with_coords(fast, owner, other):
+    from apps.irrigation.models import Device
+
+    Device.objects.create(
+        user=owner,
+        device_type="lora",
+        serial="MD-1",
+        name="Sensor A",
+        is_active=True,
+        latitude=33.5731,
+        longitude=-7.5898,
+    )
+    Device.objects.create(  # owner's device without coordinates
+        user=owner,
+        device_type="lora",
+        serial="MD-2",
+        name="Sensor B",
+        is_active=True,
+    )
+    Device.objects.create(  # inactive -> excluded
+        user=owner,
+        device_type="lora",
+        serial="MD-OFF",
+        name="Off",
+        is_active=False,
+        latitude=1.0,
+        longitude=2.0,
+    )
+    Device.objects.create(  # another user's device -> excluded
+        user=other,
+        device_type="lora",
+        serial="MD-OTHER",
+        name="Theirs",
+        is_active=True,
+        latitude=10.0,
+        longitude=20.0,
+    )
+
+    resp = fast.get("/my-devices", headers={"Authorization": f"Bearer {_token(owner)}"})
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    by_serial = {d["serial"]: d for d in data}
+    assert set(by_serial) == {"MD-1", "MD-2"}  # only the owner's active devices
+    assert by_serial["MD-1"]["latitude"] == 33.5731
+    assert by_serial["MD-1"]["longitude"] == -7.5898
+    assert by_serial["MD-2"]["latitude"] is None
+    assert by_serial["MD-2"]["longitude"] is None
+    assert set(by_serial["MD-1"]) == {
+        "id",
+        "device_type",
+        "serial",
+        "name",
+        "zone",
+        "latitude",
+        "longitude",
+    }
+
+
+def test_my_devices_requires_auth(fast):
+    assert fast.get("/my-devices").status_code == 401

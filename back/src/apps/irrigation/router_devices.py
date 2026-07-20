@@ -30,6 +30,8 @@ class DeviceWriteIn(Schema):
     username: str | None = None  # owner
     zone_id: int | None = None
     is_active: bool | None = None
+    latitude: float | None = None
+    longitude: float | None = None
 
 
 def _serialize(d: Device) -> dict[str, Any]:
@@ -42,6 +44,8 @@ def _serialize(d: Device) -> dict[str, Any]:
         "zone": d.zone_id,
         "is_active": d.is_active,
         "created_at": d.created_at.isoformat() if d.created_at else None,
+        "latitude": d.latitude,
+        "longitude": d.longitude,
     }
 
 
@@ -110,6 +114,8 @@ def create_device(request, payload: DeviceWriteIn):
         user=user,
         zone=zone,
         is_active=payload.is_active if payload.is_active is not None else True,
+        latitude=payload.latitude,
+        longitude=payload.longitude,
     )
     device.save()
     return Response(_serialize(device), status=201)
@@ -135,6 +141,10 @@ def patch_device(request, pk: int, payload: DeviceWriteIn):
         device.name = payload.name.strip()
     if payload.is_active is not None:
         device.is_active = payload.is_active
+    if payload.latitude is not None:
+        device.latitude = payload.latitude
+    if payload.longitude is not None:
+        device.longitude = payload.longitude
     if payload.username is not None or payload.zone_id is not None:
         user, zone, err = _resolve_owner_zone(payload)
         if err is not None:

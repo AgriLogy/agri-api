@@ -1,0 +1,60 @@
+# Promtail — ships two log sources to Loki:
+#   1. every Docker container's stdout (discovered via the Docker daemon), and
+#   2. the host nginx access/error logs (bind-mounted read-only).
+# The app containers emit one JSON object per line (fastapp.logging_config), so
+# the pipeline promotes `level` to a low-cardinality label; everything else
+# (request_id, event, status_code, container, …) stays in the line and is
+# queried with `| json` in LogQL — keeping label cardinality (and Loki memory)
+# low.
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+  log_level: warn
+
+positions:
+  filename: /promtail/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  # --- All Docker containers on the host -----------------------------------
+  - job_name: docker
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 15s
+    relabel_configs:
+      # /agri-api-fast → container="agri-api-fast"
+      - source_labels: ["__meta_docker_container_name"]
+        regex: "/(.*)"
+        target_label: container
+      - source_labels: ["__meta_docker_container_log_stream"]
+        target_label: stream
+      - target_label: job
+        replacement: docker
+    pipeline_stages:
+      # Parse our JSON lines; non-JSON lines (nginx here don't apply, uvicorn
+      # boot banners, third-party libs) pass through untouched.
+      - json:
+          expressions:
+            level: level
+            ts: ts
+      # Only `level` becomes a label (INFO/WARNING/ERROR/DEBUG — low cardinality).
+      - labels:
+          level:
+      # Use the app's own timestamp when present so ordering is exact.
+      - timestamp:
+          source: ts
+          format: RFC3339
+          fallback_formats:
+            - RFC3339Nano
+          action_on_failure: skip
+
+  # --- Host nginx logs (bind-mounted /var/log/nginx:ro) --------------------
+  - job_name: nginx
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: nginx
+          host: droplet
+          __path__: /var/log/nginx/*.log

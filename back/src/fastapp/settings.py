@@ -69,6 +69,14 @@ class AppSettings(BaseSettings):
     # on "prod" (strict CORS expectations, no permissive defaults).
     django_env: str = Field(default="dev", alias="DJANGO_ENV")
 
+    # -- Logging (NEW env vars, read by both processes) ----------------------
+    # LOG_LEVEL: root log level (DEBUG|INFO|WARNING|ERROR). LOG_FORMAT: "json"
+    # for one-object-per-line (Promtail/Loki) or "text" for human-readable
+    # local dev. Defaults to structured JSON so a droplet needs no extra env
+    # to feed the observability stack; set LOG_FORMAT=text locally if desired.
+    log_level: str = Field(default="INFO", alias="LOG_LEVEL")
+    log_format: str = Field(default="json", alias="LOG_FORMAT")
+
     # -- Database (same POSTGRES_* / AGRI_DB_URL contract as Django) ---------
     postgres_db: str = Field(default="postgres", alias="POSTGRES_DB")
     postgres_user: str = Field(default="postgres", alias="POSTGRES_USER")

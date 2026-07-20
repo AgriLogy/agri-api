@@ -427,16 +427,44 @@ ALERT_GRACE_PERIODS: dict[str, int] = {
 }
 
 # -----------------------------------------------------------------------------
-# Logging skeleton (handlers/loggers shared; per-env may tweak levels)
+# Logging — structured JSON by default (Promtail/Loki), text for local dev.
+# Reuses fastapp.logging_config's JsonFormatter/RequestIdFilter (same image,
+# both on the src/ path) so the Django process, the FastAPI sidecar, the Celery
+# workers and the MQTT subscriber all emit the SAME line shape into Loki.
+# LOG_LEVEL / LOG_FORMAT are the same env vars fastapp.settings reads.
 # -----------------------------------------------------------------------------
+_LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
+_LOG_FORMAT = os.environ.get("LOG_FORMAT", "json").lower()
+
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
-    "handlers": {
-        "console": {"level": "INFO", "class": "logging.StreamHandler"},
+    "filters": {
+        "request_id": {"()": "fastapp.logging_config.RequestIdFilter"},
     },
+    "formatters": {
+        "json": {"()": "fastapp.logging_config.JsonFormatter"},
+        "plain": {
+            "format": "%(asctime)s %(levelname)-7s %(name)s [%(request_id)s] %(message)s"
+        },
+    },
+    "handlers": {
+        "console": {
+            "level": _LOG_LEVEL,
+            "class": "logging.StreamHandler",
+            "formatter": "json" if _LOG_FORMAT == "json" else "plain",
+            "filters": ["request_id"],
+        },
+    },
+    "root": {"handlers": ["console"], "level": _LOG_LEVEL},
     "loggers": {
-        "django": {"handlers": ["console"], "level": "INFO", "propagate": True},
-        "sensors": {"handlers": ["console"], "level": "INFO", "propagate": True},
+        "django": {"handlers": ["console"], "level": _LOG_LEVEL, "propagate": False},
+        "sensors": {"handlers": ["console"], "level": _LOG_LEVEL, "propagate": False},
+        # gunicorn (prod web role) — route its error log through the same handler.
+        "gunicorn.error": {
+            "handlers": ["console"],
+            "level": _LOG_LEVEL,
+            "propagate": False,
+        },
     },
 }

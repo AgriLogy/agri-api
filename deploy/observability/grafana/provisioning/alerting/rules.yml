@@ -1,0 +1,59 @@
+# Provisioned Grafana alert rule: fire when the Resend HTTP-429 quota event
+# appears (email notifications are being dropped — the known prod blocker).
+# Reads Loki only, so this file always provisions cleanly. Wiring it to a
+# delivery channel (webhook/Slack/Discord — SMTP is blocked on the droplet) is
+# a one-time step documented in deploy/observability/README.md; until then the
+# rule still shows red in Grafana → Alerting and on the Notifications dashboard.
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: notifications
+    folder: Agrilogy Alerts
+    interval: 1m
+    rules:
+      - uid: resend-quota-429
+        title: Resend email quota exhausted (HTTP 429)
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+          service: notifications
+        annotations:
+          summary: >-
+            Resend returned HTTP 429 in the last 5 min — email notifications are
+            being dropped (daily quota exhausted). See deploy/observability/README.md.
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: loki
+            model:
+              refId: A
+              datasource: { type: loki, uid: loki }
+              queryType: range
+              intervalMs: 60000
+              maxDataPoints: 43200
+              expr: >-
+                sum(count_over_time({job="docker"} | json |
+                event=`notify.email.failed` | quota_exceeded=`true` [5m]))
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              datasource: { type: __expr__, uid: __expr__ }
+              expression: A
+              reducer: last
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              datasource: { type: __expr__, uid: __expr__ }
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [0] }

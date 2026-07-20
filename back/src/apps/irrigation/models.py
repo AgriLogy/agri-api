@@ -561,6 +561,10 @@ class Device(_IrrigationBase):
     # the device-health beat task doesn't re-notify every tick (see tasks.py).
     last_health_notified = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)
+    # GPS position of the physical device (WGS-84 decimal degrees) so the map
+    # can plot each sensor at its real location. NULL until captured.
+    latitude = models.FloatField(null=True, blank=True)
+    longitude = models.FloatField(null=True, blank=True)
 
     class Meta:
         app_label = "analytics"

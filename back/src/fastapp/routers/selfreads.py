@@ -299,6 +299,44 @@ def list_my_zones(user: AuthedUser = Depends(get_current_user)):
 
 
 @router.get(
+    "/my-devices",
+    summary="Caller's own active devices (id, name, GPS position)",
+)
+def list_my_devices(user: AuthedUser = Depends(get_current_user)):
+    """The caller's registered devices with their GPS coordinates, so the farmer
+    map can plot each sensor at its real location. Read-only + owner-scoped (a
+    technician sees only devices in the zones granted to them). Raw SQL for the
+    ``latitude``/``longitude`` columns (added in agri-db 0.16.0)."""
+    with session_scope() as session:
+        row = session.get(CustomUserCustomuser, user.id)
+        scope = _resolve_read_scope(session, row)
+        if scope.zone_ids is not None and not scope.zone_ids:
+            return []
+        rows = session.execute(
+            text(
+                "SELECT id, device_type, serial, name, zone_id, latitude, longitude "
+                "FROM analytics_device "
+                "WHERE user_id = :owner AND is_active = true ORDER BY id"
+            ),
+            {"owner": scope.owner_id},
+        ).all()
+        return [
+            {
+                "id": r.id,
+                "device_type": r.device_type,
+                "serial": r.serial,
+                "name": r.name,
+                "zone": r.zone_id,
+                "latitude": r.latitude,
+                "longitude": r.longitude,
+            }
+            for r in rows
+            # Technicians only see devices in their granted zones.
+            if scope.zone_ids is None or r.zone_id in scope.zone_ids
+        ]
+
+
+@router.get(
     "/zones/{zone_id}/active-graph",
     summary="Caller's ActiveGraph config for one zone",
 )

@@ -293,10 +293,14 @@ class MqttIngest:
 
 
 def main() -> None:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
-    )
+    # Structured JSON so the extra={...} dicts this module already passes
+    # (client, status, error body …) render as queryable keys in Loki, instead
+    # of being dropped by an unconfigured formatter.
+    from fastapp.logging_config import configure_logging
+    from fastapp.settings import get_settings
+
+    _s = get_settings()
+    configure_logging(_s.log_level, _s.log_format)
     MqttIngest().run()
 
 
