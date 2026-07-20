@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v1.118.2 (2026-07-20)
+
+### Bug Fixes
+
+- **deploy**: Stop deploy stranding Celery worker/beat
+  ([#415](https://github.com/AgriLogy/agri-api/pull/415),
+  [`d5cb1f0`](https://github.com/AgriLogy/agri-api/commit/d5cb1f0cdd9fa4c3ec3e1a1c1bfd9bd0ba65129a))
+
+Closes #414
+
+
 ## v1.118.1 (2026-07-20)
 
 ### Bug Fixes
