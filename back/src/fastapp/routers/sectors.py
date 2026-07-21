@@ -135,16 +135,26 @@ def farm_overview(user: AuthedUser = Depends(get_current_user)):
         configured: dict[int, set[str]] = {}
         last: dict[tuple[int, str], Any] = {}
         if zone_ids:
-            for zid, key in session.execute(
-                select(
-                    AnalyticsDevicesensor.zone_id, AnalyticsDevicesensor.sensor_key
-                ).where(
-                    AnalyticsDevicesensor.zone_id.in_(zone_ids),
-                    AnalyticsDevicesensor.is_active.is_(True),
-                )
-            ).all():
-                if zid is not None:
-                    configured.setdefault(zid, set()).add(key)
+            # "Configured" is a best-effort overlay: analytics_devicesensor is an
+            # ensure-created table that may be absent (fresh DB / test env). A
+            # SAVEPOINT lets a missing table degrade to "no configured captors"
+            # without poisoning the outer transaction.
+            try:
+                with session.begin_nested():
+                    pairs = session.execute(
+                        select(
+                            AnalyticsDevicesensor.zone_id,
+                            AnalyticsDevicesensor.sensor_key,
+                        ).where(
+                            AnalyticsDevicesensor.zone_id.in_(zone_ids),
+                            AnalyticsDevicesensor.is_active.is_(True),
+                        )
+                    ).all()
+                for zid, key in pairs:
+                    if zid is not None:
+                        configured.setdefault(zid, set()).add(key)
+            except Exception:  # pragma: no cover - table absent on fresh DB
+                log.debug("devicesensor unavailable; no configured captors")
 
             # One grouped MAX(timestamp) query per sensor table (≈40 total,
             # independent of zone count) — newest reading per zone per sensor.
@@ -157,11 +167,16 @@ def farm_overview(user: AuthedUser = Depends(get_current_user)):
                     continue
                 if not hasattr(model, "timestamp") or not hasattr(model, "zone_id"):
                     continue
-                for zid, ts in session.execute(
-                    select(model.zone_id, func.max(model.timestamp))
-                    .where(model.zone_id.in_(zone_ids))
-                    .group_by(model.zone_id)
-                ).all():
+                try:
+                    with session.begin_nested():
+                        rows = session.execute(
+                            select(model.zone_id, func.max(model.timestamp))
+                            .where(model.zone_id.in_(zone_ids))
+                            .group_by(model.zone_id)
+                        ).all()
+                except Exception:  # pragma: no cover - reading table absent
+                    continue
+                for zid, ts in rows:
                     if zid is not None and ts is not None:
                         last[(zid, key)] = ts
 
