@@ -130,6 +130,26 @@ def test_sector_is_owner_scoped(fast, owner, other):
     assert fast.delete(f"/sectors/{sid}", headers=_auth(other)).status_code == 404
 
 
+def test_farm_overview_structure(fast, owner):
+    h = _auth(owner)
+    z_in = _make_zone(owner, "in-sector")
+    _make_zone(owner, "loose")  # stays unassigned
+    sid = fast.post("/sectors", json={"name": "North"}, headers=h).json()["id"]
+    fast.put(f"/sectors/{sid}/zones", json={"zone_ids": [z_in.id]}, headers=h)
+
+    r = fast.get("/sectors/overview", headers=h)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    # one sector node + one "unassigned" (sector_id None) bucket
+    named = {n["sector_name"]: n for n in body}
+    assert "North" in named
+    assert named["North"]["zones"][0]["zone_name"] == "in-sector"
+    unassigned = [n for n in body if n["sector_id"] is None]
+    assert unassigned and unassigned[0]["zones"][0]["zone_name"] == "loose"
+    # captors present as a list (empty here — no readings/config in the test)
+    assert named["North"]["zones"][0]["captors"] == []
+
+
 def test_assigning_foreign_zone_is_ignored(fast, owner, other):
     sid = fast.post("/sectors", json={"name": "S"}, headers=_auth(owner)).json()["id"]
     foreign = _make_zone(other, "foreign")
