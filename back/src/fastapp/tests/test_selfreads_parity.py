@@ -302,9 +302,17 @@ def test_zones_list_is_identical(fast, django, owner, other):
     dj, fp = _both_get(fast, django, owner, "/zones")
     assert dj.status_code == 200, dj.content
     assert fp.status_code == 200, fp.text
-    assert dj.content == fp.content
-    body = fp.json()
-    assert {z["name"] for z in body} == {"Alpha", "Beta"}
+    dj_body, fp_body = dj.json(), fp.json()
+    # /zones is cut over to fastapp, which now extends the legacy Django shape
+    # with sector_id/sector_name (the sector feature). Zones here are
+    # unassigned → both None; every other field stays parity with Django.
+    for z in fp_body:
+        assert z["sector_id"] is None and z["sector_name"] is None
+    assert [
+        {k: v for k, v in z.items() if k not in ("sector_id", "sector_name")}
+        for z in fp_body
+    ] == dj_body
+    assert {z["name"] for z in fp_body} == {"Alpha", "Beta"}
 
 
 def test_zones_list_empty_is_identical(fast, django, owner):

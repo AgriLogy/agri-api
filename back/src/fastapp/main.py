@@ -50,6 +50,7 @@ from fastapp.routers import (
     manager_affirmations,
     notification_zones,
     notifications,
+    sectors,
     selfreads,
     sensors,
     technicians,
@@ -127,6 +128,7 @@ app.include_router(
     notification_zones.router
 )  # F3: /notification-zones + /notification-zones/*
 app.include_router(selfreads.router)  # F5: /users/me + /zones self-reads
+app.include_router(sectors.router)  # /sectors — user-owned zone grouping
 # F9: /auth issuance — signup / sessions / admin-sessions / logout + the legacy
 # DRF token + token/refresh endpoints. Django keeps serving /auth until the
 # nginx cutover; this is the login path, flipped LAST with careful live A/B.
