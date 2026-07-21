@@ -295,7 +295,15 @@ def list_my_zones(user: AuthedUser = Depends(get_current_user)):
         if scope.zone_ids is not None:
             stmt = stmt.where(AnalyticsZone.id.in_(scope.zone_ids))
         zones = session.execute(stmt).scalars().all()
-        return [{"id": z.id, "name": z.name} for z in zones]
+        return [
+            {
+                "id": z.id,
+                "name": z.name,
+                "sector_id": z.sector_id,
+                "sector_name": z.sector.name if z.sector else None,
+            }
+            for z in zones
+        ]
 
 
 @router.get(
