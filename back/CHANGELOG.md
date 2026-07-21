@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v1.119.0 (2026-07-21)
+
+### Features
+
+- **sectors**: /sectors API + sector schema landing
+  ([#417](https://github.com/AgriLogy/agri-api/pull/417),
+  [`577ceb1`](https://github.com/AgriLogy/agri-api/commit/577ceb17274efdccc0885dd460b40c8e56c872cb))
+
+Closes #416
+
+
 ## v1.118.2 (2026-07-20)
 
 ### Bug Fixes
