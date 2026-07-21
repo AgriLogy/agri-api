@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v1.120.0 (2026-07-21)
+
+### Features
+
+- **sectors**: Get /sectors/overview — farm structure for the viz page
+  ([#420](https://github.com/AgriLogy/agri-api/pull/420),
+  [`2f82e2d`](https://github.com/AgriLogy/agri-api/commit/2f82e2db99632d66879ce8982763a26a8e278df4))
+
+Closes #419
+
+
 ## v1.119.0 (2026-07-21)
 
 ### Features
