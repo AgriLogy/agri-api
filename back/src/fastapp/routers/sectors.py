@@ -15,8 +15,9 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from agri.core.alerts import SENSOR_KEY_REGISTRY, db_model_for
 from agri.core.database import session_scope
-from agri.db.analytics import AnalyticsSector, AnalyticsZone
+from agri.db.analytics import AnalyticsDevicesensor, AnalyticsSector, AnalyticsZone
 from agri.db.users import CustomUserCustomuser
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
@@ -29,6 +30,10 @@ from fastapp.json import DjangoStyleJSONResponse
 log = logging.getLogger(__name__)
 
 router = APIRouter(tags=["sectors"])
+
+# Device-health signals — real captors report data, but battery/signal aren't
+# field sensors the farmer thinks of as "captors" (and are hidden in settings).
+_DEVICE_HEALTH_KEYS = {"battery", "signal"}
 
 
 # ---------------------------------------------------------------------------
@@ -90,6 +95,126 @@ def list_sectors(user: AuthedUser = Depends(get_current_user)):
             .order_by(AnalyticsSector.name)
         ).all()
         return [_serialize(session, s) for s in rows]
+
+
+def _captors_for_zone(
+    zone_id: int, configured: set[str], last: dict[tuple[int, str], Any]
+) -> list[dict[str, Any]]:
+    """A zone's captors = sensors CONFIGURED on it OR with recent data, each with
+    its last-received timestamp (None if never)."""
+    keys = (configured | {k for (z, k) in last if z == zone_id}) - _DEVICE_HEALTH_KEYS
+    out = []
+    for key in sorted(keys):
+        ts = last.get((zone_id, key))
+        out.append(
+            {
+                "sensor_key": key,
+                "configured": key in configured,
+                "last_received": ts.isoformat() if ts is not None else None,
+            }
+        )
+    return out
+
+
+@router.get(
+    "/sectors/overview",
+    summary="Farm structure: sectors → zones → captors (with last-received)",
+)
+def farm_overview(user: AuthedUser = Depends(get_current_user)):
+    """The whole farm for the visualization page: every sector (+ an
+    'Unassigned' bucket) with its zones, and each zone's captors. A captor is a
+    sensor configured on the zone (analytics_devicesensor) OR one that has any
+    reading; last_received is the newest reading's timestamp. Owner-scoped by
+    zone ownership (not the reading rows' user_id, which is device-keyed)."""
+    with session_scope() as session:
+        zones = session.scalars(
+            select(AnalyticsZone).where(AnalyticsZone.user_id == user.id)
+        ).all()
+        zone_ids = [z.id for z in zones]
+
+        configured: dict[int, set[str]] = {}
+        last: dict[tuple[int, str], Any] = {}
+        if zone_ids:
+            # "Configured" is a best-effort overlay: analytics_devicesensor is an
+            # ensure-created table that may be absent (fresh DB / test env). A
+            # SAVEPOINT lets a missing table degrade to "no configured captors"
+            # without poisoning the outer transaction.
+            try:
+                with session.begin_nested():
+                    pairs = session.execute(
+                        select(
+                            AnalyticsDevicesensor.zone_id,
+                            AnalyticsDevicesensor.sensor_key,
+                        ).where(
+                            AnalyticsDevicesensor.zone_id.in_(zone_ids),
+                            AnalyticsDevicesensor.is_active.is_(True),
+                        )
+                    ).all()
+                for zid, key in pairs:
+                    if zid is not None:
+                        configured.setdefault(zid, set()).add(key)
+            except Exception:  # pragma: no cover - table absent on fresh DB
+                log.debug("devicesensor unavailable; no configured captors")
+
+            # One grouped MAX(timestamp) query per sensor table (≈40 total,
+            # independent of zone count) — newest reading per zone per sensor.
+            for key in SENSOR_KEY_REGISTRY:
+                if key in _DEVICE_HEALTH_KEYS:
+                    continue
+                try:
+                    model = db_model_for(key)
+                except Exception:  # pragma: no cover - registry drift
+                    continue
+                if not hasattr(model, "timestamp") or not hasattr(model, "zone_id"):
+                    continue
+                try:
+                    with session.begin_nested():
+                        rows = session.execute(
+                            select(model.zone_id, func.max(model.timestamp))
+                            .where(model.zone_id.in_(zone_ids))
+                            .group_by(model.zone_id)
+                        ).all()
+                except Exception:  # pragma: no cover - reading table absent
+                    continue
+                for zid, ts in rows:
+                    if zid is not None and ts is not None:
+                        last[(zid, key)] = ts
+
+        def zone_node(z: AnalyticsZone) -> dict[str, Any]:
+            return {
+                "zone_id": z.id,
+                "zone_name": z.name,
+                "captors": _captors_for_zone(z.id, configured.get(z.id, set()), last),
+            }
+
+        by_sector: dict[Any, list[AnalyticsZone]] = {}
+        for z in zones:
+            by_sector.setdefault(z.sector_id, []).append(z)
+
+        sectors = session.scalars(
+            select(AnalyticsSector)
+            .where(AnalyticsSector.user_id == user.id)
+            .order_by(AnalyticsSector.name)
+        ).all()
+
+        result = [
+            {
+                "sector_id": s.id,
+                "sector_name": s.name,
+                "zones": [zone_node(z) for z in by_sector.get(s.id, [])],
+            }
+            for s in sectors
+        ]
+        unassigned = by_sector.get(None, [])
+        if unassigned:
+            result.append(
+                {
+                    "sector_id": None,
+                    "sector_name": None,
+                    "zones": [zone_node(z) for z in unassigned],
+                }
+            )
+        return result
 
 
 @router.post("/sectors", summary="Create a sector")
