@@ -25,7 +25,7 @@ from agri.core.database.client import _owner_user, _owner_zone, _with_device_joi
 from fastapp.adminutil import record_audit, username_for
 from fastapp.auth import AuthedUser, get_current_staff_user
 from fastapp.json import DjangoStyleJSONResponse
-from fastapp.sensors import SENSOR_SPEC, agri_db_model
+from fastapp.sensors import SENSOR_SPEC, agri_db_model, effective_owner
 
 router = APIRouter(tags=["admin-sensor-data"])
 
@@ -128,14 +128,22 @@ def _range_criteria(model, frm: str | None, to: str | None) -> list:
     return criteria
 
 
-def _row(session, obj) -> dict:
+def _row(
+    session, obj, eff_user: int | None = None, eff_zone: int | None = None
+) -> dict:
+    """One wire row. ``zone_id``/``username`` report the EFFECTIVE (device-
+    resolved) owner so the projection agrees with the filter — the raw columns
+    are a stale commissioning snapshot and would label the row with a
+    different client than the one the caller filtered on."""
     ts = getattr(obj, "timestamp", None)
+    if eff_user is None and eff_zone is None:
+        eff_user, eff_zone = effective_owner(session, obj)
     return {
         "id": obj.id,
         "value": getattr(obj, "value", None),
         "timestamp": ts.isoformat() if ts else None,
-        "zone_id": obj.zone_id,
-        "username": username_for(session, obj.user_id),
+        "zone_id": eff_zone,
+        "username": username_for(session, eff_user),
     }
 
 
@@ -184,13 +192,22 @@ def list_readings(
         if zone_id is not None:
             criteria.append(_owner_zone(model) == zone_id)
         criteria += _range_criteria(model, frm, to)
-        objs = session.scalars(
-            _with_device_join(select(model), model)
+        results = session.execute(
+            _with_device_join(
+                select(
+                    model,
+                    _owner_user(model).label("eff_user"),
+                    _owner_zone(model).label("eff_zone"),
+                ),
+                model,
+            )
             .where(*criteria)
             .order_by(model.timestamp.desc())
             .limit(limit)
         ).all()
-        rows = [_row(session, o) for o in objs]
+        rows = [
+            _row(session, o, eff_user, eff_zone) for o, eff_user, eff_zone in results
+        ]
         return {"sensor": sensor, "count": len(rows), "rows": rows}
 
 
@@ -264,7 +281,10 @@ def delete_range(
             status_code=400,
         )
     with session_scope(commit=True) as session:
-        criteria = [model.zone_id == zone_id]
+        # Same predicates as ``list_readings`` — ownership resolves through the
+        # device JOIN, never the raw columns, so a range-delete removes EXACTLY
+        # the rows the equivalent list call returns.
+        criteria = [_owner_zone(model) == zone_id]
         if username:
             from agri.db.users import CustomUserCustomuser
 
@@ -273,9 +293,17 @@ def delete_range(
                     CustomUserCustomuser.username == username
                 )
             )
-            criteria.append(model.user_id == (uid if uid is not None else -1))
+            criteria.append(_owner_user(model) == (uid if uid is not None else -1))
         criteria += _range_criteria(model, frm, to)
-        deleted = session.execute(delete(model).where(*criteria)).rowcount
+        # DELETE can't carry the outer join → resolve ids in a subquery that
+        # does (``correlate(None)`` keeps it standalone, not correlated to the
+        # DELETE's own target table).
+        target_ids = (
+            _with_device_join(select(model.id), model).where(*criteria).correlate(None)
+        )
+        deleted = session.execute(
+            delete(model).where(model.id.in_(target_ids))
+        ).rowcount
         record_audit(
             session,
             user.id,
