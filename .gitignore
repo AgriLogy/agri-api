@@ -56,6 +56,8 @@ staticfiles/
 .env
 .env.local
 .env.*.local
+# Staging stack env (deploy/staging/env.example is the committed template).
+.env.staging
 
 # VS Code settings
 .vscode/
