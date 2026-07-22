@@ -154,6 +154,14 @@ class AppSettings(BaseSettings):
     mqtt_chirpstack_topic: str = Field(
         default="application/+/device/+/event/up", alias="MQTT_CHIRPSTACK_TOPIC"
     )
+    # Liveness file the subscriber keeps fresh WHILE connected to the broker (see
+    # fastapp.mqtt). The container healthcheck stats it, so `docker ps` reports
+    # unhealthy whenever the broker connection is down — the process being alive
+    # is NOT evidence that uplinks are being consumed.
+    mqtt_health_file: str = Field(default="/tmp/mqtt-healthy", alias="MQTT_HEALTH_FILE")
+    # How often the heartbeat thread re-touches that file, seconds. The
+    # healthcheck's staleness window must be a comfortable multiple of this.
+    mqtt_health_interval: int = Field(default=15, alias="MQTT_HEALTH_INTERVAL")
 
     # -- Derived --------------------------------------------------------------
     version: str = Field(default_factory=_read_project_version)
