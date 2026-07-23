@@ -21,6 +21,7 @@ from sqlalchemy import select
 import agri.db.analytics as analytics
 from agri.core.database import AgriMainDBClient, session_scope
 from agri.core.database.client import _owner_user, _owner_zone, _with_device_join
+from agri.db.devices import AnalyticsDevice
 
 
 @dataclass(frozen=True)
@@ -366,6 +367,30 @@ def _iso(ts: datetime.datetime | None) -> str | None:
     return ts.strftime("%Y-%m-%dT%H:%M:%SZ") if ts is not None else None
 
 
+def effective_owner(session, row) -> tuple[int | None, int | None]:
+    """``(user_id, zone_id)`` of the row's EFFECTIVE owner.
+
+    Python-side twin of the SQL ``COALESCE(device.owner, row.owner)`` used by
+    ``_owner_user`` / ``_owner_zone``: readings are device-keyed, so a row
+    belongs to whoever owns its ``analytics_device``. The row's own
+    ``user_id`` / ``zone_id`` are only a stale commissioning snapshot and must
+    never be reported on their own — filtering resolves through the device, so
+    the projection has to as well or the two halves disagree.
+    """
+    row_user = getattr(row, "user_id", None)
+    row_zone = getattr(row, "zone_id", None)
+    device_id = getattr(row, "device_id", None)
+    if device_id is None:
+        return row_user, row_zone
+    device = session.get(AnalyticsDevice, device_id)
+    if device is None:
+        return row_user, row_zone
+    return (
+        device.user_id if device.user_id is not None else row_user,
+        device.zone_id if device.zone_id is not None else row_zone,
+    )
+
+
 def hourly_readings(
     spec: SensorSpec,
     *,
@@ -405,17 +430,28 @@ def hourly_readings(
         criteria = [_owner_user(model) == user_id]
         if zone_id is not None:
             criteria.append(_owner_zone(model) == zone_id)
-        sample = session.scalars(
-            _with_device_join(select(model), model)
+        sample_row = session.execute(
+            _with_device_join(
+                select(
+                    model,
+                    _owner_user(model).label("eff_user"),
+                    _owner_zone(model).label("eff_zone"),
+                ),
+                model,
+            )
             .where(*criteria)
             .order_by(model.id)
             .limit(1)
         ).first()
-        if sample is None:
+        if sample_row is None:
             return []
+        sample, eff_user, eff_zone = sample_row
         meta = {c: getattr(sample, c, None) for c in spec.char_fields}
-        sample_zone = sample.zone_id
-        sample_user = sample.user_id
+        # Report the EFFECTIVE owner (device-resolved), never the row's raw
+        # snapshot: the rows were selected by effective owner, so labelling
+        # them with a stale user/zone would name a different client.
+        sample_zone = zone_id if zone_id is not None else eff_zone
+        sample_user = user_id if user_id is not None else eff_user
 
         buckets = AgriMainDBClient.hourly_averages(
             session,
@@ -477,26 +513,50 @@ def raw_readings(
     if zone_id is not None:
         criteria.append(_owner_zone(model) == zone_id)
     with session_scope() as session:
-        rows = session.scalars(
-            _with_device_join(select(model), model)
+        rows = session.execute(
+            _with_device_join(
+                select(
+                    model,
+                    _owner_user(model).label("eff_user"),
+                    _owner_zone(model).label("eff_zone"),
+                ),
+                model,
+            )
             .where(*criteria)
             .order_by(model.timestamp)
         ).all()
-        return [serialize_raw(r, spec) for r in rows]
+        return [
+            serialize_raw(r, spec, eff_user=eff_user, eff_zone=eff_zone)
+            for r, eff_user, eff_zone in rows
+        ]
 
 
 # Maps a raw_order key (a Django field name) to the agri.db column attribute.
 _RAW_ATTR = {"zone": "zone_id", "user": "user_id"}
 
 
-def serialize_raw(row, spec: SensorSpec) -> dict[str, Any]:
+def serialize_raw(
+    row,
+    spec: SensorSpec,
+    *,
+    eff_user: int | None = None,
+    eff_zone: int | None = None,
+) -> dict[str, Any]:
     """Serialize one agri.db row to the ``raw=true`` wire shape — byte-parity
     port of ``_serialize_reading`` (model_to_dict order + id + ISO timestamp +
-    units)."""
+    units).
+
+    ``user`` / ``zone`` carry the DEVICE-RESOLVED owner. Callers that already
+    hold the resolved values (the SELECT projected them) pass them in; the
+    fallback to the row's own columns applies only to non-device rows.
+    """
+    resolved = {"user": eff_user, "zone": eff_zone}
     out: dict[str, Any] = {}
     for key in spec.raw_order:
         if key == "timestamp":
             out[key] = _iso(getattr(row, "timestamp", None))
+        elif resolved.get(key) is not None:
+            out[key] = resolved[key]
         else:
             out[key] = getattr(row, _RAW_ATTR.get(key, key), None)
     out["id"] = row.id

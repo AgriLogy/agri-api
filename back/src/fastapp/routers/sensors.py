@@ -90,7 +90,13 @@ def patch_reading(
     model = sensors.agri_db_model(spec)
     with session_scope(commit=True) as session:
         row = session.get(model, row_id)
-        if row is None or row.user_id != user.id:
+        # Ownership is device-keyed: authorise against the EFFECTIVE owner
+        # (the row's device), not its stale commissioning snapshot — otherwise
+        # a farmer who owns a transferred device gets a 404 on his own history.
+        eff_user, eff_zone = (
+            sensors.effective_owner(session, row) if row is not None else (None, None)
+        )
+        if row is None or eff_user != user.id:
             # ninja returns Response({"error": "Not found"}, status=404) — a
             # bare {"error": ...}, NOT wrapped in {"detail": ...}.
             return DjangoStyleJSONResponse({"error": "Not found"}, status_code=404)
@@ -100,4 +106,4 @@ def patch_reading(
             if hasattr(row, key):
                 setattr(row, key, value)
         session.flush()
-        return sensors.serialize_raw(row, spec)
+        return sensors.serialize_raw(row, spec, eff_user=eff_user, eff_zone=eff_zone)
