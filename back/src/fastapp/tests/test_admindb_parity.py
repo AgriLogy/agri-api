@@ -19,8 +19,9 @@ IS well-defined and is what the frontend keys off:
     Django JSON coercion (dates → ISO, Decimal → float).
 
 TABLE-SET DELTA vs Django (documented, asserted below):
-  * fastapp-only: ``analytics.devicesensor`` — the table exists in the agri.db
-    schema-of-record but the Django DeviceSensor model isn't in this repo yet.
+  * fastapp-only: the agri-db-native tables (see ``_FASTAPP_ONLY_KEYS``) — they
+    exist in the agri.db schema-of-record, which is the schema-of-record since
+    the strangler migration began, and were never given a Django counterpart.
   * Django-only: ``auth.group``, ``auth.permission`` and the six
     ``django_celery_beat.*`` tables — Django-runtime apps not mirrored in
     agri.db. Everything else is a shared key with a byte-identical db_table.
@@ -143,6 +144,28 @@ def test_unauthenticated_is_401(fast):
 # ===========================================================================
 # table list — the KEY set is the crux the frontend depends on
 # ===========================================================================
+# Tables fastapp exposes that Django has NO model for. Every one of them was
+# added to agri-db *after* the Django→FastAPI strangler started, so it was only
+# ever declared in the agri.db metadata — the legacy Django app was never taught
+# about it and never will be (it is being deleted). The generic /admin/db CRUD
+# introspects agri.db, so it legitimately surfaces them and the Django endpoint
+# cannot. Add a key here ONLY when the new table has no Django model; a table
+# that Django *does* model showing up here means the port dropped it.
+_FASTAPP_ONLY_KEYS = {
+    # device→sensor mapping, agri-db 0.12.0 (no-code device onboarding)
+    "analytics.devicesensor",
+    # append-only alert-firing log behind the alert report (RPT-1)
+    "analytics.alertevent",
+    # persisted irrigation-decision log — agri-db-native, not a Django mirror
+    "analytics.irrigationdecision",
+    # sensor groups + per-sensor calibration (migration f4b6d2e8c1a9, see
+    # test_sensor_groups_and_calibration.py)
+    "analytics.sensorgroup",
+    "analytics.sensorgroupsensor",
+    "analytics.sensorcalibration",
+}
+
+
 def _django_visible_keys() -> set[str]:
     from agriapi.api.router_db import _visible_models
 
@@ -156,9 +179,10 @@ def test_tables_list_keys_are_a_clean_subset(fast, admin):
     fast_keys = {row["key"] for row in body}
     dj_keys = _django_visible_keys()
 
-    # Every fastapp key is byte-identical to a Django label_lower EXCEPT the one
-    # documented fastapp-only extra (agri.db has the table; Django has no model).
-    assert fast_keys - dj_keys == {"analytics.devicesensor"}
+    # Every fastapp key is byte-identical to a Django label_lower EXCEPT the
+    # documented fastapp-only extras (agri.db has the table; Django has no
+    # model — see _FASTAPP_ONLY_KEYS for why each one is Django-less).
+    assert fast_keys - dj_keys == _FASTAPP_ONLY_KEYS
 
     # The documented Django-only extras are absent from fastapp (not in agri.db).
     django_only = dj_keys - fast_keys
