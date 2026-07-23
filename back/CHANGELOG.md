@@ -1,6 +1,557 @@
 # CHANGELOG
 
 
+## v1.121.0 (2026-07-23)
+
+### Bug Fixes
+
+- **devices**: Degrade gracefully when the coordinate columns are absent
+  ([#437](https://github.com/AgriLogy/agri-api/pull/437),
+  [`e81feb8`](https://github.com/AgriLogy/agri-api/commit/e81feb83e4d33917edc592c3b56623f9c3b392d6))
+
+Closes #436. Third instance of the same defect class as #433 and #435 — but where those two simply
+  stopped selecting columns the code never needed, these endpoints genuinely need the coordinates,
+  so they need degradation rather than a narrower select.
+
+`analytics_device.latitude`/`.longitude` exist in the ORM and in the agri-db chain (`b2c3d4e5f6a7`)
+  but that migration is held and unapplied, so raw-SQL selects naming them raise `UndefinedColumn`.
+
+## The shim — one module, easy to delete
+
+`fastapp/schema_compat.py`. `device_coordinates_available(session)` resolves the Session Engine,
+  runs **one** dialect-neutral `Inspector.get_columns("analytics_device")` and caches per Engine in
+  a `WeakKeyDictionary` — one probe per engine per process, nothing on the hot path. No
+  `information_schema` SQL, so it works on the sqlite mirrors too; a missing/unreadable table
+  degrades to `False` instead of raising.
+
+Only two importers (`routers/selfreads.py`, `routers/devices.py`), every call site tagged `COMPAT
+  SHIM (#436)`, and the module docstring says plainly that this is not the fix, that it becomes a
+  silent no-op once the migration lands, and how to delete it.
+
+## Write paths reject rather than silently ignore
+
+A create/patch that actually carries coordinates against a schema without the columns returns
+  **400** naming migration `b2c3d4e5f6a7`. A payload omitting both fields writes normally on either
+  schema.
+
+Silently dropping the coordinates would tell an admin the pin was saved while the map never shows it
+  — a silent data loss indistinguishable from the bug being fixed. Ignoring is right when a value is
+  incidental; here it is the entire point of the field.
+
+## Tests — 18, both levels
+
+**Unit**: the probe reports the right shape for both schemas, reports absent when the table is
+  missing, runs **once per engine not once per call** (25 calls → 1 probe), caches per engine, and
+  resets.
+
+**Integration**: real endpoints through `TestClient` against **real Postgres**, parametrized
+  `without_coordinates` / `with_coordinates`. The fixture builds two dedicated Postgres schemas and
+  points `session_scope` at them via `search_path`, so the SQL resolves unqualified exactly as in
+  production and the Django test DB is untouched.
+
+Proof they catch it — restoring both routers from `HEAD`: **6 failed, 12 passed**, every
+  `without_coordinates` case failing with the real error:
+
+``` (psycopg.errors.UndefinedColumn) column "latitude" does not exist [SQL: SELECT id, device_type,
+  serial, name, zone_id, latitude, longitude FROM analytics_device WHERE user_id = ... ] ```
+
+All `with_coordinates` cases passed unfixed — confirming the shim is a genuine no-op post-migration.
+
+## Verification `ruff check` → All checks passed!; `ruff format --check` → 266 files already
+  formatted; full suite against real Postgres → **984 passed, 2 failed**. Both failures are in a
+  pre-existing untracked WIP file (`test_admindb_backup.py`) and reproduce identically on their own.
+  Contribution is exactly **+18 passing, 0 failing** over the 953 baseline.
+
+## Assessed and deliberately out of scope - `apps/irrigation/models.py` Django `Device` — mirrors
+  the schema of record; editing it would misrepresent the target schema. -
+  `apps/irrigation/router_devices.py`, `router_irrigation_automation.py` — unreachable in
+  production; nginx proxies `/devices` and `/irrigation` to the fastapp sidecar. -
+  `agriapi/tasks.py:1281` — the Django Celery worker/beat roles are retired; the live fastapp port
+  is fixed by #433. - Django admin device list — `Device` is not registered in any admin module, so
+  no changelist exists.
+
+## ⚠️ One thing to check on the droplet `deploy/nginx/back.conf` in this repo has **no `/my-devices`
+  location block**, so on the committed config that path falls through to Django. If the endpoint is
+  live via fastapp in production, the block was applied out-of-band on the droplet and should be
+  backported into the repo — the same manual-nginx drift already tracked as a follow-up.
+
+- **ingest**: Select only the device columns resolution needs
+  ([#435](https://github.com/AgriLogy/agri-api/pull/435),
+  [`7b5564d`](https://github.com/AgriLogy/agri-api/commit/7b5564de861bddfdbcb839f49f5a31db270887b9))
+
+Closes #434. Same defect class as #433, but on the **live LoRa/MQTT uplink path** — so this one has
+  to land before or with #426, otherwise restoring broker connectivity just moves the failure.
+
+`resolve_device()` did a whole-entity `select(AnalyticsDevice)` twice, emitting every mapped column
+  including `latitude`/`longitude`, which do not exist in production (their migration is held). It
+  has not been seen failing only because no uplink has arrived since 2026-07-13.
+
+## Fix One column-scoped `select(AnalyticsDevice.id, .is_active, .zone_id, .user_id)`, executed via
+  `session.execute(...).first()` for both the initial lookup and the post-auto-register retry. `Row`
+  attribute access is identical, so the rest of the function body is byte-identical. Works against
+  the pre- and post-migration schema alike.
+
+Audited the rest of `ingest.py`: the only other `AnalyticsDevice` statement is the `pg_insert(...)`
+  in `auto_register_lora_device`, which has an explicit column list and is safe.
+
+## Tests — 10, none Postgres-gated
+
+**Unit (stub session, no DB)** — compiled SQL names neither coordinate column; it names exactly the
+  four needed and none of `serial`/`name`/`device_type`/`last_health_notified`/`created_at`;
+  `resolve_device()` returns the right owner for an active assigned device, withholds it when
+  inactive or unassigned, and returns all-none when not found.
+
+**Integration (in-memory sqlite, real ingest entry point)** — a fixture parametrized over **both**
+  device shapes, `without_coordinates` (production today) and `with_coordinates` (post-migration): -
+  a realistic ChirpStack v4 RS485-LB frame driven through `handle_chirpstack_uplink` writes 3
+  channels, the `analytics_phsoil` row attributed to the device owner, the raw frame archived in
+  `lora_uplink`, and no duplicate device row; - an unknown DevEUI auto-registers unassigned under
+  the `lora` placeholder owner — which exercises the second, post-insert select — and the reading
+  still lands.
+
+Every existing ingest/MQTT integration test is Postgres + `django_db(transaction=True)` gated and
+  skips on the default run, so none of them would have caught this. These deliberately mirror
+  `test_scan_device_health_columns.py` and run unskipped everywhere.
+
+## Proof the tests catch the bug Restoring the two original entity selects: **8 failed, 2 passed**.
+  The `without_coordinates` integration tests fail with `sqlite3.OperationalError: no such column:
+  analytics_device.latitude` — sqlite spelling of the exact production symptom. The 2 that still
+  pass are precisely the `with_coordinates` variants, which is correct: the old code only breaks on
+  the pre-migration schema.
+
+## Verification `make lint` → `All checks passed!`; `make format-check` → 265 files already
+  formatted; full suite → **572 passed, 406 skipped**, baseline was 562 passed — exactly +10, no
+  regressions.
+
+Unrelated observation: `make test` runs `manage.py test` and reports `Found 0 test(s) … NO TESTS
+  RAN`. The real suite is pytest, which is what CI runs. Pre-existing, but the Makefile target is
+  misleading.
+
+- **mqtt**: Reach the broker over the container network and report real health
+  ([#431](https://github.com/AgriLogy/agri-api/pull/431),
+  [`3b97cdd`](https://github.com/AgriLogy/agri-api/commit/3b97cddc53ff5dec01e2eb5585e4cb32f169ffcf))
+
+Closes #426. Repo-side half — **nothing has been applied to the droplet**, operator steps below.
+
+LoRa ingest cannot recover until this lands: `agri-api-mqtt` reaches the broker via the host bridge
+  gateway (`MQTT_HOST=172.18.0.1`), which since UFW was enabled on 2026-07-20 (`INPUT DROP`) is
+  dropped. The socket has been in `SYN_SENT` ever since and the container has never logged
+  `mqtt.connected`. MQTT is the only remaining ingest route from ChirpStack.
+
+## Changes
+
+- **`docker-compose.yml`** — `agri-api-mqtt` joins ChirpStack own compose network and addresses the
+  broker **by container name**, so the traffic never touches the host INPUT chain. The ChirpStack
+  network name is not derivable from this repo (separate stack), so it is
+  `${CHIRPSTACK_NETWORK:-chirpstack_default}`. A comment on the service records the SYN_SENT/UFW
+  failure so nobody re-adds the gateway IP. - **A healthcheck that tells the truth.** `docker ps`
+  currently reports `Up (healthy)` for a subscriber that has never connected. `mqtt.py` now stamps a
+  liveness file on CONNACK and clears it on failed connect, disconnect and SIGTERM, with a daemon
+  thread re-stamping every 15s while `client.is_connected()`. The healthcheck tests **freshness**,
+  not existence, so a wedged-but-nominally-connected client also goes unhealthy. A disabled
+  subscriber (empty `MQTT_HOST`) deliberately reports unhealthy too. A liveness file rather than an
+  HTTP endpoint: this is a `loop_forever()` paho process with no web surface, so adding uvicorn
+  would mean a new port, a new dependency and a second failure mode for ~25 lines of benefit. -
+  **`back/env-example`** — documents the container-name form, why the gateway IP is wrong, and the
+  trap that compose `environment:` **overrides** `back/.env`, so the effective value lives in the
+  compose-project `.env` at `/root/agri-api/.env` — which is exactly where the current `172.18.0.1`
+  sits. - **`docs/flows/mqtt-ingest.md`** — config table, topology and activation runbook updated.
+
+## ⚠️ Read before merging — `deploy-back.yml` changed
+
+`agri-api-mqtt` was added to `compose_services`. It is **necessary** (without it the deploy never
+  recreates the container, so the new network membership never takes effect and the manual
+  force-recreate stays mandatory forever) but it carries a real risk: **if the external network is
+  missing or misnamed on the droplet, compose refuses the whole `up` and the deploy fails for every
+  service.**
+
+So do operator step 1 *before* merging.
+
+## Operator steps (none performed)
+
+1. **Confirm both names first** — `docker network ls | grep -i chirpstack` and `docker ps --format
+  "{{.Names}}" | grep -i mosquitto`. If the network is not `chirpstack_default`, set
+  `CHIRPSTACK_NETWORK=<real name>` in `/root/agri-api/.env`. 2. In `/root/agri-api/.env` (the
+  compose-project env file, **not** `back/.env`), replace `MQTT_HOST=172.18.0.1` with the broker
+  container name (likely `chirpstack-mosquitto-1`). Port and credentials unchanged. 3. Deploy. The
+  pipeline now recreates `agri-api-mqtt` itself. 4. Verify: `docker inspect -f "{{range \$k,\$v :=
+  .NetworkSettings.Networks}}{{\$k}} {{end}}" agri-api-mqtt` shows both networks; `docker logs
+  agri-api-mqtt | grep mqtt.connected`; `docker ps` shows healthy — and now that means something.
+  Then confirm fresh LoRa rows land (which also needs the field gateway back on air). 5. Optional:
+  any UFW allow-rule for 1883 can be dropped afterwards — the broker is no longer reached through
+  the host.
+
+Pairs with #427 (broker publicly exposed): once the subscriber is off the host path, mosquitto can
+  be rebound to loopback. Do them together.
+
+## Verification `docker compose config` → exit 0, renders the external network and the healthcheck
+  correctly (external networks resolve at run time, so a locally-absent network is not a parse
+  error). `make lint` → `All checks passed!`; `ruff format --check` → 264 files already formatted.
+
+The `test_mqtt_ingest.py` suite errors locally at fixture setup — the session autouse
+  `_create_sector_schema` fixture calls `get_table_description` and raises on SQLite; the untouched
+  `test_mqtt_broker.py` fails identically, and CI runs this suite against a Postgres service. The
+  healthcheck logic was therefore exercised directly against the real classes, running the compose
+  healthcheck command verbatim: disconnected → exit 1, connected → exit 0, stale 120s → exit 1.
+
+- **sensors**: Report the device-resolved owner instead of the raw columns
+  ([#424](https://github.com/AgriLogy/agri-api/pull/424),
+  [`b1749bd`](https://github.com/AgriLogy/agri-api/commit/b1749bd73bacc3f577808312da3abdb200c032ad))
+
+Closes #423. Backend root cause behind AgriLogy/agri-admin#57 (ADM-2).
+
+Ownership is device-keyed, but the query halves disagreed: `list_readings` **filtered** through the
+  `analytics_device` join (`_owner_user` / `_owner_zone`) while `_row()` **serialised the raw**
+  `user_id` / `zone_id`. Both failure directions were reproduced against production:
+
+- `username=Router01, uid=7` returned **0 rows** while the raw tables hold **31 908 rows** that user
+  owns. - `username=lora&zone_id=11` returned a row labelled `username: Router01, zone_id: 10` — so
+  the explorer Client/Zone columns and the CSV export showed a client that was not the one filtered
+  on.
+
+## Changes
+
+- `routers/admin_sensor_data.py` — `list_readings` projects `_owner_user(...).label("eff_user")` /
+  `_owner_zone(...).label("eff_zone")` alongside the entity; `_row()` renders the effective owner.
+  **`delete_range` switched off the raw columns** onto the same predicates as the list, expressed as
+  `delete(model).where(model.id.in_(<_with_device_join subquery>))` — previously a range-delete
+  acted on a different row set than the list the admin was looking at. - `sensors.py` — new
+  `effective_owner(session, row)` (Python twin of the SQL COALESCE); `hourly_readings` and
+  `raw_readings` project and report the resolved owner; `serialize_raw` takes `eff_user`/`eff_zone`.
+  - `routers/sensors.py` — PATCH authorises via the effective owner, so a farmer who owns a
+  transferred device no longer gets a 404 patching his own history.
+
+## Tests
+
+9 new tests in `back/src/fastapp/tests/test_device_ownership_projection.py`, including the exact
+  ADM-2 loop (filter on the label the response itself returned and get the same rows back), both
+  delete-range directions, and the PATCH authorisation flip. The shared fixture leaves the reading
+  rows carrying the *previous* owner ids, so every assertion is red against the old projection by
+  construction.
+
+## Verification
+
+`make lint` — `All checks passed!`; `ruff format --check` — 251 files already formatted. Full suite
+  under the CI-equivalent env: **975 passed, 2 failed**. Both failures are pre-existing and
+  unrelated — `test_admindb_backup.py` (an uncommitted local file) fails on `NotNullViolation: null
+  value in column "space" of relation "analytics_zone"`.
+
+These tests are Postgres-gated like the existing dual-ORM tests, so they skip under the sqlite `make
+  test` but gate for real in CI against the postgres service.
+
+Not verified against production data — no droplet writes.
+
+- **tasks**: Select only the columns device health needs
+  ([#433](https://github.com/AgriLogy/agri-api/pull/433),
+  [`aa8a56a`](https://github.com/AgriLogy/agri-api/commit/aa8a56aa384259f6979649058f0fb2ca8526e62c))
+
+Closes #432.
+
+`scan_device_health` has failed on every run in production since the 2026-07-21 deploy — 244
+  failures, last success 2026-07-21 08:40:36:
+
+``` (psycopg.errors.UndefinedColumn) column analytics_device.latitude does not exist ```
+
+`tasks_scan.py:64` did a whole-entity `select(AnalyticsDevice)`, which emits **every** mapped column
+  — including `latitude`/`longitude`, added to the model for the device-map feature whose migration
+  is still held. Production does not have those columns.
+
+## Fix
+
+The task reads exactly five attributes — `id`, `serial`, `name`, `user_id`, `last_health_notified`.
+  No coordinates, and it never touches `zone_id`, `device_type` or `created_at`. So the entity
+  select becomes a column-scoped select of those five, via `session.execute(...)`; `Row` attribute
+  access is identical, so no other line in the body changed. The follow-up `update(AnalyticsDevice)`
+  statements already named only `id` and `last_health_notified` and were always safe.
+
+This satisfies **both** schema states — the SQL now names only columns present before *and* after
+  the held migration. No feature detection, nothing to unwind when the migration lands, and strictly
+  less I/O.
+
+## Tests
+
+`test_scan_device_health_columns.py`, 3 tests, pure (not Postgres-gated, runs on sqlite): - compiled
+  Postgres SQL for every `analytics_device` statement must not contain `latitude`/`longitude`; - the
+  five needed columns are present and entity-wide extras are not; - end-to-end: builds an in-memory
+  `analytics_device` **without** the coordinate columns — production shape today — runs the real
+  task and asserts the result.
+
+Verified they catch the bug: restoring the old `select(AnalyticsDevice)` makes all three fail, the
+  e2e one with `no such column: analytics_device.latitude`.
+
+## ⚠️ Same defect on the live ingest path — not fixed here
+
+`fastapp/ingest.py:315` and `:323` (`resolve_device()`) do the same whole-entity
+  `select(AnalyticsDevice)`, twice, on the **LoRa/MQTT uplink ingest path**. It will raise the
+  identical `UndefinedColumn` in production. It needs only `id`, `is_active`, `zone_id`, `user_id`,
+  so it is the same one-line fix — filed separately as the higher priority, because it means uplinks
+  would fail even after the broker connectivity in #426 is restored.
+
+Also broken in production by the same hold, and by design until the migration lands:
+  `routers/devices.py` (82, 182-196, 283) and `routers/selfreads.py:325` (`GET /my-devices`, the
+  farmer map endpoint) explicitly select `latitude, longitude` in raw SQL with no fallback. The
+  Django legacy `Device` model declares them too, so full-model Django queries break as well.
+
+agri-core is clean — it only references `AnalyticsDevice.user_id/.zone_id/.id` in joins.
+
+## Verification
+
+`make lint` → `All checks passed!`; `make format-check` → 265 files already formatted; full suite
+  `565 passed, 406 skipped`, no failures.
+
+### Documentation
+
+- Add CONTRIBUTING.md ([#422](https://github.com/AgriLogy/agri-api/pull/422),
+  [`29c010a`](https://github.com/AgriLogy/agri-api/commit/29c010a33e0111e1ffdda5799bd3d6f7e0bb85e5))
+
+Closes #421
+
+### Features
+
+- **api**: Sensor-group and per-sensor calibration endpoints
+  ([#440](https://github.com/AgriLogy/agri-api/pull/440),
+  [`51993a5`](https://github.com/AgriLogy/agri-api/commit/51993a51831fbb4e96d59ac210639eec3a8bc8cd))
+
+Closes #439. API layer (P2) for AgriLogy/agri-web#64 (GRP-1) and AgriLogy/agri-web#67 (CAL-1).
+  Schema is agri-db revision `f4b6d2e8c1a9` (agri-db#70, merged).
+
+## Endpoints
+
+**Groups** — `routers/sensor_groups.py`, owner-scoped; technicians read-only. - `GET /sensor-groups`
+  — groups with memberships (device name/serial joined in) - `POST /sensor-groups`, `PATCH
+  /sensor-groups/{pk}`, `DELETE /sensor-groups/{pk}` (cascades memberships only, devices untouched)
+  - `POST /sensor-groups/{pk}/sensors` — `(device_id, sensor_key, label?, zone_id?,
+  display_order?)`; zone defaults to the device's zone - `DELETE
+  /sensor-groups/{pk}/sensors/{sensor_id}`
+
+**Calibration** — `routers/sensor_calibration.py`. - `GET
+  /sensor-calibrations/{device_id}/{sensor_key}` — the row, or the identity default (`scale_a=1,
+  offset_b=0, configured=false`) - `PUT /sensor-calibrations/{device_id}/{sensor_key}` — upsert; 201
+  first time, 200 after, one row ever. Rejects `scale_a=0`.
+
+Applying calibration to readings is deliberately **not** in this PR — that belongs in agri-core,
+  where the unit table goes.
+
+## Two constraints, and how they were met
+
+**No pin bump.** agri-api pins agri-core 0.23.0 → agri-db 0.17.0, which predates these tables, and
+  no tag can be cut while CI is down. Everything is raw parameterised `text()`, the `devices.py`
+  idiom — no new ORM imports. Bumping the pins is a separate change once releases work.
+
+**The tables do not exist in production yet.** Rather than a second mechanism, this extends the
+  existing `schema_compat.py` probe from #436: a second `WeakKeyDictionary` cache of `{engine:
+  {table: present}}`, one `Inspector.has_table` per engine per table, with `sensor_groups_available`
+  / `sensor_calibration_available` wrappers. Reads degrade (empty list, identity calibration);
+  writes return 400 naming migration `f4b6d2e8c1a9`.
+
+That is the direct lesson from #432/#434/#436 — three production defects, all from code assuming an
+  unapplied migration. This one turns itself on when the migration lands.
+
+## Ownership Scope comes from `selfreads._resolve_read_scope`, not a reimplementation. Technicians
+  see the owner's groups filtered to granted zones via `COALESCE(membership.zone_id,
+  device.zone_id)` and get 403 on every write; cross-owner access is 404. Calibration ownership is
+  checked against `analytics_device`, which exists in **both** schema shapes — so the shim can never
+  widen access.
+
+## Tests — 44
+
+**Unit (17)**: probe behaviour for both shapes, groups needing both tables, one probe per engine per
+  table, per-engine caching, cache reset, probe never raising on a hostile engine, the messages
+  naming the migration, payload validation (empty/over-long name, sensor_key capped at the column
+  width), identity defaults, read-only scope refused writes, technician membership filtering.
+
+**Integration (13 × both schema shapes = 27 runs)**, real Postgres schemas via `search_path`,
+  following `test_device_coordinate_columns.py`: create/list, unique name per owner, update, delete
+  removing only memberships, add/remove sensor, **one sensor in two groups**, foreign device
+  refused, cross-owner denied, technician reads but cannot write, calibration identity default,
+  idempotent upsert, per-(device, sensor_key) isolation, foreign device calibration denied,
+  zero-scale rejected.
+
+**What breaks without the probe:** forcing `_probe_table` to return `True` gives **10 failed, 29
+  passed**, with real `psycopg.errors.UndefinedTable: relation "analytics_sensorcalibration" does
+  not exist` and the same for `analytics_sensorgroup` on every absent-shape case.
+
+## Verification `ruff check` → All checks passed!; `ruff format --check` → 272 files already
+  formatted. Full suite vs real Postgres: **1047 passed, 5 skipped, 2 failed**. The 2 failures are
+  the pre-existing untracked WIP `test_admindb_backup.py`. Re-running with only the new file ignored
+  gives 1008 passed — so this PR is exactly **+39 passed, +5 skipped, zero regressions**.
+
+## ⚠️ Deploy note `deploy/nginx/back.conf` and `staging.conf` gain `/sensor-groups`,
+  `/sensor-groups/` and `/sensor-calibrations/` routed to the fastapp sidecar. **nginx is applied by
+  hand on the droplet**, so merging this does not route the endpoints — the config has to be applied
+  there, and the droplet's live config has already drifted from this file.
+
+- **deploy**: Staging stack definition for staging.agrogo-datafarm.com
+  ([#428](https://github.com/AgriLogy/agri-api/pull/428),
+  [`4e4fe68`](https://github.com/AgriLogy/agri-api/commit/4e4fe68ce31ae414c3fd6d99d684e2485c58fd39))
+
+Closes #425. First slice of #418 — the parts needing no decision. **Nothing here has been applied to
+  the droplet.**
+
+A separate staging stack on the same droplet: `agri-api-*-staging` on `127.0.0.1:90xx`, own network,
+  own Redis, own `agrydata-staging` Postgres, Mailpit as the email sink.
+
+## Files - `deploy/staging/docker-compose.staging.yml` — the stack - `deploy/staging/env.example` —
+  every var annotated `[=PROD]` / `[≠PROD]`, placeholders only - `deploy/nginx/staging.conf` — the
+  server block - `deploy/staging/README.md` — runbook, opening with a statement that nothing is
+  applied - `.gitignore` — **a real hole**: existing rules are `.env`, `.env.local`, `.env.*.local`,
+  none of which match `.env.staging`, so a filled-in staging env file was committable. Now ignored.
+  - `docs/INDEX.md` — one line pointing at the runbook
+
+`docker-compose.yml`, `deploy/nginx/back.conf` and every workflow are untouched.
+
+## Three collisions that would have hit production
+
+1. **Image tag.** Building staging as `agri-api:latest` would silently replace the image every prod
+  container picks up on its next recreate. Pinned to `agri-api:staging`. 2. **Redis/queue.** Prod
+  attaches to the external `agrilogy-back_agro` network. Sharing it would put the staging Celery
+  worker on the *same* `agriapi` queue as prod, executing production tasks — real emails and
+  WhatsApp messages. Staging gets its own Redis on its own network and cannot even resolve
+  `agrydata`/`redis`. 3. **MQTT client id.** Brokers allow one connection per client id, so a
+  staging subscriber left on the default `agri-api-ingest` and pointed at the prod broker would
+  repeatedly kick the prod subscriber offline and **lose prod uplinks**. Staging pins
+  `agri-api-ingest-staging`, and the subscriber is off by default behind a compose profile. Worth
+  noting the fan-out is duplication, not theft: plain subscriptions mean prod keeps its messages
+  while staging also ingests real device data.
+
+Full prod-vs-staging table for every container, port, volume, network and database name is in the
+  runbook.
+
+Also documented: `DJANGO_ENV` has no `staging` value (`settings/__init__.py` raises on anything but
+  `dev|prod|test`), so staging runs the prod settings module with staging values.
+
+## Verification `docker compose --env-file .env.staging -f docker-compose.staging.yml config` →
+  **exit 0, no warnings**, MQTT correctly excluded from the default profile. (A temp env file was
+  created from the template to run it, then deleted.)
+
+`staging.conf` was generated *mechanically* from `back.conf` rather than hand-written, then checked:
+  the location-block list diffs **empty** against prod — 57 lines, identical set, order and matching
+  modifiers — and a full body diff shows only the four intended substitutions (ports, hostname, cert
+  path). The regeneration recipe is in the file header so the two stay in sync as future strangler
+  cutovers land.
+
+## Still gated on the owner DNS + TLS issuance; the `staging.` vs `staging-back.` hostname decision
+  (issue said `staging.`, the earlier plan sketched that for the front-end — both cannot own it, and
+  changing it post-issuance means re-issuing the cert); Vercel staging projects and their env vars
+  (use an **absolute** API URL — a relative one caused the earlier prod outage); branch-strategy
+  sign-off, which is why `deploy-back.yml` was deliberately left alone; droplet headroom for a
+  second stack plus a second Postgres; and the staging DB seed policy (fresh vs prod dump — the
+  runbook has a scrub step if a dump is used).
+
+- **deps**: Bump agri-core 0.23.0 -> 0.25.0 ([#443](https://github.com/AgriLogy/agri-api/pull/443),
+  [`12ee46d`](https://github.com/AgriLogy/agri-api/commit/12ee46dd5e4c56c732bf458e71cb993e58676a64))
+
+Bumps `agri-core` 0.23.0 → **0.25.0**, which pins agri-db **0.18.0**. This closes the release chain
+  that has been stuck all day.
+
+## Why it matters The container previously bundled agri-db 0.17.0, whose migration head predates
+  today's two schema additions. That is why the production migration could not be applied through
+  the normal machinery — the revisions simply were not in the image. With this bump the image
+  carries them, so `agri-migrate upgrade head` works with no hand-copied revision files.
+
+It also makes five ORM models importable for the first time: `AnalyticsAlertevent`,
+  `AnalyticsIrrigationdecision`, `AnalyticsSensorgroup`, `AnalyticsSensorgroupsensor`,
+  `AnalyticsSensorcalibration` — plus `agri.core.calibration`, which unblocks wiring calibration
+  into the read path.
+
+The raw-SQL used in #440 and #442 was a consequence of the pin being stuck; it now has a retirement
+  path (not done here — those PRs work as-is).
+
+## Test fallout, both fixed Two failures followed directly from the models now existing. Both were
+  the tests being out of date, not the code being wrong.
+
+**`test_admindb_parity`** documents exactly which tables fastapp exposes that Django has no model
+  for. Five new ones legitimately joined it. Replaced the inline literal with `_FASTAPP_ONLY_KEYS`
+  carrying a per-entry rationale, and kept the assertion as exact equality with the invariant
+  stated: a key belongs there **only** if Django has no model — a Django-modelled table showing up
+  would mean the port dropped something.
+
+**`test_sensor_groups_and_calibration`** died at fixture setup with `DuplicateTable: relation
+  "analytics_sensorgroup" already exists`. The fixture copied every table in `AgriBase.metadata` and
+  called `create_all`, *then* additionally ran three hand-rolled `CREATE TABLE` statements copied
+  from migration `f4b6d2e8c1a9`. Once agri-db declared those models, `create_all` already made them
+  and the hand-rolled DDL collided.
+
+**The quieter half of that bug matters more:** the `without_tables` shape was *also* silently
+  getting those three tables from `create_all` — so that parametrization would have stopped testing
+  anything, while still passing. The whole point of it is proving the compat shim degrades when the
+  tables are absent. Both shapes are now derived from the agri-db metadata, with `without_tables`
+  explicitly skipping the three migration tables, so the "absent" schema is a real Postgres schema
+  genuinely missing real tables.
+
+Net effect: the test schema can no longer drift from the schema-of-record, because it is built from
+  it.
+
+## Verification Before: `1 failed, 1010 passed, 28 errors`. After: **`1034 passed, 5 skipped`**,
+  zero failures, zero errors. The 5 skips are intentional `pytest.skip` calls in the
+  `without_tables` parametrization for cases whose refusal is asserted elsewhere.
+
+`ruff check` → All checks passed!; `ruff format --check` → 271 files already formatted.
+
+- **reporting**: Record alert events and irrigation decisions
+  ([#442](https://github.com/AgriLogy/agri-api/pull/442),
+  [`a7350ad`](https://github.com/AgriLogy/agri-api/commit/a7350ad4c3bc8e4be17ebc51a3dcdd7b701bc1b8))
+
+Closes #441, implements #399 (RPT-1). Schema is agri-db revision `e7a1c3d5b209`.
+
+Alerts fired and irrigation decisions were computed, but neither was persisted — so no historical
+  report was possible. Both are now recorded, with report endpoints over them.
+
+## Write points instrumented | Path | Where | Recorded | |---|---|---| | Alert firing — HTTP
+  `/ingest/*` **and** MQTT both funnel through it | `dispatch_alerts_for_reading`, right after the
+  atomic grace claim is won | one row per firing, rule snapshot + channels + observed value | |
+  Assistant irrigation advice | `assistant/tools.py::_get_irrigation_advice` | `source=assistant` /
+  `proactive` | | Proactive nudge scan | `tasks_scan.py::scan_proactive_insights` | labels the above
+  | | Periodic field digest (beat) | `tasks_compute.py::send_periodic_notifications`, in the
+  delivery-log txn when `status == "sent"` | `source=periodic` | | Manual "send me a notification" |
+  `routers/users.py::send_me_notification` | `source=manual` |
+
+Django paths were deliberately left alone — nginx no longer routes to them.
+
+## Recording must never break what it records This is the whole risk of the ticket, so it is
+  enforced structurally, not by care.
+
+`history.py::best_effort(what, *, session=None)` runs the body inside a `session.begin_nested()`
+  SAVEPOINT, releases on success, rolls back on failure, swallows every exception and logs a
+  warning. The schema probe runs **outside** the savepoint (production, which lacks the tables, pays
+  only a cached boolean); the INSERT runs inside it. Row-building is wrapped too, so a malformed
+  call cannot escape either.
+
+**Without the wrapper, two real regressions — both tested:** - **Tables absent, i.e. production
+  today:** every alert firing raises `UndefinedTable` inside `dispatch_alerts_for_reading`;
+  `handle_metrics` catches it, so the alert is silently **not sent**. Instrumenting alerting would
+  have stopped alerting. - **Tables present, one bad INSERT:** without the SAVEPOINT, Postgres marks
+  the ingest transaction aborted, every later statement fails, and the **sensor reading itself is
+  rolled back** — observability would start eating data.
+
+Covered by `test_ingest_survives_a_broken_history_insert` and
+  `test_a_recommendation_still_answers_when_the_decision_insert_fails`.
+
+## Rule snapshotting The rule identity is captured at firing time, so editing or deleting it
+  afterwards cannot rewrite history — `test_editing_the_rule_afterwards_does_not_rewrite_history`
+  and `test_deleting_the_rule_keeps_the_firing_readable` (FK SET NULL; the snapshot survives).
+
+## Reports — `routers/reports.py` - `GET /reports/alert-events` — `start`, `end`, `zone_id`,
+  `sensor_key`, `limit` (default 100, cap 500), `offset` - `GET /reports/irrigation-decisions` —
+  `start`, `end`, `zone_id`, `source`, `irrigate`, `limit`, `offset`
+
+Both return `{count, limit, offset, schema_available, results}`, newest first, decisions splitting
+  outcome from `inputs{}`. Owner-scoped via `_resolve_read_scope`: a technician is confined to
+  granted zones and an explicit `zone_id` may only narrow, never widen. Without the tables: empty
+  page, `schema_available: false`, never a 500.
+
+## Verification `ruff check` → All checks passed!; `ruff format --check` → 275 files already
+  formatted.
+
+Full suite vs real Postgres: **1097 passed, 14 skipped, 2 failed**; baseline with this file ignored:
+  **1047 passed, 5 skipped, 2 failed**. Delta **+50 passed, +9 skipped, 0 new failures**. The 9
+  skips are deliberate shape guards. The 2 failures are the pre-existing untracked WIP
+  `test_admindb_backup.py`, identical before and after.
+
+Note: `dispatch_alerts_for_reading` gained an optional `device_id=None` kwarg so the ChirpStack path
+  can attribute a firing; every existing caller is unchanged.
+
+
 ## v1.120.0 (2026-07-21)
 
 ### Features
