@@ -311,20 +311,28 @@ def resolve_device(
     the shared ``lora`` catch-all. Existence is keyed on the unique ``serial``
     (not filtered by ``is_active``) so an inactive device is never re-inserted.
     """
-    device = session.scalars(
-        select(AnalyticsDevice)
+    # Column-scoped select — NOT ``select(AnalyticsDevice)``. Resolution only
+    # ever reads these four columns, and selecting the whole entity emits every
+    # mapped column, including ``latitude``/``longitude`` (the device-map
+    # feature) which only exist once the agri-db migration that adds them has
+    # been applied. The live LoRa/MQTT uplink path must not be coupled to an
+    # unrelated, not-yet-applied migration: naming its own columns keeps it
+    # working on both schemas, before and after.
+    device_query = (
+        select(
+            AnalyticsDevice.id,
+            AnalyticsDevice.is_active,
+            AnalyticsDevice.zone_id,
+            AnalyticsDevice.user_id,
+        )
         .where(AnalyticsDevice.serial == dev_eui)
         .order_by(AnalyticsDevice.id)
         .limit(1)
-    ).first()
+    )
+    device = session.execute(device_query).first()
     if device is None:
         auto_register_lora_device(session, dev_eui, device_name)
-        device = session.scalars(
-            select(AnalyticsDevice)
-            .where(AnalyticsDevice.serial == dev_eui)
-            .order_by(AnalyticsDevice.id)
-            .limit(1)
-        ).first()
+        device = session.execute(device_query).first()
     if device is None:  # pragma: no cover - insert raced away
         return None, None, None
     if device.is_active and device.zone_id is not None:
