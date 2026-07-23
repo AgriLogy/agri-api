@@ -61,8 +61,21 @@ def scan_device_health() -> dict:
     scanned = notified = healthy = skipped = 0
 
     with session_scope(commit=True) as session:
-        devices = session.scalars(
-            select(AnalyticsDevice)
+        # Column-scoped select — NOT ``select(AnalyticsDevice)``. The health scan
+        # only ever reads these five columns, and selecting the whole entity
+        # emits every mapped column, including ``latitude``/``longitude`` (the
+        # device-map feature) which only exist once the agri-db migration that
+        # adds them has been applied. A beat job must not be coupled to an
+        # unrelated, not-yet-applied migration: naming its own columns keeps it
+        # working on both schemas, before and after.
+        devices = session.execute(
+            select(
+                AnalyticsDevice.id,
+                AnalyticsDevice.serial,
+                AnalyticsDevice.name,
+                AnalyticsDevice.user_id,
+                AnalyticsDevice.last_health_notified,
+            )
             .where(AnalyticsDevice.is_active.is_(True))
             .order_by(AnalyticsDevice.id)
         ).all()
