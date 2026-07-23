@@ -45,6 +45,7 @@ from agri.db.users import CustomUserCustomuser
 from fastapp.auth import AuthedUser, get_current_user
 from fastapp.json import DjangoStyleJSONResponse
 from fastapp.passwords import make_password, validate_password, verify_password
+from fastapp.schema_compat import device_coordinates_available
 
 router = APIRouter(tags=["self"])
 
@@ -320,9 +321,16 @@ def list_my_devices(user: AuthedUser = Depends(get_current_user)):
         scope = _resolve_read_scope(session, row)
         if scope.zone_ids is not None and not scope.zone_ids:
             return []
+        # COMPAT SHIM (#436) — the agri-db migration adding the coordinate
+        # columns is held, so naming them unconditionally kills the whole map
+        # endpoint with UndefinedColumn. Select them only when they exist; the
+        # response keeps its shape either way (null = no pin, today's truth).
+        # Delete with fastapp.schema_compat once the migration is applied.
+        has_coordinates = device_coordinates_available(session)
+        coordinate_columns = ", latitude, longitude" if has_coordinates else ""
         rows = session.execute(
             text(
-                "SELECT id, device_type, serial, name, zone_id, latitude, longitude "
+                f"SELECT id, device_type, serial, name, zone_id{coordinate_columns} "
                 "FROM analytics_device "
                 "WHERE user_id = :owner AND is_active = true ORDER BY id"
             ),
@@ -335,8 +343,8 @@ def list_my_devices(user: AuthedUser = Depends(get_current_user)):
                 "serial": r.serial,
                 "name": r.name,
                 "zone": r.zone_id,
-                "latitude": r.latitude,
-                "longitude": r.longitude,
+                "latitude": getattr(r, "latitude", None),
+                "longitude": getattr(r, "longitude", None),
             }
             for r in rows
             # Technicians only see devices in their granted zones.

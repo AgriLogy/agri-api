@@ -22,6 +22,10 @@ from sqlalchemy import text
 from agri.core.database import session_scope
 from fastapp.auth import AuthedUser, get_current_user
 from fastapp.json import DjangoStyleJSONResponse
+from fastapp.schema_compat import (
+    DEVICE_COORDINATES_UNAVAILABLE,
+    device_coordinates_available,
+)
 
 router = APIRouter(tags=["devices"])
 
@@ -60,9 +64,19 @@ def _require_admin(user: AuthedUser) -> None:
         raise HTTPException(status_code=403, detail="Admin access required")
 
 
+def _carries_coordinates(payload: DeviceWriteIn) -> bool:
+    """COMPAT SHIM (#436): does this write actually try to store a position?
+    A payload that omits both fields is unaffected by the missing columns."""
+    return payload.latitude is not None or payload.longitude is not None
+
+
 def _serialize(row) -> dict[str, Any]:
     """Match the Django ``_serialize(Device)`` shape + field order. ``row`` is
-    a joined result row with the device columns + the owner ``username``."""
+    a joined result row with the device columns + the owner ``username``.
+
+    ``latitude``/``longitude`` are read with ``getattr`` because the select
+    omits them on a schema that lacks the columns (COMPAT SHIM #436) — the
+    response keeps its shape, the coordinates are simply null."""
     return {
         "id": row.id,
         "device_type": row.device_type,
@@ -72,21 +86,27 @@ def _serialize(row) -> dict[str, Any]:
         "zone": row.zone_id,
         "is_active": row.is_active,
         "created_at": row.created_at.isoformat() if row.created_at else None,
-        "latitude": row.latitude,
-        "longitude": row.longitude,
+        "latitude": getattr(row, "latitude", None),
+        "longitude": getattr(row, "longitude", None),
     }
 
 
-_SELECT = (
-    "SELECT d.id, d.device_type, d.serial, d.name, d.user_id, d.zone_id, "
-    "d.is_active, d.created_at, d.latitude, d.longitude, u.username "
-    "FROM analytics_device d "
-    'JOIN "CustomUser_customuser" u ON u.id = d.user_id'
-)
+def _select_sql(has_coordinates: bool) -> str:
+    """The device+owner select. COMPAT SHIM (#436): the coordinate columns are
+    named only when the held agri-db migration that adds them has been applied;
+    otherwise the statement would raise ``UndefinedColumn``."""
+    coordinates = ", d.latitude, d.longitude" if has_coordinates else ""
+    return (
+        "SELECT d.id, d.device_type, d.serial, d.name, d.user_id, d.zone_id, "
+        f"d.is_active, d.created_at{coordinates}, u.username "
+        "FROM analytics_device d "
+        'JOIN "CustomUser_customuser" u ON u.id = d.user_id'
+    )
 
 
 def _fetch(session, pk: int):
-    return session.execute(text(_SELECT + " WHERE d.id = :pk"), {"pk": pk}).first()
+    stmt = _select_sql(device_coordinates_available(session)) + " WHERE d.id = :pk"
+    return session.execute(text(stmt), {"pk": pk}).first()
 
 
 def _resolve_owner_zone(session, payload: DeviceWriteIn):
@@ -138,13 +158,13 @@ def list_devices(
     username: str | None = None, user: AuthedUser = Depends(get_current_user)
 ):
     _require_admin(user)
-    stmt = _SELECT
     params: dict[str, Any] = {}
-    if username:
-        stmt += " WHERE u.username = :username"
-        params["username"] = username
-    stmt += " ORDER BY d.id DESC"
     with session_scope() as session:
+        stmt = _select_sql(device_coordinates_available(session))
+        if username:
+            stmt += " WHERE u.username = :username"
+            params["username"] = username
+        stmt += " ORDER BY d.id DESC"
         rows = session.execute(text(stmt), params).all()
         return [_serialize(r) for r in rows]
 
@@ -163,6 +183,14 @@ def create_device(payload: DeviceWriteIn, user: AuthedUser = Depends(get_current
             status_code=400,
         )
     with session_scope(commit=True) as session:
+        # COMPAT SHIM (#436): refuse — loudly and early — to accept coordinates
+        # the schema cannot store, rather than dropping them silently (the admin
+        # would believe the pin was saved and the map would never show it).
+        has_coordinates = device_coordinates_available(session)
+        if not has_coordinates and _carries_coordinates(payload):
+            return DjangoStyleJSONResponse(
+                {"detail": DEVICE_COORDINATES_UNAVAILABLE}, status_code=400
+            )
         exists = session.execute(
             text("SELECT 1 FROM analytics_device WHERE serial = :s LIMIT 1"),
             {"s": payload.serial},
@@ -175,27 +203,26 @@ def create_device(payload: DeviceWriteIn, user: AuthedUser = Depends(get_current
         user_id, zone_id, err = _resolve_owner_zone(session, payload)
         if err is not None:
             return err
+        values: dict[str, Any] = {
+            "user_id": user_id,
+            "zone_id": zone_id,
+            "device_type": payload.device_type,
+            "serial": payload.serial.strip(),
+            "name": (payload.name or "").strip(),
+            "is_active": payload.is_active if payload.is_active is not None else True,
+            "created_at": datetime.datetime.now(datetime.timezone.utc),
+        }
+        if has_coordinates:  # COMPAT SHIM (#436) — else the columns don't exist
+            values["latitude"] = payload.latitude
+            values["longitude"] = payload.longitude
+        columns = ", ".join(values)
+        placeholders = ", ".join(f":{col}" for col in values)
         new_id = session.execute(
             text(
-                "INSERT INTO analytics_device "
-                "(user_id, zone_id, device_type, serial, name, is_active, "
-                "created_at, latitude, longitude) "
-                "VALUES (:user_id, :zone_id, :device_type, :serial, :name, "
-                ":is_active, :created_at, :latitude, :longitude) RETURNING id"
+                f"INSERT INTO analytics_device ({columns}) "
+                f"VALUES ({placeholders}) RETURNING id"
             ),
-            {
-                "user_id": user_id,
-                "zone_id": zone_id,
-                "device_type": payload.device_type,
-                "serial": payload.serial.strip(),
-                "name": (payload.name or "").strip(),
-                "is_active": (
-                    payload.is_active if payload.is_active is not None else True
-                ),
-                "created_at": datetime.datetime.now(datetime.timezone.utc),
-                "latitude": payload.latitude,
-                "longitude": payload.longitude,
-            },
+            values,
         ).scalar_one()
         return DjangoStyleJSONResponse(
             _serialize(_fetch(session, new_id)), status_code=201
@@ -253,6 +280,12 @@ def patch_device(
 ):
     _require_admin(user)
     with session_scope(commit=True) as session:
+        # COMPAT SHIM (#436) — same contract as create: coordinates the schema
+        # cannot store are rejected, never silently discarded.
+        if not device_coordinates_available(session) and _carries_coordinates(payload):
+            return DjangoStyleJSONResponse(
+                {"detail": DEVICE_COORDINATES_UNAVAILABLE}, status_code=400
+            )
         device = _fetch(session, pk)
         if device is None:
             raise HTTPException(status_code=404, detail="device not found.")
