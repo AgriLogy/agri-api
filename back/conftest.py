@@ -221,6 +221,50 @@ def _create_monitoring_tables(django_db_setup, django_db_blocker):
     yield
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _add_access_level_column(django_db_setup, django_db_blocker):
+    """``CustomUser_customuser.access_level`` is added out-of-band in prod by
+    the agri-db migration (0.19.0) — the Django CustomUser model does not
+    declare it, so it is absent from Django's migration-built test DB. The
+    fastapp RBAC dependency (#444) and the agri-db SQLAlchemy model both read
+    this column, so create it once for the whole test DB (VARCHAR(16) NOT NULL
+    DEFAULT 'editor', matching the agri-db column) so authenticated requests
+    don't choke on a missing column.
+    """
+    from django.db import connection
+
+    if not connection.settings_dict["ENGINE"].endswith("postgresql"):
+        yield
+        return
+
+    with django_db_blocker.unblock(), connection.cursor() as cursor:
+        cursor.execute(
+            'ALTER TABLE "CustomUser_customuser" '
+            "ADD COLUMN IF NOT EXISTS access_level VARCHAR(16) NOT NULL "
+            "DEFAULT 'editor'"
+        )
+    yield
+
+
+@pytest.fixture
+def set_access_level():
+    """Return ``set(user, level)`` — write a Django-created user's RBAC
+    ``access_level`` (#444) with raw SQL (the Django CustomUser model has no
+    such field). Under ``transaction=True`` tests the write commits, so the
+    fastapp SQLAlchemy session (a separate connection) then reads the new tier.
+    """
+    from django.db import connection
+
+    def _set(user, level: str) -> None:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                'UPDATE "CustomUser_customuser" SET access_level = %s WHERE id = %s',
+                [level, user.pk],
+            )
+
+    return _set
+
+
 def _bearer_client(user) -> APIClient:
     from rest_framework_simplejwt.tokens import AccessToken
 

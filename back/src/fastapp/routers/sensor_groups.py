@@ -36,7 +36,7 @@ from sqlalchemy import bindparam, text
 
 from agri.core.database import session_scope
 from agri.db.users import CustomUserCustomuser
-from fastapp.auth import AuthedUser, get_current_user
+from fastapp.auth import AuthedUser, get_current_user, require_level
 from fastapp.json import DjangoStyleJSONResponse
 from fastapp.routers.selfreads import _ReadScope, _resolve_read_scope
 from fastapp.schema_compat import SENSOR_GROUPS_UNAVAILABLE, sensor_groups_available
@@ -207,7 +207,9 @@ def list_sensor_groups(user: AuthedUser = Depends(get_current_user)):
 
 @router.post("/sensor-groups", summary="Create a sensor group")
 def create_sensor_group(
-    payload: SensorGroupIn, user: AuthedUser = Depends(get_current_user)
+    payload: SensorGroupIn,
+    user: AuthedUser = Depends(get_current_user),
+    _: AuthedUser = Depends(require_level("editor")),
 ):
     with session_scope(commit=True) as session:
         if not sensor_groups_available(session):
@@ -254,6 +256,7 @@ def update_sensor_group(
     pk: int,
     payload: SensorGroupPatchIn,
     user: AuthedUser = Depends(get_current_user),
+    _: AuthedUser = Depends(require_level("editor")),
 ):
     with session_scope(commit=True) as session:
         if not sensor_groups_available(session):
@@ -299,7 +302,11 @@ def update_sensor_group(
 
 
 @router.delete("/sensor-groups/{pk}", summary="Delete a sensor group")
-def delete_sensor_group(pk: int, user: AuthedUser = Depends(get_current_user)):
+def delete_sensor_group(
+    pk: int,
+    user: AuthedUser = Depends(get_current_user),
+    _: AuthedUser = Depends(require_level("admin")),
+):
     with session_scope(commit=True) as session:
         if not sensor_groups_available(session):
             return _unavailable()
@@ -326,7 +333,10 @@ def delete_sensor_group(pk: int, user: AuthedUser = Depends(get_current_user)):
 # ---------------------------------------------------------------------------
 @router.post("/sensor-groups/{pk}/sensors", summary="Add a sensor to a group")
 def add_sensor_to_group(
-    pk: int, payload: GroupSensorIn, user: AuthedUser = Depends(get_current_user)
+    pk: int,
+    payload: GroupSensorIn,
+    user: AuthedUser = Depends(get_current_user),
+    _: AuthedUser = Depends(require_level("editor")),
 ):
     with session_scope(commit=True) as session:
         if not sensor_groups_available(session):
@@ -408,7 +418,10 @@ def add_sensor_to_group(
     summary="Remove a sensor from a group",
 )
 def remove_sensor_from_group(
-    pk: int, sensor_id: int, user: AuthedUser = Depends(get_current_user)
+    pk: int,
+    sensor_id: int,
+    user: AuthedUser = Depends(get_current_user),
+    _: AuthedUser = Depends(require_level("admin")),
 ):
     with session_scope(commit=True) as session:
         if not sensor_groups_available(session):

@@ -75,6 +75,9 @@ def _serialize_me(row: CustomUserCustomuser) -> dict[str, object]:
         "phone_number": row.phone_number,
         "first_name": row.firstname,
         "last_name": row.lastname,
+        # RBAC tier (#444) — the frontend uses it to show/hide edit/delete
+        # affordances. Falls back to the safest floor if the column is null.
+        "access_level": getattr(row, "access_level", None) or "monitor",
     }
 
 

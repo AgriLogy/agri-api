@@ -28,7 +28,7 @@ from sqlalchemy import select
 from agri.core.database import session_scope
 from agri.db.analytics import AnalyticsKc, AnalyticsManageraffirmation, AnalyticsZone
 from agri.db.users import CustomUserCustomuser
-from fastapp.auth import AuthedUser, get_current_user
+from fastapp.auth import LEVEL_ADMIN, AuthedUser, get_current_user, level_rank
 from fastapp.json import DjangoStyleJSONResponse
 from fastapp.routers.kc import KcPeriodIn, _replace_periods
 
@@ -295,7 +295,10 @@ def create_affirmation(
 
 
 def _decide(pk: int, action: str, note: str | None, user: AuthedUser):
-    if not user.is_staff:
+    # RBAC tier gate (#444): approving / rejecting an affirmation applies a
+    # privileged change, so it requires the ``admin`` tier. 403 body kept
+    # verbatim; only the condition moved from ``is_staff`` to the level scale.
+    if level_rank(user.access_level) < level_rank(LEVEL_ADMIN):
         raise HTTPException(status_code=403, detail="Admin access required")
 
     now = datetime.datetime.now(datetime.timezone.utc)

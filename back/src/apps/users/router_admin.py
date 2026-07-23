@@ -197,6 +197,22 @@ _PHONE_MIN_LEN = 6
 _PHONE_MAX_LEN = 15
 
 
+def _access_level_of(user: CustomUser) -> str:
+    """Read the RBAC tier (#444) for ``user``. ``access_level`` is an agri-db
+    column (VARCHAR(16) NOT NULL DEFAULT 'editor') that the Django CustomUser
+    model does not declare, so it is read with raw SQL. Falls back to the safest
+    floor (monitor) if the column is somehow null."""
+    from django.db import connection
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            'SELECT access_level FROM "CustomUser_customuser" WHERE id = %s',
+            [user.pk],
+        )
+        row = cursor.fetchone()
+    return row[0] if row and row[0] else "monitor"
+
+
 def _serialize_me(user: CustomUser) -> dict[str, Any]:
     """The /me profile shape. ``first_name``/``last_name`` are the wire names
     for the model's ``firstname``/``lastname`` columns."""
@@ -208,6 +224,9 @@ def _serialize_me(user: CustomUser) -> dict[str, Any]:
         "phone_number": user.phone_number,
         "first_name": user.firstname,
         "last_name": user.lastname,
+        # RBAC tier (#444) — kept in lockstep with fastapp's /users/me so the
+        # strangler parity net stays byte-exact.
+        "access_level": _access_level_of(user),
     }
 
 

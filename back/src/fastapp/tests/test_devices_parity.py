@@ -46,13 +46,18 @@ def django() -> APIClient:
 
 
 @pytest.fixture
-def admin(django_user_model):
-    return django_user_model.objects.create_user(
+def admin(django_user_model, set_access_level):
+    user = django_user_model.objects.create_user(
         username="dv-admin",
         email="dv-admin@example.com",
         password="irrelevant-3921",
         is_staff=True,
     )
+    # The device registry is now gated on the RBAC ``admin`` tier (#444), not
+    # ``is_staff``; keep this fixture both so Django (is_staff) and fastapp
+    # (access_level) parity stays byte-exact.
+    set_access_level(user, "admin")
+    return user
 
 
 @pytest.fixture
@@ -583,9 +588,14 @@ def test_irrigation_program_update_persists(fast, django, owner, zone):
     assert p.name == "updated" and p.duration_min == 45
 
 
-def test_irrigation_program_delete_and_404_identical(fast, django, owner, zone):
+def test_irrigation_program_delete_and_404_identical(
+    fast, django, owner, zone, set_access_level
+):
     from apps.irrigation.models import IrrigationProgram
 
+    # Deleting a record now requires the RBAC ``admin`` tier (#444); the program
+    # owner must therefore be an admin to delete their own program.
+    set_access_level(owner, "admin")
     p = _make_program(owner, zone)
     fp = fast.delete(
         f"/irrigation/programs/{p.id}",

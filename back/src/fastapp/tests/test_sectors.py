@@ -33,8 +33,8 @@ def fast() -> TestClient:
 
 
 @pytest.fixture
-def owner(django_user_model):
-    return django_user_model.objects.create_user(
+def owner(django_user_model, set_access_level):
+    user = django_user_model.objects.create_user(
         username="sec-owner",
         email="sec-owner@example.com",
         password="irrelevant-3921",
@@ -42,15 +42,24 @@ def owner(django_user_model):
         lastname="Owner",
         phone_number="+212600000021",
     )
+    # Sector writes are gated to editor and deletes to admin (#444); grant admin
+    # so this owner exercises the full CRUD (incl. delete) — the tier gate is
+    # covered independently in test_access_level_rbac.
+    set_access_level(user, "admin")
+    return user
 
 
 @pytest.fixture
-def other(django_user_model):
-    return django_user_model.objects.create_user(
+def other(django_user_model, set_access_level):
+    user = django_user_model.objects.create_user(
         username="sec-other",
         email="sec-other@example.com",
         password="irrelevant-3921",
     )
+    # Admin tier so the cross-owner test reaches the ownership 404 (not the tier
+    # 403) when it tries to delete a sector that isn't theirs.
+    set_access_level(user, "admin")
+    return user
 
 
 def _make_zone(user, name):

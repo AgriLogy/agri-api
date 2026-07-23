@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
-from fastapp.auth import AuthedUser, get_current_user
+from fastapp.auth import AuthedUser, get_current_user, require_level
 from fastapp.json import DjangoStyleJSONResponse
 
 log = logging.getLogger(__name__)
@@ -218,7 +218,11 @@ def farm_overview(user: AuthedUser = Depends(get_current_user)):
 
 
 @router.post("/sectors", summary="Create a sector")
-def create_sector(payload: SectorIn, user: AuthedUser = Depends(get_current_user)):
+def create_sector(
+    payload: SectorIn,
+    user: AuthedUser = Depends(get_current_user),
+    _: AuthedUser = Depends(require_level("editor")),
+):
     with session_scope(commit=True) as session:
         guard = _block_if_technician(session, user.id)
         if guard is not None:
@@ -231,7 +235,10 @@ def create_sector(payload: SectorIn, user: AuthedUser = Depends(get_current_user
 
 @router.patch("/sectors/{pk}", summary="Rename a sector")
 def update_sector(
-    pk: int, payload: SectorIn, user: AuthedUser = Depends(get_current_user)
+    pk: int,
+    payload: SectorIn,
+    user: AuthedUser = Depends(get_current_user),
+    _: AuthedUser = Depends(require_level("editor")),
 ):
     with session_scope(commit=True) as session:
         guard = _block_if_technician(session, user.id)
@@ -248,7 +255,11 @@ def update_sector(
 
 
 @router.delete("/sectors/{pk}", summary="Delete a sector (unassigns its zones)")
-def delete_sector(pk: int, user: AuthedUser = Depends(get_current_user)):
+def delete_sector(
+    pk: int,
+    user: AuthedUser = Depends(get_current_user),
+    _: AuthedUser = Depends(require_level("admin")),
+):
     with session_scope(commit=True) as session:
         guard = _block_if_technician(session, user.id)
         if guard is not None:
@@ -271,7 +282,10 @@ def delete_sector(pk: int, user: AuthedUser = Depends(get_current_user)):
 
 @router.put("/sectors/{pk}/zones", summary="Set exactly which zones are in a sector")
 def set_sector_zones(
-    pk: int, payload: SectorZonesIn, user: AuthedUser = Depends(get_current_user)
+    pk: int,
+    payload: SectorZonesIn,
+    user: AuthedUser = Depends(get_current_user),
+    _: AuthedUser = Depends(require_level("editor")),
 ):
     with session_scope(commit=True) as session:
         guard = _block_if_technician(session, user.id)

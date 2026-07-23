@@ -22,7 +22,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 
 from agri.core.database import session_scope
-from fastapp.auth import AuthedUser, get_current_user
+from fastapp.auth import AuthedUser, get_current_user, require_level
 from fastapp.json import DjangoStyleJSONResponse
 from fastapp.settings import get_settings
 
@@ -129,7 +129,11 @@ def list_programs(
 
 
 @router.post("/irrigation/programs", summary="Create an irrigation program")
-def create_program(payload: ProgramIn, user: AuthedUser = Depends(get_current_user)):
+def create_program(
+    payload: ProgramIn,
+    user: AuthedUser = Depends(get_current_user),
+    _: AuthedUser = Depends(require_level("editor")),
+):
     _block_if_technician(user)
     with session_scope(commit=True) as session:
         if not _owned_zone(session, user.id, payload.zone_id):
@@ -160,7 +164,10 @@ def create_program(payload: ProgramIn, user: AuthedUser = Depends(get_current_us
 
 @router.put("/irrigation/programs/{program_id}", summary="Update a program")
 def update_program(
-    program_id: int, payload: ProgramIn, user: AuthedUser = Depends(get_current_user)
+    program_id: int,
+    payload: ProgramIn,
+    user: AuthedUser = Depends(get_current_user),
+    _: AuthedUser = Depends(require_level("editor")),
 ):
     _block_if_technician(user)
     with session_scope(commit=True) as session:
@@ -199,7 +206,11 @@ def update_program(
 
 
 @router.delete("/irrigation/programs/{program_id}", summary="Delete a program")
-def delete_program(program_id: int, user: AuthedUser = Depends(get_current_user)):
+def delete_program(
+    program_id: int,
+    user: AuthedUser = Depends(get_current_user),
+    _: AuthedUser = Depends(require_level("admin")),
+):
     _block_if_technician(user)
     with session_scope(commit=True) as session:
         deleted = session.execute(
@@ -216,7 +227,11 @@ def delete_program(program_id: int, user: AuthedUser = Depends(get_current_user)
 
 # ── manual commands + history ────────────────────────────────────────────────
 @router.post("/irrigation/commands", summary="Send a manual valve/pump command")
-def send_command(payload: CommandIn, user: AuthedUser = Depends(get_current_user)):
+def send_command(
+    payload: CommandIn,
+    user: AuthedUser = Depends(get_current_user),
+    _: AuthedUser = Depends(require_level("editor")),
+):
     _block_if_technician(user)
     if payload.action not in ("open", "close"):
         return DjangoStyleJSONResponse(

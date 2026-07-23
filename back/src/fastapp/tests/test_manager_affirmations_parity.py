@@ -42,13 +42,17 @@ def django() -> APIClient:
 
 
 @pytest.fixture
-def admin(django_user_model):
-    return django_user_model.objects.create_user(
+def admin(django_user_model, set_access_level):
+    user = django_user_model.objects.create_user(
         username="ma-admin",
         email="ma-admin@example.com",
         password="irrelevant-3921",
         is_staff=True,
     )
+    # Deciding (approve/reject) an affirmation is now gated on the RBAC ``admin``
+    # tier (#444), not ``is_staff``; keep both so Django/fastapp parity holds.
+    set_access_level(user, "admin")
+    return user
 
 
 @pytest.fixture

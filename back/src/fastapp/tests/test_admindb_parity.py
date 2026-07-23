@@ -265,6 +265,15 @@ _SCHEMA_KNOWN_DELTAS = {
     "feedback.bugreport": {"video_url"},
 }
 
+# Columns the agri.db mirror (= the LIVE DB) legitimately carries that the
+# Django model does NOT declare, so fastapp's schema lists a field Django's
+# introspection cannot see. Documented so the drift is pinned:
+#   * CustomUser.customuser.access_level — the RBAC tier (#444) is an agri-db
+#     column (0.19.0); the Django CustomUser model does not declare it.
+_SCHEMA_FASTAPP_ONLY_FIELDS = {
+    "CustomUser.customuser": {"access_level"},
+}
+
 
 def _field_projection(fields: list[dict]) -> dict[str, dict]:
     """The subset of each field descriptor that CAN match across the two
@@ -294,8 +303,13 @@ def test_schema_derivable_projection_matches_django(fast, admin, key):
     for attr in ("key", "app_label", "model_name", "pk_field"):
         assert fp[attr] == dj[attr], (attr, fp[attr], dj[attr])
 
-    # Same set of field names (column mirror), same type/pk/nullable/fk-target.
-    assert _field_projection(fp["fields"]) == _field_projection(dj["fields"])
+    # Same set of field names (column mirror), same type/pk/nullable/fk-target —
+    # after dropping any documented fastapp-only extras (agri.db columns the
+    # Django model does not declare, e.g. CustomUser.access_level, #444).
+    fp_proj = _field_projection(fp["fields"])
+    for extra in _SCHEMA_FASTAPP_ONLY_FIELDS.get(key, set()):
+        fp_proj.pop(extra, None)
+    assert fp_proj == _field_projection(dj["fields"])
 
 
 @pytest.mark.parametrize("key", sorted(_SCHEMA_KNOWN_DELTAS))

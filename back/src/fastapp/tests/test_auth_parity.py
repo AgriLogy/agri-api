@@ -78,6 +78,8 @@ def test_django_minted_access_token_is_accepted(client, user):
         "is_staff": False,
         "is_technician": False,
         "preferred_language": "ar",
+        # RBAC tier (#444): defaults to 'editor' (the agri-db column default).
+        "access_level": "editor",
     }
 
 

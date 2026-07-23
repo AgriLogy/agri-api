@@ -427,7 +427,15 @@ def _seed(engine, has_tables: bool):
         session.commit()
 
 
-def _authenticate_as(user_id: int, username: str, is_technician: bool = False):
+def _authenticate_as(
+    user_id: int,
+    username: str,
+    is_technician: bool = False,
+    access_level: str = "admin",
+):
+    # Default to the ``admin`` RBAC tier (#444) so the farm owner exercises both
+    # editor-gated writes and admin-gated deletes; the technician cases still hit
+    # the read-only (owner-scoping) refusal regardless of tier.
     app.dependency_overrides[get_current_user] = lambda: AuthedUser(
         id=user_id,
         username=username,
@@ -435,6 +443,7 @@ def _authenticate_as(user_id: int, username: str, is_technician: bool = False):
         is_staff=False,
         is_technician=is_technician,
         preferred_language="fr",
+        access_level=access_level,
     )
 
 
