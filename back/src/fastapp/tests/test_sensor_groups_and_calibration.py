@@ -43,59 +43,17 @@ from fastapp.routers import sensor_calibration as calib_router
 from fastapp.routers import sensor_groups as groups_router
 from fastapp.routers.selfreads import _ReadScope
 
-# The three tables the held migration creates, verbatim from agri-db#70
-# (revision f4b6d2e8c1a9). Hand-rolled DDL so the "absent" shape is a schema
-# genuinely missing genuine tables, not a mocked one.
-_SENSOR_GROUP_DDL = """
-CREATE TABLE analytics_sensorgroup (
-    id BIGSERIAL PRIMARY KEY,
-    name VARCHAR(120) NOT NULL,
-    description TEXT NOT NULL DEFAULT '',
-    user_id BIGINT NOT NULL,
-    display_order INTEGER NOT NULL DEFAULT 0,
-    is_active BOOLEAN NOT NULL DEFAULT true,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT analytics_sensorgroup_user_name_key UNIQUE (user_id, name)
-)
-"""
-
-_SENSOR_GROUP_SENSOR_DDL = """
-CREATE TABLE analytics_sensorgroupsensor (
-    id BIGSERIAL PRIMARY KEY,
-    group_id BIGINT NOT NULL
-        REFERENCES analytics_sensorgroup (id) ON DELETE CASCADE,
-    device_id BIGINT NOT NULL,
-    sensor_key VARCHAR(64) NOT NULL,
-    label VARCHAR(120) NOT NULL DEFAULT '',
-    zone_id BIGINT REFERENCES analytics_zone (id) ON DELETE SET NULL,
-    display_order INTEGER NOT NULL DEFAULT 0,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT analytics_sensorgroupsensor_key
-        UNIQUE (group_id, device_id, sensor_key)
-)
-"""
-
-_SENSOR_CALIBRATION_DDL = """
-CREATE TABLE analytics_sensorcalibration (
-    id BIGSERIAL PRIMARY KEY,
-    device_id BIGINT NOT NULL,
-    sensor_key VARCHAR(64) NOT NULL,
-    scale_a DOUBLE PRECISION NOT NULL DEFAULT 1.0,
-    offset_b DOUBLE PRECISION NOT NULL DEFAULT 0.0,
-    unit VARCHAR(32) NOT NULL DEFAULT '',
-    is_active BOOLEAN NOT NULL DEFAULT true,
-    note TEXT NOT NULL DEFAULT '',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT analytics_sensorcalibration_key UNIQUE (device_id, sensor_key)
-)
-"""
-
-_NEW_TABLE_DDL = (
-    _SENSOR_GROUP_DDL,
-    _SENSOR_GROUP_SENSOR_DDL,
-    _SENSOR_CALIBRATION_DDL,
+# The three tables the held migration ``f4b6d2e8c1a9`` (agri-db#70) creates.
+# They are now DECLARED by agri-db, so the integration schemas below build them
+# straight from ``AgriBase.metadata`` — no hand-rolled DDL that could silently
+# drift from the real shape. The "absent" shape is produced by OMITTING them
+# from that same metadata, so it is a schema genuinely missing genuine tables.
+_MIGRATION_TABLES = frozenset(
+    {
+        schema_compat.SENSOR_GROUP_TABLE,
+        schema_compat.SENSOR_GROUP_SENSOR_TABLE,
+        schema_compat.SENSOR_CALIBRATION_TABLE,
+    }
 )
 
 
@@ -340,8 +298,9 @@ def _engine_for(schema: str):
 
 
 def _build_schema(has_tables: bool):
-    """Create ``<schema>`` with every agri-db table, plus (when requested) the
-    three tables migration ``f4b6d2e8c1a9`` adds. Returns the bound engine."""
+    """Create ``<schema>`` from the agri-db metadata: every table when
+    ``has_tables``, everything BUT the three tables migration ``f4b6d2e8c1a9``
+    adds when not. Returns the bound engine."""
     schema = _SCHEMA[has_tables]
     admin = create_engine(os.environ["AGRI_DB_URL"], poolclass=NullPool)
     with admin.begin() as conn:
@@ -352,12 +311,13 @@ def _build_schema(has_tables: bool):
     engine = _engine_for(schema)
     meta = MetaData(schema=schema)
     for table in AgriBase.metadata.sorted_tables:
+        # The "absent" shape is production today: agri-db declares the three
+        # tables, but the migration that creates them has not been applied, so
+        # they are left out of the schema entirely.
+        if not has_tables and table.name in _MIGRATION_TABLES:
+            continue
         table.to_metadata(meta, schema=schema)
     meta.create_all(engine)
-    if has_tables:
-        with engine.begin() as conn:
-            for ddl in _NEW_TABLE_DDL:
-                conn.execute(text(ddl))
     return engine
 
 
