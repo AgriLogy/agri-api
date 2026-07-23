@@ -22,6 +22,7 @@ import agri.db.analytics as analytics
 from agri.core.database import AgriMainDBClient, session_scope
 from agri.core.database.client import _owner_user, _owner_zone, _with_device_join
 from agri.db.devices import AnalyticsDevice
+from fastapp.calibration import corrected_value, load_calibrations
 
 
 @dataclass(frozen=True)
@@ -363,6 +364,52 @@ def agri_db_model(spec: SensorSpec):
     return getattr(analytics, spec.agri_db)
 
 
+# --- slug → sensor_key (calibration key) -----------------------------------
+# Calibration (analytics_sensorcalibration) is keyed by (device_id, sensor_key)
+# where sensor_key is a SENSOR_KEY_REGISTRY key — the SAME key the ingest/alert
+# path uses. The read path is keyed by SENSOR_SPEC slug, so it must resolve the
+# matching sensor_key or the dashboard would look up a different calibration
+# than the alert did. The mapping is the registry model name (minus the
+# ``Analytics`` prefix) matched case-insensitively; two models are shared by
+# two registry keys and one slug (npk) has no registry key at all, so those are
+# pinned/None explicitly (guessing would apply the wrong factor).
+_SLUG_KEY_OVERRIDES: dict[str, str | None] = {
+    # AnalyticsPhsoil is both "soil_ph" and "ph_soil"; the LoRa ingest writes
+    # "ph_soil", so the read path must calibrate under that same key.
+    "phsoil": "ph_soil",
+    # AnalyticsEt0calculated is both "et0" and "et0_calculated"; ingest/beat use
+    # "et0_calculated".
+    "et0calculated": "et0_calculated",
+    # NPK has no SENSOR_KEY_REGISTRY entry → not calibratable via this scheme.
+    "npk": None,
+}
+
+
+def _build_slug_key_map() -> dict[str, str | None]:
+    from agri.core.alerts import SENSOR_KEY_REGISTRY
+
+    by_model: dict[str, list[str]] = {}
+    for key, meta in SENSOR_KEY_REGISTRY.items():
+        by_model.setdefault(str(meta["model"]).lower(), []).append(key)
+
+    out: dict[str, str | None] = {}
+    for slug, spec in SENSOR_SPEC.items():
+        if slug in _SLUG_KEY_OVERRIDES:
+            out[slug] = _SLUG_KEY_OVERRIDES[slug]
+            continue
+        model_key = spec.agri_db.removeprefix("Analytics").lower()
+        keys = by_model.get(model_key)
+        # A single unambiguous registry key resolves; anything else is left
+        # uncalibrated rather than guessed.
+        out[slug] = keys[0] if keys and len(keys) == 1 else None
+    return out
+
+
+# slug → the sensor_key its readings are calibrated under (None = not
+# calibratable). Built once at import from SENSOR_SPEC × SENSOR_KEY_REGISTRY.
+SENSOR_KEY_FOR_SLUG: dict[str, str | None] = _build_slug_key_map()
+
+
 def _iso(ts: datetime.datetime | None) -> str | None:
     return ts.strftime("%Y-%m-%dT%H:%M:%SZ") if ts is not None else None
 
@@ -398,11 +445,20 @@ def hourly_readings(
     zone_id: int | None,
     start: datetime.date | None,
     end: datetime.date | None,
+    sensor_key: str | None = None,
 ) -> list[dict[str, Any]]:
     """One averaged reading per clock hour — byte-parity port of
     ``apps.sensors.engine.hourly_readings``. Same [] on no rows, same key
     order per row: char fields, id, zone, user, timestamp, value cols,
-    default_unit, available_units."""
+    default_unit, available_units.
+
+    When ``sensor_key`` resolves to a calibratable key, each hourly average is
+    corrected by the calibration of the device that produced that hour's rows
+    (identified via the bucket's ``last_id``). The affine correction commutes
+    with averaging, so ``corrected(avg(raw)) == avg(corrected(raw))`` for a
+    single device — the common case under device-keyed ownership. Correction
+    goes through :mod:`fastapp.calibration`, the SAME helper the alert path
+    uses, so a hourly point and its alert never disagree."""
     model = agri_db_model(spec)
     start_dt = (
         datetime.datetime.combine(
@@ -463,6 +519,14 @@ def hourly_readings(
             value_columns=spec.value_fields or ("value",),
         )
 
+        # Resolve the calibration for each bucket while the session is open:
+        # map the bucket's representative row (``last_id``) to its device, then
+        # batch-load every needed (device_id, sensor_key) in ONE query. No
+        # per-reading query — everything below maps in memory.
+        calibration_by_last_id = _calibrations_for_buckets(
+            session, model, buckets, sensor_key
+        )
+
     rows: list[dict[str, Any]] = []
     for b in buckets:
         row: dict[str, Any] = dict(meta)
@@ -470,12 +534,48 @@ def hourly_readings(
         row["zone"] = sample_zone
         row["user"] = sample_user
         row["timestamp"] = _iso(b["hour"])
+        calibration = calibration_by_last_id.get(b["last_id"])
         for c in spec.value_fields:
-            row[c] = b.get(c)
+            row[c] = corrected_value(
+                b.get(c),
+                calibration,
+                sensor_key=sensor_key,
+                native_unit=spec.default_unit,
+            )
         row["default_unit"] = spec.default_unit
         row["available_units"] = spec.available_units
         rows.append(row)
     return rows
+
+
+def _calibrations_for_buckets(
+    session,
+    model,
+    buckets: list[dict[str, Any]],
+    sensor_key: str | None,
+) -> dict[Any, Any]:
+    """``{last_id: Calibration}`` for the hourly buckets — one id→device query
+    plus one batch calibration load, or ``{}`` when nothing is calibratable."""
+    if not sensor_key or not buckets:
+        return {}
+    last_ids = [b["last_id"] for b in buckets if b.get("last_id") is not None]
+    if not last_ids:
+        return {}
+    device_by_last_id = {
+        row_id: device_id
+        for row_id, device_id in session.execute(
+            select(model.id, model.device_id).where(model.id.in_(last_ids))
+        ).all()
+    }
+    calibrations = load_calibrations(
+        session,
+        {(device_id, sensor_key) for device_id in device_by_last_id.values()},
+    )
+    return {
+        last_id: calibrations.get((device_id, sensor_key))
+        for last_id, device_id in device_by_last_id.items()
+        if device_id is not None
+    }
 
 
 def raw_readings(
@@ -485,10 +585,15 @@ def raw_readings(
     zone_id: int | None,
     start: datetime.date | None,
     end: datetime.date | None,
+    sensor_key: str | None = None,
 ) -> list[dict[str, Any]]:
     """Un-aggregated rows at the sensor's native cadence — byte-parity port of
     the Django ``raw=true`` branch: filter by owner + inclusive date range +
-    optional zone, ordered by timestamp ascending."""
+    optional zone, ordered by timestamp ascending.
+
+    Each row is corrected by ITS OWN device's calibration (per-row
+    ``device_id``), batch-loaded in one query, through the same
+    :mod:`fastapp.calibration` helper the hourly + alert paths use."""
     model = agri_db_model(spec)
     # Ownership resolved via the device (COALESCE) so a transferred device's
     # history follows it; non-device rows fall back to their own user/zone.
@@ -525,10 +630,31 @@ def raw_readings(
             .where(*criteria)
             .order_by(model.timestamp)
         ).all()
-        return [
-            serialize_raw(r, spec, eff_user=eff_user, eff_zone=eff_zone)
-            for r, eff_user, eff_zone in rows
-        ]
+        # Batch-load one calibration per (device_id, sensor_key) present, then
+        # correct each row by its own device's factor — no per-row query.
+        calibrations = load_calibrations(
+            session,
+            {(getattr(r, "device_id", None), sensor_key) for r, _, _ in rows},
+        )
+        serialized: list[dict[str, Any]] = []
+        for r, eff_user, eff_zone in rows:
+            out = serialize_raw(r, spec, eff_user=eff_user, eff_zone=eff_zone)
+            device_id = getattr(r, "device_id", None)
+            calibration = (
+                calibrations.get((device_id, sensor_key))
+                if sensor_key and device_id is not None
+                else None
+            )
+            if calibration is not None:
+                for c in spec.value_fields:
+                    out[c] = corrected_value(
+                        out[c],
+                        calibration,
+                        sensor_key=sensor_key,
+                        native_unit=spec.default_unit,
+                    )
+            serialized.append(out)
+        return serialized
 
 
 # Maps a raw_order key (a Django field name) to the agri.db column attribute.

@@ -68,12 +68,21 @@ def list_readings(
         raise HTTPException(status_code=404, detail="Not Found")
     start = _parse_date(start_date)
     end = _parse_date(end_date)
+    # The sensor_key this slug's readings are calibrated under (#446) — the SAME
+    # key the ingest/alert path uses, so the chart and the alert read one
+    # calibration. None → not calibratable (identity).
+    sensor_key = sensors.SENSOR_KEY_FOR_SLUG.get(slug)
     if raw:
         return sensors.raw_readings(
-            spec, user_id=user.id, zone_id=zone, start=start, end=end
+            spec,
+            user_id=user.id,
+            zone_id=zone,
+            start=start,
+            end=end,
+            sensor_key=sensor_key,
         )
     return sensors.hourly_readings(
-        spec, user_id=user.id, zone_id=zone, start=start, end=end
+        spec, user_id=user.id, zone_id=zone, start=start, end=end, sensor_key=sensor_key
     )
 
 
