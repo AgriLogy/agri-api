@@ -1,6 +1,71 @@
 # CHANGELOG
 
 
+## v1.122.0 (2026-07-23)
+
+### Features
+
+- **auth**: Enforce access_level tiers via a reusable dependency
+  ([#445](https://github.com/AgriLogy/agri-api/pull/445),
+  [`338faeb`](https://github.com/AgriLogy/agri-api/commit/338faebc8da20ac625fab14cf9fba4d90d7e64f3))
+
+Closes #444. USR-1 P2 — the authorization layer. Schema is agri-db `access_level` (0.19.0); this
+  bumps agri-core to **0.26.0** to pick it up.
+
+## The fix Authorization was scattered ad-hoc `if not user.is_staff` checks with no notion of a tier
+  — which is exactly why granting "delete"/"monitor" in the UI did nothing (the #398 bug). Replaced
+  with **one reusable dependency**.
+
+`auth.py`: `level_rank(v)` on an ordered scale (`monitor=0 < editor=1 < admin=2`) where
+  **unknown/None/'' floor to monitor**, so a typo or NULL can only ever deny, never grant.
+  `require_level(minimum)` returns a FastAPI dependency that 403s below the threshold, layered ON
+  TOP of existing owner/technician scoping — never replacing it. `AuthedUser` gained `access_level`,
+  filled from the DB row (default monitor).
+
+## Every is_staff gate audited and mapped | Gate | Protected | Tier | |---|---|---| |
+  `users._admin_guard` | user-management console | **admin** | | `devices._require_admin` | device
+  registry CRUD | **admin** | | `manager_affirmations._decide` | approve/reject | **admin** | |
+  farmer create/update, run-irrigation (sensor_groups, sectors, sensor_calibration, irrigation) | —
+  (only owner-scoped before) | **editor** | | farmer deletes | — | **admin** | |
+  `manager_affirmations.list` staff *visibility filter* | row-set, not a gate | left on is_staff | |
+  `get_current_staff_user` (12 admin_* back-office routers) | staff console — distinct authz axis |
+  left on is_staff |
+
+Reads stay open to any authenticated user. The staff back-office console is a separate axis from
+  farmer RBAC tiers and was deliberately not folded in.
+
+## New surface - `/users/me` now returns `access_level` (fastapp **and** Django `_serialize_me`,
+  byte-parity kept) for frontend UX. - `POST /users/{username}/access-level` (admin only): sets a
+  target's tier. Three guards — caller must be admin, value ∈ {admin,editor,monitor} else 400, and
+  **a user can never change their own level** (blocks self-demotion lockout and self-escalation).
+
+## Tests Unit (`test_access_level_rbac.py`): rank ordering, case/whitespace-insensitivity,
+  unknown→monitor, `require_level` at/above/below threshold. Integration (real Postgres): monitor
+  read-only (write+delete 403), editor writes but no delete/user-mgmt, admin all, non-admin can't
+  change levels, no self-change, `/users/me` reports the level,
+  promote-then-takes-effect-next-request.
+
+**If `require_level` is bypassed** (pass-through), every refusal flips to success — a monitor could
+  create and delete, an editor could delete and reach user management — so the suite fails loudly
+  rather than silently widening authority.
+
+A session-autouse `conftest.py` fixture adds `access_level` to the Django-built test DB (Django's
+  model has no such field), matching the agri-db default.
+
+## Verification `ruff check` → All checks passed!; `ruff format --check` → 275 files formatted. Full
+  suite vs real Postgres: **1105 passed, 14 skipped, 0 failed**.
+
+## Reviewer note — this was merged, not copied The implementing work was authored on a checkout
+  predating #442/#443. I rebuilt the branch onto current `origin/main` and 3-way-merged the 5
+  diverged files: kept RPT-1's `record_notification_decision` import alongside the new RBAC imports
+  in `users.py`; kept #443's `_FASTAPP_ONLY_KEYS` constant in the parity test; kept #443's
+  metadata-driven schema builder in the sensor-groups test. Separately fixed **RPT-1's
+  `test_history_and_reports.py`**, which the original author never saw: under agri-db 0.19.0 its two
+  history tables are now ORM models, so `create_all` builds them and the hand-rolled DDL collided —
+  same fix as #443 (skip in the loop for the absent shape, drop the hand-rolled DDL). That fix is
+  why the count rose to 1105.
+
+
 ## v1.121.0 (2026-07-23)
 
 ### Bug Fixes
