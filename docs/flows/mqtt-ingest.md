@@ -263,6 +263,12 @@ persist) — which is why running the bridge's HTTP + MQTT channels together doe
 | `MQTT_QOS` | `1` | Subscribe QoS |
 | `MQTT_TOPIC_PREFIX` | `agrilogy` | Generic/Bivocom topic prefix |
 | `MQTT_CHIRPSTACK_TOPIC` | `application/+/device/+/event/up` | ChirpStack uplink filter |
+| `MQTT_HEALTH_FILE` | `/tmp/mqtt-healthy` | Liveness file kept fresh only while CONNECTED; the container healthcheck stats it |
+| `MQTT_HEALTH_INTERVAL` | `15` | Seconds between heartbeat re-touches of that file |
+
+⚠️ `MQTT_HOST` / `MQTT_PORT` are also set on the service by `docker-compose.yml`
+(`environment:`), which **overrides** `back/.env` — on a deployed host the
+effective value lives in the compose-project `.env` (e.g. `/root/agri-api/.env`).
 
 ### agri-bridge publisher — `../agri-bridge/src/config.js`
 
@@ -280,7 +286,21 @@ persist) — which is why running the bridge's HTTP + MQTT channels together doe
 - **Compose service `agri-api-mqtt`** — `docker-compose.yml:227`: same image/env
   as the FastAPI sidecar, `command … mqtt`, depends on `agri-api-web` +
   `redis`. `MQTT_HOST` defaults to the dev `mosquitto` service
-  (`docker-compose.yml:46`) and is overridden by `back/.env` on the droplet.
+  (`docker-compose.yml:46`) and is overridden by the compose-project `.env` on
+  the droplet.
+- **Broker route (prod)** — `agri-api-mqtt` joins ChirpStack's own compose
+  network (`networks: [agro, chirpstack]`, external, name from
+  `CHIRPSTACK_NETWORK`, default `chirpstack_default`) and addresses the broker by
+  **container name** (e.g. `chirpstack-mosquitto-1`). Do **not** use the docker
+  bridge gateway IP (`172.18.0.1`): that route leaves the container to the host,
+  so it is filtered by the host INPUT chain — enabling UFW (policy DROP)
+  blackholed it, the socket stayed in `SYN_SENT`, `mqtt.connected` was never
+  logged, and LoRa ingest stopped.
+- **Healthcheck** — the container reports healthy **only while the subscriber is
+  connected**: `fastapp.mqtt` writes `MQTT_HEALTH_FILE` on CONNACK, re-touches it
+  every `MQTT_HEALTH_INTERVAL` seconds while `is_connected()`, and deletes it on
+  disconnect; the healthcheck fails if the file is missing or older than 60s.
+  Before this, a never-connected subscriber still showed `Up (healthy)`.
 - Needs Postgres (readings + grace claim) and Redis (alert-task enqueue via
   `send_task`).
 - ⚠️ **Never scale `agri-api-mqtt` past 1 replica** — every subscriber gets
@@ -290,10 +310,13 @@ persist) — which is why running the bridge's HTTP + MQTT channels together doe
 
 MQTT is merged but **dormant** until wired to a broker:
 
-1. **agri-api:** in the droplet `back/.env`, set `MQTT_HOST` (+
-   `MQTT_USERNAME`/`MQTT_PASSWORD`/`MQTT_TLS`) → ChirpStack's broker, reachable
-   from the `agri-api-mqtt` container's docker network. Deploy → the container
-   starts consuming.
+1. **agri-api:** confirm ChirpStack's network + broker container names on the
+   host (`docker network ls | grep -i chirpstack`,
+   `docker ps --format '{{.Names}}' | grep -i mosquitto`), set
+   `CHIRPSTACK_NETWORK` (only if it is not `chirpstack_default`) and
+   `MQTT_HOST=<broker container name>` (+ `MQTT_USERNAME`/`MQTT_PASSWORD`/
+   `MQTT_TLS`) in the compose-project `.env` next to `docker-compose.yml`.
+   Deploy → the container joins that network and starts consuming.
 2. **agri-bridge:** set `MQTT_URL` (+ creds) → the same broker in the bridge
    container env. It then dual-publishes Bivocom uplinks.
 3. **Avoid double-delivery for ChirpStack:** if you point the subscriber at the

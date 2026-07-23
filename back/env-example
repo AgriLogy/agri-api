@@ -38,6 +38,38 @@ EMAIL_USE_TLS=False
 EMAIL_USE_SSL=False
 DJANGO_ENV=dev
 
+# ----- MQTT ingest (agri-api-mqtt subscriber) ---------------------------------
+# The subscriber consumes ChirpStack LoRaWAN uplinks straight off ChirpStack's
+# own MQTT broker. Address that broker BY CONTAINER NAME — agri-api-mqtt joins
+# ChirpStack's compose network (see docker-compose.yml `networks: chirpstack`),
+# so the traffic never leaves docker.
+#
+# ⚠️ Do NOT use the docker bridge gateway IP (MQTT_HOST=172.18.0.1). That route
+# exits the container to the HOST, so it is evaluated by the host INPUT chain:
+# enabling UFW (policy DROP on INPUT) silently blackholed it — the socket sat in
+# SYN_SENT, `mqtt.connected` was never logged, and LoRa ingest died while the
+# container still claimed to be healthy. Container-to-container traffic bypasses
+# INPUT entirely, so it cannot be firewalled off by mistake.
+#
+# ⚠️ Precedence: docker-compose.yml sets MQTT_HOST/MQTT_PORT on the service via
+# `environment:` (${MQTT_HOST:-mosquitto}), which BEATS this env_file. So on a
+# deployed host the effective value is the one in the COMPOSE-project .env next
+# to docker-compose.yml (e.g. /root/agri-api/.env), not back/.env.
+#
+# Confirm the broker's real container name on the host with:
+#   docker ps --format '{{.Names}}' | grep -i mosquitto
+# Leave MQTT_HOST empty to disable the subscriber. Dev (this compose file) uses
+# the bundled `mosquitto` service instead.
+MQTT_HOST=chirpstack-mosquitto-1
+MQTT_PORT=1883
+MQTT_USERNAME=
+MQTT_PASSWORD=
+MQTT_TLS=false
+# Liveness file the subscriber keeps fresh only WHILE connected; the container
+# healthcheck stats it, so an unconnected subscriber reports unhealthy.
+# MQTT_HEALTH_FILE=/tmp/mqtt-healthy
+# MQTT_HEALTH_INTERVAL=15
+
 # ALLOWED_HOSTS must include the docker-compose service name `agri-api-web`
 # so the agri-bridge container can forward POSTs without DisallowedHost
 # (Django rejects Host headers not in ALLOWED_HOSTS).

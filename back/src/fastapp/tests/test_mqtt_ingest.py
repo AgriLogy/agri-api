@@ -16,6 +16,7 @@ from __future__ import annotations
 import contextlib
 import datetime
 import json
+import os
 
 import pytest
 
@@ -222,3 +223,47 @@ def test_filters_match_concrete_topics_uniquely(mi):
 )
 def test_parse_timestamp(value, expected):
     assert ingest.parse_timestamp(value) == expected
+
+
+# ---------------------------------------------------------------------------
+# Liveness file — what the container healthcheck stats. It must exist ONLY while
+# the subscriber holds a broker connection (a never-connected subscriber used to
+# report `Up (healthy)` while LoRa ingest was dead).
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def health_mi(tmp_path, monkeypatch):
+    monkeypatch.setenv("MQTT_HEALTH_FILE", str(tmp_path / "mqtt-healthy"))
+
+    from fastapp.settings import get_settings
+
+    get_settings.cache_clear()
+    try:
+        yield mqtt.MqttIngest()
+    finally:
+        get_settings.cache_clear()
+
+
+def test_health_file_tracks_connection_state(health_mi):
+    path = health_mi.settings.mqtt_health_file
+    assert not os.path.exists(path)  # nothing claimed before CONNACK
+
+    health_mi._on_connect(_FakeClient(), None, None, 0)
+    assert os.path.exists(path)
+
+    health_mi._on_disconnect(_FakeClient(), None, None, 1)
+    assert not os.path.exists(path)
+
+
+def test_health_file_absent_on_failed_connect(health_mi):
+    health_mi._on_connect(_FakeClient(), None, None, 5)  # not authorised
+    assert not os.path.exists(health_mi.settings.mqtt_health_file)
+
+
+class _FakeClient:
+    """Just enough paho client for the connect callbacks (subscribe only)."""
+
+    def __init__(self) -> None:
+        self.subscribed = []
+
+    def subscribe(self, subs):
+        self.subscribed.append(subs)

@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import signal
 import threading
 from typing import Any
@@ -114,17 +115,53 @@ class MqttIngest:
             (f"{prefix}/+/bivocom", qos),
         ]
 
+    # -- liveness ------------------------------------------------------------
+    # The container healthcheck must answer "is this subscriber actually eating
+    # uplinks?", not "is the process alive?" — a socket stuck in SYN_SENT (host
+    # firewall dropping the broker route) left `docker ps` reporting healthy for
+    # a subscriber that had NEVER connected. So: the file below exists and stays
+    # freshly mtime-stamped only while paho reports a live connection; the
+    # healthcheck tests its freshness. No HTTP server, no extra port.
+    def _health_touch(self) -> None:
+        try:
+            with open(self.settings.mqtt_health_file, "w") as fh:
+                fh.write("connected\n")
+        except OSError:
+            log.exception("mqtt.health_touch_failed")
+
+    def _health_clear(self) -> None:
+        try:
+            os.unlink(self.settings.mqtt_health_file)
+        except FileNotFoundError:
+            pass
+        except OSError:
+            log.exception("mqtt.health_clear_failed")
+
+    def _health_heartbeat(self) -> None:
+        """Re-stamp (or drop) the liveness file every ``mqtt_health_interval``
+        seconds, so a WEDGED-but-connected client also goes stale/unhealthy
+        instead of coasting on a one-off touch from ``_on_connect``."""
+        interval = max(1, self.settings.mqtt_health_interval)
+        while not self._stop.wait(interval):
+            if self.client.is_connected():
+                self._health_touch()
+            else:
+                self._health_clear()
+
     # -- connection callbacks ------------------------------------------------
     def _on_connect(self, client, userdata, flags, reason_code, properties=None):
         if reason_code != 0:
             log.error("mqtt.connect_failed", extra={"reason_code": str(reason_code)})
+            self._health_clear()
             return
         subs = self._subscriptions()
         client.subscribe(subs)  # re-subscribe on every (re)connect
+        self._health_touch()
         log.info("mqtt.connected", extra={"topics": [t for t, _ in subs]})
 
     def _on_disconnect(self, client, userdata, flags, reason_code, properties=None):
         # loop_forever auto-reconnects; just record why we dropped.
+        self._health_clear()
         log.warning("mqtt.disconnected", extra={"reason_code": str(reason_code)})
 
     def _on_unrouted(self, client, userdata, msg):
@@ -266,13 +303,21 @@ class MqttIngest:
     # -- run loop ------------------------------------------------------------
     def run(self) -> None:
         s = self.settings
+        # A restarted container inherits its own /tmp, but a bare process restart
+        # does not: drop any stale liveness file BEFORE claiming health.
+        self._health_clear()
         if not s.mqtt_enabled:
+            # Deliberately leaves the container UNHEALTHY: no broker host means no
+            # ingest, and health must never be greener than reality.
             log.warning("mqtt.disabled — MQTT_HOST is empty; subscriber idling.")
             self._stop.wait()
             return
 
         self._configure()
         self._install_signal_handlers()
+        threading.Thread(
+            target=self._health_heartbeat, name="mqtt-health", daemon=True
+        ).start()
         log.info(
             "mqtt.starting",
             extra={"host": s.mqtt_host, "port": s.mqtt_port, "tls": s.mqtt_tls},
@@ -286,6 +331,7 @@ class MqttIngest:
         def _shutdown(signum, frame):
             log.info("mqtt.shutdown", extra={"signal": signum})
             self._stop.set()
+            self._health_clear()
             self.client.disconnect()  # breaks loop_forever cleanly
 
         signal.signal(signal.SIGTERM, _shutdown)

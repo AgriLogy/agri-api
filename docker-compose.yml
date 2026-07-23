@@ -253,6 +253,14 @@ services:
   # MQTT_HOST (+ MQTT_USERNAME/MQTT_PASSWORD/MQTT_TLS) in back/.env → ChirpStack's
   # broker. Tolerates the broker being down at boot (connect_async + retry).
   #
+  # ⚠️ On the droplet, reach ChirpStack's broker CONTAINER-TO-CONTAINER (this
+  # service joins ChirpStack's own compose network below and addresses the broker
+  # by container name). The old route — MQTT_HOST=172.18.0.1, the docker bridge
+  # gateway — leaves the host, so it is filtered by the host INPUT chain: when UFW
+  # was enabled (default INPUT DROP) the connection silently stayed in SYN_SENT
+  # and LoRa ingest stopped dead. Container-to-container traffic never touches
+  # INPUT, so it cannot be firewalled off again.
+  #
   # ⚠️ Do NOT scale to >1 replica: every subscriber receives every message, so N
   # replicas = N× writes and N× alert emails.
   agri-api-mqtt:
@@ -273,7 +281,21 @@ services:
       # Dev default targets the mosquitto container; back/.env overrides on prod.
       MQTT_HOST: ${MQTT_HOST:-mosquitto}
       MQTT_PORT: ${MQTT_PORT:-1883}
+      MQTT_HEALTH_FILE: ${MQTT_HEALTH_FILE:-/tmp/mqtt-healthy}
     command: ["bash", "/code/docker-entrypoint.sh", "mqtt"]
+    # Health = "the subscriber is CONNECTED to the broker", not "the process is
+    # up". fastapp.mqtt keeps MQTT_HEALTH_FILE mtime-fresh only while paho reports
+    # a live connection (heartbeat every MQTT_HEALTH_INTERVAL, default 15s), and
+    # deletes it on disconnect — so a never-connected subscriber reads unhealthy
+    # instead of the `Up (healthy)` lie that hid the firewalled broker route.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,sys,time; p=os.environ.get('MQTT_HEALTH_FILE','/tmp/mqtt-healthy'); sys.exit(0 if os.path.exists(p) and time.time()-os.path.getmtime(p) < 60 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      # Postgres/Redis waits + the first CONNACK; generous so a slow broker boot
+      # doesn't flap the container.
+      start_period: 90s
     volumes:
       - ./back:/code:delegated
       - ./shared_data:/shared:rw
@@ -287,7 +309,9 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
-    networks: [agro]
+    # Two networks: `agro` for Postgres/Redis, `chirpstack` so the broker is
+    # reachable by CONTAINER NAME without leaving docker (see the note above).
+    networks: [agro, chirpstack]
 
 networks:
   # Postgres (agrydata), redis, and mailpit live in the legacy "agrilogy-back"
@@ -298,6 +322,19 @@ networks:
   agro:
     external: true
     name: agrilogy-back_agro
+
+  # ChirpStack's OWN compose network, joined by agri-api-mqtt only. External
+  # because ChirpStack is a separate stack we neither own nor start from here.
+  # The name is the ChirpStack compose project's default network — it could not
+  # be confirmed from this repo (ChirpStack lives outside it), so it is an env
+  # var: verify on the host with `docker network ls | grep -i chirpstack` and, if
+  # it differs, set CHIRPSTACK_NETWORK in /root/agri-api/.env. In dev, where no
+  # such network exists, `make up` would fail on it — create a throwaway one
+  # (`docker network create chirpstack_default`) or point MQTT_HOST at the local
+  # `mosquitto` service and leave this network empty of members.
+  chirpstack:
+    external: true
+    name: ${CHIRPSTACK_NETWORK:-chirpstack_default}
 
 # Build-time secret: read-only PAT for the PRIVATE agri-db, which agri-core
 # transitively pulls. Sourced from the AGRI_DB_RO_TOKEN env var on the build
