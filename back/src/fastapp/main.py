@@ -50,6 +50,7 @@ from fastapp.routers import (
     manager_affirmations,
     notification_zones,
     notifications,
+    reports,
     sectors,
     selfreads,
     sensor_calibration,
@@ -132,6 +133,7 @@ app.include_router(
 app.include_router(selfreads.router)  # F5: /users/me + /zones self-reads
 app.include_router(sectors.router)  # /sectors — user-owned zone grouping
 app.include_router(sensor_groups.router)  # /sensor-groups — sensor grouping
+app.include_router(reports.router)  # /reports/* — alert + irrigation history
 app.include_router(
     sensor_calibration.router
 )  # /sensor-calibrations/{device_id}/{sensor_key}

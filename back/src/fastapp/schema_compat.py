@@ -6,8 +6,9 @@ Two probes live here, both built the same way: a single dialect-neutral
 * :func:`device_coordinates_available` — the ``analytics_device`` coordinate
   COLUMNS (#436, migration ``b2c3d4e5f6a7``);
 * :func:`table_available` (+ the ``sensor_groups_available`` /
-  ``sensor_calibration_available`` wrappers) — whole TABLES that a held
-  migration would create (#439, migration ``f4b6d2e8c1a9``).
+  ``sensor_calibration_available`` / ``alert_events_available`` /
+  ``irrigation_decisions_available`` wrappers) — whole TABLES that a held
+  migration would create (#439 ``f4b6d2e8c1a9``, #441 ``e7a1c3d5b209``).
 
 --- #436: ``analytics_device.latitude`` / ``longitude`` ---------------------
 
@@ -193,17 +194,59 @@ def reset_table_cache() -> None:
     _table_cache.clear()
 
 
+# ---------------------------------------------------------------------------
+# #441 / RPT-1 — the alert-event + irrigation-decision history tables
+# ---------------------------------------------------------------------------
+# ``analytics_alertevent`` / ``analytics_irrigationdecision`` are created by the
+# agri-db migration ``e7a1c3d5b209``, which production has NOT applied. They are
+# pure observability: the report endpoints answer EMPTY without them, and the
+# recorders in ``fastapp.history`` skip the INSERT entirely — an alert must
+# still fire and a recommendation must still be returned on a schema that
+# cannot store their history.
+#
+# Same mechanism as the sensor-group probe above (``table_available``),
+# deliberately NOT a third one.
+ALERT_EVENT_TABLE = "analytics_alertevent"
+IRRIGATION_DECISION_TABLE = "analytics_irrigationdecision"
+
+#: The agri-db revision that creates both history tables.
+HISTORY_MIGRATION = "e7a1c3d5b209"
+
+HISTORY_UNAVAILABLE = (
+    "History is not recorded on this deployment: "
+    f"{ALERT_EVENT_TABLE} / {IRRIGATION_DECISION_TABLE} do not exist. Apply "
+    f"the agri-db migration that creates them ({HISTORY_MIGRATION}); alerts "
+    "and irrigation recommendations work either way."
+)
+
+
+def alert_events_available(session: Any) -> bool:
+    """``True`` when ``analytics_alertevent`` exists."""
+    return table_available(session, ALERT_EVENT_TABLE)
+
+
+def irrigation_decisions_available(session: Any) -> bool:
+    """``True`` when ``analytics_irrigationdecision`` exists."""
+    return table_available(session, IRRIGATION_DECISION_TABLE)
+
+
 __all__ = [
+    "ALERT_EVENT_TABLE",
     "DEVICE_COORDINATES_UNAVAILABLE",
     "DEVICE_COORDINATE_COLUMNS",
     "DEVICE_TABLE",
+    "HISTORY_MIGRATION",
+    "HISTORY_UNAVAILABLE",
+    "IRRIGATION_DECISION_TABLE",
     "SENSOR_CALIBRATION_TABLE",
     "SENSOR_CALIBRATION_UNAVAILABLE",
     "SENSOR_GROUPS_MIGRATION",
     "SENSOR_GROUPS_UNAVAILABLE",
     "SENSOR_GROUP_SENSOR_TABLE",
     "SENSOR_GROUP_TABLE",
+    "alert_events_available",
     "device_coordinates_available",
+    "irrigation_decisions_available",
     "reset_device_coordinates_cache",
     "reset_table_cache",
     "sensor_calibration_available",

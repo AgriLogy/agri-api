@@ -26,6 +26,7 @@ from agri.core.notifications import compose_notification_for_user
 from agri.db.users import CustomUserCustomuser
 from sqlalchemy import func, or_, select, update
 
+from fastapp.history import record_notification_decision
 from fastapp.settings import get_settings
 from fastapp.tasks_comms import _record_delivery, _send_email
 
@@ -279,6 +280,13 @@ def send_periodic_notifications() -> dict:
                 status=status,
                 error=error,
             )
+            # RPT-1 (#441): the recommendation this email carried is history.
+            # Best-effort and probe-gated — never a reason for the digest to
+            # fail (it has already been sent by this point anyway).
+            if status == "sent":
+                record_notification_decision(
+                    session, uid, source="periodic", now=moment
+                )
 
     logger.info(
         "Periodic notifications: sent=%d, skipped=%d, failed=%d", sent, skipped, failed
