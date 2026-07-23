@@ -1,6 +1,60 @@
 # CHANGELOG
 
 
+## v1.123.0 (2026-07-23)
+
+### Features
+
+- **readings**: Apply per-sensor calibration on the read path
+  ([#447](https://github.com/AgriLogy/agri-api/pull/447),
+  [`ee80810`](https://github.com/AgriLogy/agri-api/commit/ee808105360ef7cefa7986e78d77ce3d3ca825be))
+
+Closes #446. The final piece of CAL-1 (AgriLogy/agri-web#67): stored calibrations now actually
+  correct the values farmers see and the alerts that fire.
+
+## The single-point guarantee #67 requires corrected values to be consistent across dashboard,
+  alerts and reports. That is enforced structurally, not by discipline: **three surfaces, two
+  physical choke points, one helper.** - **Dashboard** → `sensors.py::hourly_readings` +
+  `raw_readings` (the only place raw readings become client-facing). - **Alerts** →
+  `ingest.py::dispatch_alerts_for_reading` (the single evaluator). - **Reports** → **folded into the
+  alert point**: the alert-events history records `observed_value` from *inside* the evaluator, so
+  `evaluate_alert`, the recorded value, and the read endpoint are the same corrected number. Reports
+  cannot diverge from alerts, and nothing is transformed twice.
+
+All three go through `fastapp/calibration.py`.
+
+## Helper - `load_calibrations(session, pairs)` — one batched query for all active calibrations in a
+  request (plain `IN device_ids × IN sensor_keys`, filtered to wanted pairs in Python — deliberately
+  not row-value IN, which breaks on the sqlite test mirror). No per-reading query. Absent table →
+  `{}` (schema shim). - `corrected_value(raw, cal, *, sensor_key, native_unit)` — delegates to
+  agri-core `calibrated_value` (affine + unit conversion only when the stored unit differs); math
+  never reimplemented. Absent/inactive/None → raw. A misconfigured cross-dimension unit degrades to
+  affine-only rather than 500-ing a chart or dropping an alert. - Read and alert paths key by the
+  SAME `sensor_key` via a new `SENSOR_KEY_FOR_SLUG` map. Hourly buckets correct via their
+  representative device — affine correction commutes with averaging (`corrected(avg) ==
+  avg(corrected)` for one device), so bucket correctness holds.
+
+Calibration is applied only when `if alerts:` in the ingest path — no matching alert means no firing
+  and no history row, so the probe is skipped and there is no observable effect (this also avoided a
+  probe-connection rollback of pending writes in the sqlite ingest test).
+
+## Tests Unit (no DB): active applies, inactive→raw, None cal→raw, None raw→None, unit conversion
+  (°F→°C), bad-unit affine fallback, batch-load ignores null device/blank key, empty when table
+  absent. Integration (real Postgres): read endpoint corrects raw + hourly; inactive→raw; none→raw;
+  batch-load returns the right calibration per device;
+  **`test_alert_and_read_agree_on_the_corrected_value`** — the consistency guarantee (threshold 6.2
+  between raw 6.0 and corrected 6.5; the alert fires only because corrected, and the recorded
+  `observed_value` == the read value == 6.5); alert uses raw when calibration inactive.
+
+**If only one surface applied it:** the chart would plot 6.5 while the alert fired on 6.0 and the
+  report recorded a third number — the consistency test fails the instant any surface stops going
+  through the shared helper.
+
+## Verification `ruff check` clean; `ruff format --check` 278 files. Full suite vs real Postgres:
+  **1132 passed, 14 skipped**, +14 new tests, zero new failures; parity suites intact. (The 2
+  pre-existing `test_admindb_backup.py` failures are the untracked WIP, unrelated.)
+
+
 ## v1.122.0 (2026-07-23)
 
 ### Features
