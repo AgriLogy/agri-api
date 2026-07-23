@@ -39,6 +39,7 @@ from agri.db.analytics import (
 from agri.db.devices import AnalyticsDevice
 from agri.db.users import CustomUserCustomuser
 from fastapp import celery
+from fastapp.history import record_alert_event
 
 log = logging.getLogger("fastapp.ingest")
 
@@ -430,6 +431,7 @@ def dispatch_alerts_for_reading(
     user_id: int,
     value: float | None,
     timestamp: datetime.datetime,
+    device_id: int | None = None,
 ) -> int:
     if value is None:
         return 0
@@ -518,6 +520,35 @@ def dispatch_alerts_for_reading(
         ).rowcount
         if not won:
             continue
+
+        # RPT-1 (#441): the firing is history from this instant on. Recorded
+        # with the rule SNAPSHOTTED (name/condition/threshold/unit) so the
+        # report still reads correctly after the rule is edited or deleted.
+        # Best-effort by construction — see fastapp.history.best_effort: a
+        # failure here must not stop the alert going out.
+        channels = [
+            name
+            for name, on in (
+                ("email", alert.notify_email),
+                ("whatsapp", alert.notify_whatsapp),
+                ("sms", alert.notify_sms),
+            )
+            if bool(on)
+        ]
+        record_alert_event(
+            session,
+            alert=alert,
+            user_id=user_id,
+            sensor_key=sensor_key,
+            observed_value=value_f,
+            reading_at=timestamp,
+            unit=(SENSOR_KEY_REGISTRY.get(sensor_key, {}).get("unit") or ""),
+            zone_id=zone_id,
+            device_id=device_id,
+            channels=channels,
+            triggered_at=now_ts,
+            context={"zone_id": zone_id, "grace_seconds": grace_seconds},
+        )
 
         if bool(alert.notify_email):
             email_alert_ids.append(alert.id)
@@ -737,6 +768,7 @@ def handle_chirpstack_uplink(
                 user_id=user_id,
                 value=value,
                 timestamp=now,
+                device_id=device_id,
             )
         except Exception:
             log.exception(

@@ -28,6 +28,7 @@ from agri.db.analytics import (
 )
 from agri.db.users import CustomUserCustomuser
 from fastapp.auth import AuthedUser
+from fastapp.history import record_advice_decision
 
 from .registry import SENSOR_SOURCES, latest_reading
 
@@ -383,6 +384,18 @@ _IRRIGATE_REASONS = {"stress", "soil_moisture_low", "complementary"}
 _HOLD_REASONS = {"no_stress", "rain_will_suffice"}
 
 
+#: Callers that may label a recorded decision (RPT-1 #441). An allowlist, not
+#: free text: ``params`` reaches here straight from the model's tool call.
+_DECISION_SOURCES = {"assistant", "proactive"}
+
+
+def _decision_source(params: dict) -> str:
+    """The ``source`` label for the recorded decision. Internal callers set
+    ``_source`` in ``params``; anything unknown records as ``assistant``."""
+    requested = (params or {}).get("_source")
+    return requested if requested in _DECISION_SOURCES else "assistant"
+
+
 def _irrigation_unknown(reason: str) -> dict:
     """A complete, null-filled payload for the no-data / no-zone case."""
     return {
@@ -465,6 +478,7 @@ def _get_irrigation_advice(user: AuthedUser, params: dict) -> dict:
     estimated_water_m3 = estimated_duration_min = None
     morning_volume_m3 = evening_volume_m3 = None
 
+    decision_reason = None
     if snap:
         decision_reason = snap.get("decision_reason")
         if decision_reason in _IRRIGATE_REASONS:
@@ -508,7 +522,7 @@ def _get_irrigation_advice(user: AuthedUser, params: dict) -> dict:
                 f"seuil critique {critical_threshold:.1f} %."
             )
 
-    return {
+    payload = {
         "recommendation": recommendation,
         "reason": reason,
         "soil_moisture_pct": soil_moisture_pct,
@@ -531,6 +545,19 @@ def _get_irrigation_advice(user: AuthedUser, params: dict) -> dict:
             else None
         ),
     }
+
+    # RPT-1 (#441): keep the recommendation. Its own short write transaction
+    # (this handler reads without commit) and best-effort throughout — the
+    # farmer's answer is already computed and must be returned regardless.
+    record_advice_decision(
+        user_id=user.id,
+        zone_id=z_id,
+        source=_decision_source(params),
+        advice=payload,
+        decision_reason=decision_reason,
+        decided_at=now,
+    )
+    return payload
 
 
 def _list_recent_notifications(user: AuthedUser, params: dict) -> dict:

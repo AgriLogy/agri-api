@@ -226,7 +226,9 @@ def scan_proactive_insights() -> dict:
             preferred_language=lang,
         )
         try:
-            advice = _get_irrigation_advice(authed, {})
+            # ``_source`` only labels the recorded decision (RPT-1 #441); the
+            # advice itself is computed exactly as for a chat tool call.
+            advice = _get_irrigation_advice(authed, {"_source": "proactive"})
         except Exception:
             skipped += 1
             logger.exception("proactive: advice failed for %s", recipient)

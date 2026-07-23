@@ -41,6 +41,7 @@ from agri.db.analytics import AnalyticsZone
 from agri.db.users import CustomUserCustomuser
 from fastapp import email
 from fastapp.auth import AuthedUser, get_current_user
+from fastapp.history import record_notification_decision
 from fastapp.json import DjangoStyleJSONResponse
 from fastapp.passwords import make_password, validate_password
 from fastapp.settings import get_settings
@@ -320,6 +321,11 @@ def send_me_notification(user: AuthedUser = Depends(get_current_user)):
             if row is not None:
                 row.last_notified = _utcnow()
             session.flush()
+            # RPT-1 (#441): keep the recommendation this email carried.
+            # Best-effort and probe-gated; the email is already out.
+            record_notification_decision(
+                session, user.id, source="manual", now=_utcnow()
+            )
     except Exception:
         log.exception("Failed to send notification email to %s", recipient)
         return DjangoStyleJSONResponse(
