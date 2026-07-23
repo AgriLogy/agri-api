@@ -49,13 +49,18 @@ def django() -> APIClient:
 
 
 @pytest.fixture
-def admin(django_user_model):
-    return django_user_model.objects.create_user(
+def admin(django_user_model, set_access_level):
+    user = django_user_model.objects.create_user(
         username="users-admin",
         email="users-admin@example.com",
         password="irrelevant-3921",
         is_staff=True,
     )
+    # The user-management console is now gated on the RBAC ``admin`` tier (#444),
+    # not ``is_staff``. Django still gates on ``is_staff`` — so keep this fixture
+    # both staff AND admin-tier to preserve the byte-for-byte parity contract.
+    set_access_level(user, "admin")
+    return user
 
 
 @pytest.fixture

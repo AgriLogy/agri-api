@@ -300,6 +300,8 @@ def device_api(request, _schemas, monkeypatch):
         is_staff=True,
         is_technician=False,
         preferred_language="fr",
+        # The /devices registry CRUD is gated on the RBAC ``admin`` tier (#444).
+        access_level="admin",
     )
     try:
         with TestClient(app) as client:

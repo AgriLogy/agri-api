@@ -42,6 +42,13 @@ from agri.db.users import CustomUserCustomuser
 from fastapp import email
 from fastapp.auth import AuthedUser, get_current_user
 from fastapp.history import record_notification_decision
+from fastapp.auth import (
+    LEVEL_ADMIN,
+    VALID_LEVELS,
+    AuthedUser,
+    get_current_user,
+    level_rank,
+)
 from fastapp.json import DjangoStyleJSONResponse
 from fastapp.passwords import make_password, validate_password
 from fastapp.settings import get_settings
@@ -64,10 +71,12 @@ def _utcnow() -> datetime.datetime:
 
 
 def _admin_guard(user: AuthedUser):
-    """Mirror the Django router's ``_require_admin``: a 403 body that reads
-    ``{"detail": "Admin access required"}`` (NOT get_current_staff_user's
-    generic message), so the cutover is byte-identical for non-staff too."""
-    if not user.is_staff:
+    """RBAC tier gate for the whole user-management console (#444): the caller
+    must hold the ``admin`` access level. Returns the same 403 body the Django
+    router's ``_require_admin`` uses (``{"detail": "Admin access required"}``)
+    so the strangler parity net stays byte-identical; only the *condition*
+    moved from ``is_staff`` to the ordered access-level scale."""
+    if level_rank(user.access_level) < level_rank(LEVEL_ADMIN):
         return DjangoStyleJSONResponse(
             {"detail": "Admin access required"}, status_code=403
         )
@@ -279,6 +288,10 @@ class AdminActivateIn(BaseModel):
 
 class AdminResetPasswordIn(BaseModel):
     password: str | None = None
+
+
+class AdminAccessLevelIn(BaseModel):
+    access_level: str
 
 
 # ---------------------------------------------------------------------------
@@ -564,6 +577,54 @@ def reset_password(
         session.flush()
         log.info("admin %s reset password for %s", user.username, row.username)
         return {"username": row.username, "password": new_password}
+
+
+# ---------------------------------------------------------------------------
+# /users/{username}/access-level  (admin sets a user's RBAC tier)
+# ---------------------------------------------------------------------------
+@router.post(
+    "/users/{username}/access-level",
+    summary="Admin: set a user's RBAC access level (admin/editor/monitor)",
+)
+def set_access_level(
+    username: str,
+    payload: AdminAccessLevelIn,
+    user: AuthedUser = Depends(get_current_user),
+):
+    """Set a target user's ``access_level``. Guarded to ``admin`` (only an admin
+    may change tiers). Two hard invariants:
+
+    * the value MUST be one of the three known tiers, and
+    * a user can never change their OWN level — that would let an admin lock
+      themselves out (demotion) or is a needless self-escalation surface. Tier
+      changes always go admin → someone-else.
+    """
+    guard = _admin_guard(user)
+    if guard is not None:
+        return guard
+    level = (payload.access_level or "").strip().lower()
+    if level not in VALID_LEVELS:
+        return DjangoStyleJSONResponse(
+            {"access_level": "Must be one of: admin, editor, monitor."},
+            status_code=400,
+        )
+    with session_scope(commit=True) as session:
+        row = _resolve_user(session, username)
+        if row is None:
+            return DjangoStyleJSONResponse(
+                {"detail": "User not found."}, status_code=404
+            )
+        if row.id == user.id:
+            return DjangoStyleJSONResponse(
+                {"detail": "You cannot change your own access level."},
+                status_code=400,
+            )
+        row.access_level = level
+        session.flush()
+        log.info(
+            "admin %s set access_level=%s for %s", user.username, level, row.username
+        )
+        return {"username": row.username, "access_level": level}
 
 
 # ---------------------------------------------------------------------------

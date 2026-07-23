@@ -30,7 +30,7 @@ from sqlalchemy import text
 
 from agri.core.database import session_scope
 from agri.db.users import CustomUserCustomuser
-from fastapp.auth import AuthedUser, get_current_user
+from fastapp.auth import AuthedUser, get_current_user, require_level
 from fastapp.json import DjangoStyleJSONResponse
 from fastapp.routers.selfreads import _ReadScope, _resolve_read_scope
 from fastapp.schema_compat import (
@@ -159,6 +159,7 @@ def upsert_calibration(
     sensor_key: str,
     payload: CalibrationIn,
     user: AuthedUser = Depends(get_current_user),
+    _: AuthedUser = Depends(require_level("editor")),
 ):
     bad_key = _reject_key(sensor_key.strip())
     if bad_key is not None:

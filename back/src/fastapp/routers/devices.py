@@ -20,7 +20,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 
 from agri.core.database import session_scope
-from fastapp.auth import AuthedUser, get_current_user
+from fastapp.auth import LEVEL_ADMIN, AuthedUser, get_current_user, level_rank
 from fastapp.json import DjangoStyleJSONResponse
 from fastapp.schema_compat import (
     DEVICE_COORDINATES_UNAVAILABLE,
@@ -59,8 +59,11 @@ class BulkAssignIn(BaseModel):
 
 
 def _require_admin(user: AuthedUser) -> None:
-    """Match ``apps.users.router_admin._require_admin`` (403 body verbatim)."""
-    if not user.is_staff:
+    """RBAC tier gate (#444): the device/router registry is an admin-only
+    surface (create / update / delete / bulk-assign are destructive admin
+    actions). 403 body kept verbatim (``Admin access required``); only the
+    condition moved from ``is_staff`` to the ordered access-level scale."""
+    if level_rank(user.access_level) < level_rank(LEVEL_ADMIN):
         raise HTTPException(status_code=403, detail="Admin access required")
 
 

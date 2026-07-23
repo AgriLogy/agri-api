@@ -648,6 +648,9 @@ def _engine_for(schema: str):
     )
 
 
+_HISTORY_TABLES = {"analytics_alertevent", "analytics_irrigationdecision"}
+
+
 def _build_schema(has_tables: bool):
     schema = _SCHEMA[has_tables]
     admin = create_engine(os.environ["AGRI_DB_URL"], poolclass=NullPool)
@@ -659,12 +662,13 @@ def _build_schema(has_tables: bool):
     engine = _engine_for(schema)
     meta = MetaData(schema=schema)
     for table in AgriBase.metadata.sorted_tables:
+        # agri-db 0.19.0 models analytics_alertevent / analytics_irrigationdecision,
+        # so create_all builds them from the ORM. The "absent" shape is production
+        # before the history migration — reproduced by leaving them out entirely.
+        if not has_tables and table.name in _HISTORY_TABLES:
+            continue
         table.to_metadata(meta, schema=schema)
     meta.create_all(engine)
-    if has_tables:
-        with engine.begin() as conn:
-            for ddl in _HISTORY_DDL:
-                conn.execute(text(ddl))
     return engine
 
 

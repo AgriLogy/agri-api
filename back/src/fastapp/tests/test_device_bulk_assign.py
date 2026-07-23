@@ -36,10 +36,13 @@ def fast() -> TestClient:
 
 
 @pytest.fixture
-def admin(django_user_model):
-    return django_user_model.objects.create_user(
+def admin(django_user_model, set_access_level):
+    user = django_user_model.objects.create_user(
         username="ba-admin", email="ba-admin@x.com", password="pw-1", is_staff=True
     )
+    # The device registry is gated on the RBAC ``admin`` tier (#444).
+    set_access_level(user, "admin")
+    return user
 
 
 @pytest.fixture

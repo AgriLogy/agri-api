@@ -19,6 +19,7 @@ Parity contract (see ``agriapi/api/auth.py`` + SIMPLE_JWT in
 from __future__ import annotations
 
 import datetime
+from collections.abc import Callable
 
 import jwt
 from fastapi import Depends, HTTPException
@@ -28,6 +29,38 @@ from pydantic import BaseModel
 from agri.core.database.session import session_scope
 from agri.db.users import CustomUserCustomuser
 from fastapp.settings import get_settings
+
+# ---------------------------------------------------------------------------
+# RBAC access-level tiers (#444)
+# ---------------------------------------------------------------------------
+# One ordered scale: monitor (read-only) < editor (create/edit) < admin (user
+# management + delete). The column is ``CustomUser_customuser.access_level``
+# VARCHAR(16) NOT NULL DEFAULT 'editor'. ``level_rank`` resolves any unknown /
+# missing value to the safest floor (monitor) so a typo or a NULL never
+# accidentally *grants* a tier — it only ever denies.
+LEVEL_MONITOR = "monitor"
+LEVEL_EDITOR = "editor"
+LEVEL_ADMIN = "admin"
+
+# Ordered ranks; the ONLY three valid stored values.
+_LEVEL_RANK: dict[str, int] = {
+    LEVEL_MONITOR: 0,
+    LEVEL_EDITOR: 1,
+    LEVEL_ADMIN: 2,
+}
+# The three settable values, exposed for validation by the set-level endpoint.
+VALID_LEVELS = frozenset(_LEVEL_RANK)
+
+
+def level_rank(value: str | None) -> int:
+    """Position of ``value`` on the ordered access-level scale.
+
+    Unknown / missing values floor to ``monitor`` (rank 0) — the safest tier —
+    so a bad string can never satisfy a ``require_level`` check.
+    """
+    if not value:
+        return _LEVEL_RANK[LEVEL_MONITOR]
+    return _LEVEL_RANK.get(value.strip().lower(), _LEVEL_RANK[LEVEL_MONITOR])
 
 
 class AuthedUser(BaseModel):
@@ -40,6 +73,10 @@ class AuthedUser(BaseModel):
     is_staff: bool
     is_technician: bool = False
     preferred_language: str
+    # RBAC tier (#444). Defaults to the safest floor so a caller synthesized
+    # without an explicit level (e.g. a test override) is never over-privileged;
+    # get_current_user fills it from the DB for real requests.
+    access_level: str = LEVEL_MONITOR
 
 
 def _unauthorized(detail: str) -> HTTPException:
@@ -120,6 +157,9 @@ def get_current_user(
             is_staff=user.is_staff,
             is_technician=user.is_technician,
             preferred_language=user.preferred_language,
+            # NOT NULL DEFAULT 'editor' in the DB, but fall back to the safest
+            # floor if the column is ever null (belt-and-braces).
+            access_level=getattr(user, "access_level", None) or LEVEL_MONITOR,
         )
 
 
@@ -132,3 +172,34 @@ def get_current_staff_user(
             status_code=403, detail="You do not have permission to perform this action."
         )
     return user
+
+
+def require_level(minimum: str) -> Callable[..., AuthedUser]:
+    """Build a FastAPI dependency enforcing the RBAC access-level tier (#444).
+
+    The returned dependency resolves the current user and compares their
+    ``access_level`` against ``minimum`` on the ordered scale
+    (monitor < editor < admin); anything below ``minimum`` gets a 403. It is
+    layered ON TOP of ownership scoping — a tier never grants cross-account
+    access, it only decides whether the caller may mutate/delete at all.
+
+    Usage::
+
+        @router.post("/things")
+        def create(_: AuthedUser = Depends(require_level("editor")), ...):
+            ...
+    """
+    threshold = level_rank(minimum)
+
+    def _dependency(user: AuthedUser = Depends(get_current_user)) -> AuthedUser:
+        if level_rank(user.access_level) < threshold:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "You do not have permission to perform this action "
+                    f"({minimum} access required)."
+                ),
+            )
+        return user
+
+    return _dependency

@@ -122,7 +122,10 @@ def test_users_me_get_is_identical(fast, django, owner):
         "phone_number",
         "first_name",
         "last_name",
+        "access_level",
     }
+    # RBAC tier (#444): exposed for the frontend, byte-identical across surfaces.
+    assert body["access_level"] == "editor"
     assert body["username"] == "sr-owner"
     assert body["preferred_language"] == "fr"
     assert body["notify_every"] == 240
