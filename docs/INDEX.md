@@ -14,6 +14,8 @@
 - `docs/flows/data-ingestion.md` — how sensor readings flow from device to DB (HTTP path)
 - `docs/flows/mqtt-ingest.md` — the MQTT transport end-to-end (subscriber + agri-bridge publisher, topics, config, deploy, testing)
 - `docs/flows/alerts.md` — alert rule evaluation + delivery
+- `deploy/staging/README.md` — staging/preprod stack runbook (compose, env,
+  nginx, migrations, isolation from prod). Definition only — not applied.
 - `readme.md` — user-facing repo description
 - `CHANGELOG.md` — release history
 

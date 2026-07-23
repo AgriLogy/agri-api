@@ -1,0 +1,301 @@
+## =============================================================================
+## Agrilogy STAGING stack — staging.agrogo-datafarm.com
+## =============================================================================
+##
+## A second, fully self-contained copy of the app stack running on the SAME
+## droplet as production, with its OWN Postgres, its OWN Redis broker and its
+## OWN host ports. NOTHING here is shared with prod.
+##
+## SEPARATE from the prod compose (../../docker-compose.yml) on purpose — same
+## reasoning as deploy/observability/: the prod deploy pipeline recreates only
+## the `agri-api-*` services with `--no-deps`, so a staging file living here can
+## never be picked up by (or interfere with) a production deploy.
+##
+## Bring-up (see README.md — NOTHING IN THIS FILE HAS BEEN APPLIED ANYWHERE):
+##
+##   cd /root/agri-api-staging/deploy/staging
+##   cp env.example .env.staging      # fill in placeholders
+##   docker compose -f docker-compose.staging.yml up -d --build
+##
+## HARD RULES this file encodes
+## ----------------------------
+##   1. Distinct compose project (`name:` below) → distinct default labels, so
+##      `docker compose down` in the prod dir can never touch these containers.
+##   2. Distinct image TAG (agri-api:staging). Building with the prod tag would
+##      silently overwrite `agri-api:latest` — the image every prod container
+##      would use on its next recreate. This is the single most dangerous
+##      collision and it is why the tag is pinned explicitly on every service.
+##   3. Distinct network (`agro-staging`, NOT the external `agrilogy-back_agro`)
+##      → staging containers cannot even resolve `agrydata` / `redis` (prod).
+##   4. Own Redis. Sharing prod's broker would put staging's Celery worker on
+##      the same `agriapi` queue as prod's → staging would consume and execute
+##      PRODUCTION tasks (real emails, real WhatsApp). Non-negotiable.
+##   5. Every host port bound to 127.0.0.1 ONLY. The droplet has no firewall;
+##      public reach is exclusively via nginx TLS (../nginx/staging.conf).
+##   6. MQTT subscriber is behind a compose profile and does NOT start by
+##      default — see the long note on that service.
+## =============================================================================
+
+name: agri-api-staging
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+# Everything the app roles share. Mirrors the prod services field-for-field;
+# only the image tag, the broker host and the env file differ.
+x-app-common: &app-common
+  image: agri-api:staging
+  logging: *default-logging
+  build:
+    context: ../../back
+    dockerfile: Dockerfile
+    secrets:
+      - agri_db_token
+  env_file: ./.env.staging
+  volumes:
+    - ../../back:/code:delegated
+    - staging-shared-data:/shared
+  restart: unless-stopped
+  networks: [agro-staging]
+
+x-app-env: &app-env
+  # Broker/result backend point at the STAGING redis container (service name
+  # `redis-staging`), never prod's `redis`.
+  CELERY_BROKER_URL: redis://redis-staging:6379/0
+  CELERY_RESULT_BACKEND: redis://redis-staging:6379/0
+  # ⚠️ DJANGO_ENV only accepts dev | prod | test (agriapi/settings/__init__.py
+  # raises RuntimeError on anything else) — there is no "staging" variant. So
+  # staging runs the PROD settings module (DEBUG=False, gunicorn, secure
+  # cookies) with staging *values*. That is the point: staging must exercise
+  # the same code path as prod. The env file is what makes it staging.
+  DJANGO_ENV: prod
+
+services:
+  # ---------- Postgres — the staging database -------------------------
+  # Prod's Postgres is the `agrydata` container owned by the legacy
+  # `agrilogy-back` compose project; this is a completely separate server with
+  # its own volume. Schema is applied by agri-db/Alembic (see README) — never
+  # by `manage.py migrate`.
+  agrydata-staging:
+    container_name: agrydata-staging
+    image: postgres:17-alpine
+    logging: *default-logging
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-agrilogy_staging}
+      POSTGRES_USER: ${POSTGRES_USER:-agrilogy_staging}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env.staging}
+    ports:
+      # 127.0.0.1 only — psql from the droplet shell, never from the internet.
+      - "127.0.0.1:9432:5432"
+    volumes:
+      - staging-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-agrilogy_staging} -d ${POSTGRES_DB:-agrilogy_staging}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+    networks: [agro-staging]
+
+  # ---------- Redis — staging broker ----------------------------------
+  redis-staging:
+    container_name: redis-staging
+    image: redis:7-alpine
+    logging: *default-logging
+    ports:
+      - "127.0.0.1:9379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+    networks: [agro-staging]
+
+  # ---------- Mailpit — staging SMTP sink -----------------------------
+  # Deliberately included: staging DB rows may be copied from prod, which means
+  # staging's alert/notification tasks would email REAL customers. Pointing
+  # EMAIL_HOST at this container (see env.example) makes that impossible — every
+  # message is captured and readable at http://127.0.0.1:9025 (SSH tunnel).
+  mailpit-staging:
+    container_name: mailpit-staging
+    image: axllent/mailpit:latest
+    logging: *default-logging
+    ports:
+      - "127.0.0.1:9026:1025"
+      - "127.0.0.1:9025:8025"
+    restart: unless-stopped
+    networks: [agro-staging]
+
+  # ---------- Django (web) — :9000 ------------------------------------
+  agri-api-web-staging:
+    <<: *app-common
+    container_name: agri-api-web-staging
+    environment:
+      <<: *app-env
+      DJANGO_RUN_MODE: web
+    command: ["bash", "/code/docker-entrypoint.sh", "web"]
+    ports:
+      - "127.0.0.1:9000:8000"
+    depends_on:
+      agrydata-staging:
+        condition: service_healthy
+      redis-staging:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/admin/login/').status<500 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      # Same 180s grace as prod: the web role runs the chain of ensure_*_tables
+      # scripts before it serves. A short start_period is what previously left
+      # worker/beat stranded in `created` when `up --wait` timed out.
+      start_period: 180s
+
+  # ---------- FastAPI sidecar (fast) — :9001 --------------------------
+  # The strangler target. ../nginx/staging.conf routes the SAME prefixes here
+  # that back.conf routes to :8001 in prod.
+  agri-api-fast-staging:
+    <<: *app-common
+    container_name: agri-api-fast-staging
+    environment:
+      <<: *app-env
+      DJANGO_RUN_MODE: fast
+    command: ["bash", "/code/docker-entrypoint.sh", "fast"]
+    ports:
+      - "127.0.0.1:9001:8001"
+    depends_on:
+      agrydata-staging:
+        condition: service_healthy
+      redis-staging:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8001/healthz').status<500 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  # ---------- Celery worker -------------------------------------------
+  # `fast-worker` role = the native (Django-free) worker, matching the live prod
+  # cutover. It consumes the `agriapi` queue — on the STAGING redis only.
+  agri-api-worker-staging:
+    <<: *app-common
+    container_name: agri-api-worker-staging
+    environment:
+      <<: *app-env
+      DJANGO_RUN_MODE: fast-worker
+    command: ["bash", "/code/docker-entrypoint.sh", "fast-worker"]
+    depends_on:
+      # service_started, NOT service_healthy — same reasoning as prod: the
+      # worker waits for Postgres + Redis itself (docker-entrypoint.sh), so
+      # gating on web's slow health would strand it in `created`.
+      agri-api-web-staging:
+        condition: service_started
+      agrydata-staging:
+        condition: service_healthy
+      redis-staging:
+        condition: service_healthy
+
+  # ---------- Celery beat ---------------------------------------------
+  agri-api-beat-staging:
+    <<: *app-common
+    container_name: agri-api-beat-staging
+    environment:
+      <<: *app-env
+      DJANGO_RUN_MODE: fast-beat
+    command: ["bash", "/code/docker-entrypoint.sh", "fast-beat"]
+    depends_on:
+      agri-api-web-staging:
+        condition: service_started
+      agrydata-staging:
+        condition: service_healthy
+      redis-staging:
+        condition: service_healthy
+
+  # ---------- MQTT ingest subscriber — OFF BY DEFAULT -----------------
+  #
+  # ⚠️⚠️ READ BEFORE ENABLING. This service is behind the `mqtt` profile, so
+  # `docker compose -f docker-compose.staging.yml up -d` does NOT start it.
+  # Enable only deliberately: `--profile mqtt up -d agri-api-mqtt-staging`.
+  #
+  # Why it is gated (three distinct hazards, in severity order):
+  #
+  #  1. CLIENT-ID COLLISION — THIS ONE ACTUALLY BREAKS PROD.
+  #     MQTT brokers enforce ONE connection per client id: when a second client
+  #     connects with an id already in use, the broker DISCONNECTS the first.
+  #     fastapp defaults MQTT_CLIENT_ID to "agri-api-ingest" (fastapp/settings.py).
+  #     A staging subscriber left on that default would repeatedly kick the prod
+  #     subscriber offline — the two would flap, and prod uplinks would be lost.
+  #     env.example therefore pins MQTT_CLIENT_ID=agri-api-ingest-staging.
+  #
+  #  2. It does NOT "steal" prod messages. MQTT (without shared subscriptions,
+  #     which fastapp.mqtt does not use) FANS OUT: every subscriber receives
+  #     every matching message. So staging does not deprive prod of uplinks —
+  #     but it does DOUBLE-PROCESS them, writing prod's real device data into
+  #     the staging DB and evaluating alerts on it.
+  #
+  #  3. Consequence of (2): duplicate outbound notifications. Staging alert rows
+  #     (especially if the staging DB was seeded from a prod dump) would fire
+  #     real emails/WhatsApp to real customers. Mailpit (above) contains the
+  #     email blast-radius, but Twilio does NOT go through Mailpit — leave
+  #     TWILIO_* empty in .env.staging.
+  #
+  # Safe way to exercise MQTT ingest on staging: point MQTT_HOST at a dedicated
+  # staging broker (a mosquitto container in this project, or a separate
+  # ChirpStack application), NOT at the prod ChirpStack broker.
+  #
+  # Never scale beyond 1 replica — every subscriber gets every message.
+  agri-api-mqtt-staging:
+    <<: *app-common
+    container_name: agri-api-mqtt-staging
+    profiles: [mqtt]
+    environment:
+      <<: *app-env
+      DJANGO_RUN_MODE: mqtt
+      # No default host here (unlike prod, which falls back to `mosquitto`):
+      # an unset MQTT_HOST makes fastapp.mqtt log "mqtt.disabled" and idle,
+      # which is the correct fail-safe for staging.
+      MQTT_HOST: ${MQTT_HOST:-}
+      MQTT_PORT: ${MQTT_PORT:-1883}
+      MQTT_CLIENT_ID: ${MQTT_CLIENT_ID:-agri-api-ingest-staging}
+      MQTT_TOPIC_PREFIX: ${MQTT_TOPIC_PREFIX:-agrilogy-staging}
+    command: ["bash", "/code/docker-entrypoint.sh", "mqtt"]
+    depends_on:
+      agri-api-web-staging:
+        condition: service_started
+      agrydata-staging:
+        condition: service_healthy
+      redis-staging:
+        condition: service_healthy
+
+networks:
+  # NOT external, and explicitly named so the identifier is deterministic
+  # regardless of project/dir name. Prod attaches to the EXTERNAL
+  # `agrilogy-back_agro`; nothing here joins it, so staging containers cannot
+  # resolve `agrydata`, `redis` or `mailpit` (prod) by name at all.
+  agro-staging:
+    name: agro-staging
+
+volumes:
+  # Prod's Postgres data lives in the legacy agrilogy-back project's volume;
+  # this is a brand-new one. Deleting it destroys ONLY staging data.
+  staging-pgdata:
+    name: agri-api-staging_pgdata
+  # Prod bind-mounts ./shared_data from its checkout. A named volume here means
+  # staging can never write into the prod checkout's shared_data, even if
+  # someone runs this file from the wrong directory.
+  staging-shared-data:
+    name: agri-api-staging_shared_data
+
+# Build-time secret: read-only PAT for the PRIVATE agri-db (agri-core pulls it
+# transitively). Same mechanism as prod — export AGRI_DB_RO_TOKEN in the shell
+# before `up --build`.
+secrets:
+  agri_db_token:
+    environment: AGRI_DB_RO_TOKEN
