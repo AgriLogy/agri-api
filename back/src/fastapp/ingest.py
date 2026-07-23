@@ -39,6 +39,7 @@ from agri.db.analytics import (
 from agri.db.devices import AnalyticsDevice
 from agri.db.users import CustomUserCustomuser
 from fastapp import celery
+from fastapp.calibration import corrected_value, load_calibrations
 from fastapp.history import record_alert_event
 
 log = logging.getLogger("fastapp.ingest")
@@ -479,6 +480,30 @@ def dispatch_alerts_for_reading(
         .where(match)
         .order_by(AnalyticsAlert.id)
     ).all()
+    if not alerts:
+        return 0
+
+    # CAL-1 (#446): correct the reading ONCE, here, before it is compared to any
+    # threshold. This is the single alert-side choke point — evaluate_alert AND
+    # the recorded alert-event observed_value below both read this corrected
+    # value, so the alert, the report history and the dashboard (which corrects
+    # through the SAME fastapp.calibration helper) cannot disagree. Deferred to
+    # after the alert fetch: when nothing matches there is no firing and no
+    # history row, so calibration has no observable effect and its schema probe
+    # is not worth paying. device_id is NULL for non-device (weather) readings →
+    # no calibration → raw, exactly as the read path treats those device-less rows.
+    if device_id is not None:
+        calibration = load_calibrations(session, [(device_id, sensor_key)]).get(
+            (device_id, sensor_key)
+        )
+        value = corrected_value(
+            value,
+            calibration,
+            sensor_key=sensor_key,
+            native_unit=SENSOR_KEY_REGISTRY.get(sensor_key, {}).get("unit"),
+        )
+        if value is None:
+            return 0
 
     now_ts = _now()
     default_grace = grace_period_seconds_for(sensor_key)
