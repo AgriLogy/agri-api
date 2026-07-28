@@ -4,6 +4,12 @@
 ## Conventions:
 ##   - `back/.env` is the source of truth for secrets, including the
 ##     Supabase POSTGRES_* values (Session pooler endpoint).
+##   - Do NOT restate an `env_file` key under a service's `environment:`.
+##     Compose gives `environment:` precedence, so a `${VAR:-default}` there
+##     silently overrides back/.env. That is exactly how prod ended up
+##     serving from `manage.py runserver` with DJANGO_ENV=prod set in the
+##     env file. Docker-network wiring (CELERY_*) is fine to set here — it
+##     is topology, not configuration.
 ##   - Every service runs from the same image (built once) and is
 ##     specialised by its `command`.
 ##   - Healthchecks gate the dependency graph so `docker compose up`
@@ -108,7 +114,6 @@ services:
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
       DJANGO_RUN_MODE: web
-      DJANGO_ENV: ${DJANGO_ENV:-dev}
     command: ["bash", "/code/docker-entrypoint.sh", "web"]
     ports:
       - "8000:8000"
@@ -152,7 +157,6 @@ services:
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
       DJANGO_RUN_MODE: fast
-      DJANGO_ENV: ${DJANGO_ENV:-dev}
     command: ["bash", "/code/docker-entrypoint.sh", "fast"]
     ports:
       - "8001:8001"
@@ -187,7 +191,6 @@ services:
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
       DJANGO_RUN_MODE: fast-worker
-      DJANGO_ENV: ${DJANGO_ENV:-dev}
     # F10 cutover: the native (Django-free) Celery worker running the ported task
     # bodies (fastapp.celery_app), same agriapi.tasks.* names + agriapi queue.
     # Rollback = set this back to "worker" (Django app) and redeploy.
@@ -223,7 +226,6 @@ services:
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
       DJANGO_RUN_MODE: fast-beat
-      DJANGO_ENV: ${DJANGO_ENV:-dev}
     # F10 cutover: native Celery beat with the static schedule (cadences matched
     # to the live PeriodicTask rows). Rollback = set this back to "beat"
     # (DatabaseScheduler) and redeploy.
@@ -277,8 +279,9 @@ services:
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
       DJANGO_RUN_MODE: mqtt
-      DJANGO_ENV: ${DJANGO_ENV:-dev}
-      # Dev default targets the mosquitto container; back/.env overrides on prod.
+      # Dev default targets the mosquitto container. On prod these are set in
+      # the COMPOSE-level .env next to this file (not back/.env, which loses to
+      # `environment:` — see the conventions note at the top).
       MQTT_HOST: ${MQTT_HOST:-mosquitto}
       MQTT_PORT: ${MQTT_PORT:-1883}
       MQTT_HEALTH_FILE: ${MQTT_HEALTH_FILE:-/tmp/mqtt-healthy}
