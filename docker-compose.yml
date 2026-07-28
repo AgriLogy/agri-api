@@ -49,6 +49,10 @@ services:
     volumes:
       - ./shared_data:/shared_data:rw
     restart: unless-stopped
+    # Bounds the blast radius: before the append-only rewrite this process
+    # peaked at 1.1 GB RSS and the kernel OOM-killer took it out repeatedly,
+    # dragging the whole 2 GB droplet into swap. Steady state is now ~16 MB.
+    mem_limit: 256m
     networks: [agro]
 
   # ---------- Django (web) --------------------------------------------
