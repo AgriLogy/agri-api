@@ -124,7 +124,12 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/admin/login/').status<500 else 1)"]
+      # X-Forwarded-Proto: prod settings set SECURE_SSL_REDIRECT=True, and this
+      # probe bypasses nginx. Without the header Django does not consider the
+      # request secure, 301s to https://localhost:8000, urlopen follows, and the
+      # TLS handshake against a plaintext port raises -> permanently unhealthy.
+      # SECURE_PROXY_SSL_HEADER (base.py:133) is what makes this header count.
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen(urllib.request.Request('http://localhost:8000/admin/login/', headers={'X-Forwarded-Proto':'https'})).status<500 else 1)"]
       interval: 10s
       timeout: 5s
       retries: 12
