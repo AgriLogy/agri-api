@@ -111,7 +111,9 @@ services:
       DJANGO_ENV: ${DJANGO_ENV:-dev}
     command: ["bash", "/code/docker-entrypoint.sh", "web"]
     ports:
-      - "8000:8000"
+      # Loopback-only: nginx fronts this, and Docker's iptables rules sit ahead
+      # of the host firewall, so a 0.0.0.0 publish is not constrained by ufw.
+      - "127.0.0.1:8000:8000"
     volumes:
       - ./back:/code:delegated
       - ./shared_data:/shared:rw
@@ -155,7 +157,8 @@ services:
       DJANGO_ENV: ${DJANGO_ENV:-dev}
     command: ["bash", "/code/docker-entrypoint.sh", "fast"]
     ports:
-      - "8001:8001"
+      # Loopback-only — see the note on agri-api-web above.
+      - "127.0.0.1:8001:8001"
     volumes:
       - ./back:/code:delegated
       - ./shared_data:/shared:rw
