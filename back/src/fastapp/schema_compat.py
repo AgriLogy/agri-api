@@ -230,6 +230,64 @@ def irrigation_decisions_available(session: Any) -> bool:
     return table_available(session, IRRIGATION_DECISION_TABLE)
 
 
+# ---------------------------------------------------------------------------
+# Sector geometry — columns added to analytics_sector by b8c2f0d5e713
+# ---------------------------------------------------------------------------
+SECTOR_TABLE = "analytics_sector"
+SECTOR_GEOMETRY_COLUMNS = (
+    "geometry",
+    "area_ha",
+    "perimeter_m",
+    "color",
+    "geometry_updated_at",
+)
+
+#: Error message for a write carrying a shape the schema cannot store. Names
+#: the migration so the operator knows exactly what to apply.
+SECTOR_GEOMETRY_UNAVAILABLE = (
+    "Sector geometry is not available on this deployment: analytics_sector has "
+    "no geometry column. Apply the agri-db migration that adds it "
+    "(b8c2f0d5e713), then retry. Sector names and zone assignment keep working "
+    "in the meantime."
+)
+
+_sector_geometry_cache: WeakKeyDictionary[Any, bool] = WeakKeyDictionary()
+
+
+def _probe_sector_geometry(engine: Any) -> bool:
+    """Are ALL geometry columns present on ``analytics_sector``?
+
+    Same contract as :func:`_probe`: dialect-neutral and failure-tolerant, so a
+    pre-migration deployment degrades to "no geometry" instead of 500-ing the
+    sector list that farmers rely on for everything else.
+    """
+    try:
+        names = {c["name"] for c in sa_inspect(engine).get_columns(SECTOR_TABLE)}
+    except Exception:  # pragma: no cover - table absent / inspection refused
+        log.warning("could not inspect %s; assuming no geometry columns", SECTOR_TABLE)
+        return False
+    return all(column in names for column in SECTOR_GEOMETRY_COLUMNS)
+
+
+def sector_geometry_available(session: Any) -> bool:
+    """``True`` when ``analytics_sector`` carries the geometry columns.
+
+    Evaluated once per engine per process and cached — the sector list is on
+    the farm-map hot path.
+    """
+    engine = _engine_of(session)
+    cached = _sector_geometry_cache.get(engine)
+    if cached is None:
+        cached = _probe_sector_geometry(engine)
+        _sector_geometry_cache[engine] = cached
+    return cached
+
+
+def reset_sector_geometry_cache() -> None:
+    """Forget every probed engine. Tests only — production probes once."""
+    _sector_geometry_cache.clear()
+
+
 __all__ = [
     "ALERT_EVENT_TABLE",
     "DEVICE_COORDINATES_UNAVAILABLE",
@@ -244,11 +302,16 @@ __all__ = [
     "SENSOR_GROUPS_UNAVAILABLE",
     "SENSOR_GROUP_SENSOR_TABLE",
     "SENSOR_GROUP_TABLE",
+    "SECTOR_GEOMETRY_COLUMNS",
+    "SECTOR_GEOMETRY_UNAVAILABLE",
+    "SECTOR_TABLE",
     "alert_events_available",
     "device_coordinates_available",
     "irrigation_decisions_available",
     "reset_device_coordinates_cache",
+    "reset_sector_geometry_cache",
     "reset_table_cache",
+    "sector_geometry_available",
     "sensor_calibration_available",
     "sensor_groups_available",
     "table_available",

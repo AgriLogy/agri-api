@@ -1,9 +1,19 @@
 """fastapp /sectors — a user's organizational grouping of zones.
 
-User → Sector → Zone (one implicit farm per user). Sectors are named buckets
-with no geometry; a zone points at its sector via ``analytics_zone.sector_id``
-(nullable = unassigned). Backs the farm-visualization page + the header's
-sector picker.
+User → Sector → Zone (one implicit farm per user). A zone points at its sector
+via ``analytics_zone.sector_id`` (nullable = unassigned). Backs the
+farm-visualization page + the header's sector picker.
+
+A sector optionally carries the shape drawn for it on the farm map (GeoJSON in
+``analytics_sector.geometry``) plus its map ``color``. ``area_ha`` and
+``perimeter_m`` are DERIVED here from that shape via ``agri.core.geometry`` on
+every write and are never accepted from the client — the server owning the
+numbers is the whole point of the shape living here instead of in the browser's
+``localStorage``, where it used to be per-device and lost on a cache clear.
+
+Deployments whose schema predates migration ``b8c2f0d5e713`` have no geometry
+columns: reads omit the geometry keys and shape-carrying writes answer 503,
+while names and zone assignment keep working (see ``fastapp.schema_compat``).
 
 All endpoints are owner-scoped (JWT ``user.id``); technicians (read-only) are
 blocked from writes (403), matching the other user-owned routers. DB access is
@@ -12,11 +22,18 @@ SQLAlchemy via agri-core (AnalyticsSector / AnalyticsZone from agri-db 0.17.0).
 
 from __future__ import annotations
 
+import datetime as dt
 import logging
 from typing import Any
 
 from agri.core.alerts import SENSOR_KEY_REGISTRY, db_model_for
 from agri.core.database import session_scope
+from agri.core.geometry import (
+    GeometryError,
+    area_hectares,
+    perimeter_m,
+    validate_polygon,
+)
 from agri.db.analytics import AnalyticsDevicesensor, AnalyticsSector, AnalyticsZone
 from agri.db.users import CustomUserCustomuser
 from fastapi import APIRouter, Depends
@@ -26,6 +43,10 @@ from sqlalchemy.orm import Session
 
 from fastapp.auth import AuthedUser, get_current_user, require_level
 from fastapp.json import DjangoStyleJSONResponse
+from fastapp.schema_compat import (
+    SECTOR_GEOMETRY_UNAVAILABLE,
+    sector_geometry_available,
+)
 
 log = logging.getLogger(__name__)
 
@@ -41,6 +62,17 @@ _DEVICE_HEALTH_KEYS = {"battery", "signal"}
 # ---------------------------------------------------------------------------
 class SectorIn(BaseModel):
     name: str = Field(min_length=1, max_length=100)
+    # The drawn shape, GeoJSON Polygon / MultiPolygon. Three states, all
+    # meaningful and all distinguishable because the field is optional:
+    #   omitted  -> leave whatever is stored alone (a plain rename)
+    #   null     -> erase the shape (back to a name-only bucket)
+    #   geometry -> replace the shape and recompute area/perimeter
+    # ``area_ha`` / ``perimeter_m`` are deliberately NOT accepted: they are
+    # derived server-side so they can never disagree with the stored shape.
+    geometry: dict[str, Any] | None = None
+    color: str | None = Field(default=None, max_length=9)
+
+    model_config = {"extra": "forbid"}
 
 
 class SectorZonesIn(BaseModel):
@@ -80,7 +112,71 @@ def _zone_count(session: Session, sector_id: int) -> int:
 
 
 def _serialize(session: Session, s: AnalyticsSector) -> dict[str, Any]:
-    return {"id": s.id, "name": s.name, "zone_count": _zone_count(session, s.id)}
+    out: dict[str, Any] = {
+        "id": s.id,
+        "name": s.name,
+        "zone_count": _zone_count(session, s.id),
+    }
+    # Pre-migration deployments have no geometry columns. Omitting the keys
+    # entirely (rather than sending nulls) lets the front tell "this server
+    # cannot do shapes" apart from "this sector has not been drawn yet".
+    if sector_geometry_available(session):
+        out["geometry"] = s.geometry
+        out["area_ha"] = s.area_ha
+        out["perimeter_m"] = s.perimeter_m
+        out["color"] = s.color
+        out["geometry_updated_at"] = (
+            s.geometry_updated_at.isoformat() if s.geometry_updated_at else None
+        )
+    return out
+
+
+def _apply_geometry(
+    session: Session, sector: AnalyticsSector, payload: SectorIn
+) -> DjangoStyleJSONResponse | None:
+    """Write the shape-related fields onto ``sector``; return an error response.
+
+    Only touches what the caller actually sent (``model_fields_set``), so a
+    rename never silently erases a polygon.
+    """
+    sent = payload.model_fields_set
+    wants_geometry = "geometry" in sent
+    wants_color = "color" in sent
+    if not wants_geometry and not wants_color:
+        return None
+
+    if not sector_geometry_available(session):
+        # Only a *shape-carrying* write can fail here. A rename on an
+        # un-migrated deployment must keep working, so a bare `geometry: null`
+        # (erase what is already absent) is treated as a no-op rather than 503.
+        if payload.geometry is None and not wants_color:
+            return None
+        return DjangoStyleJSONResponse(
+            {"detail": SECTOR_GEOMETRY_UNAVAILABLE}, status_code=503
+        )
+
+    if wants_color:
+        sector.color = payload.color
+
+    if wants_geometry:
+        if payload.geometry is None:
+            sector.geometry = None
+            sector.area_ha = None
+            sector.perimeter_m = None
+        else:
+            try:
+                geom = validate_polygon(payload.geometry)
+            except GeometryError as exc:
+                return DjangoStyleJSONResponse({"detail": str(exc)}, status_code=400)
+            sector.geometry = geom
+            sector.area_ha = area_hectares(geom)
+            sector.perimeter_m = perimeter_m(geom)
+        # Stamped on every shape change, including an erase — "when did this
+        # sector last change shape" is the question the satellite-statistics
+        # recompute will ask, and an erase is a change.
+        sector.geometry_updated_at = dt.datetime.now(dt.timezone.utc)
+
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -228,12 +324,15 @@ def create_sector(
         if guard is not None:
             return guard
         sector = AnalyticsSector(name=payload.name.strip(), user_id=user.id)
+        error = _apply_geometry(session, sector, payload)
+        if error is not None:
+            return error
         session.add(sector)
         session.flush()
         return DjangoStyleJSONResponse(_serialize(session, sector), status_code=201)
 
 
-@router.patch("/sectors/{pk}", summary="Rename a sector")
+@router.patch("/sectors/{pk}", summary="Rename a sector / update its shape")
 def update_sector(
     pk: int,
     payload: SectorIn,
@@ -250,6 +349,9 @@ def update_sector(
                 {"detail": "Sector not found."}, status_code=404
             )
         sector.name = payload.name.strip()
+        error = _apply_geometry(session, sector, payload)
+        if error is not None:
+            return error
         session.flush()
         return _serialize(session, sector)
 
