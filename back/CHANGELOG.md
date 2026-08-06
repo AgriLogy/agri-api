@@ -1,6 +1,35 @@
 # CHANGELOG
 
 
+## v1.124.0 (2026-08-06)
+
+### Features
+
+- **sectors**: Accept sector geometry and derive its area and perimeter
+  ([#457](https://github.com/AgriLogy/agri-api/pull/457),
+  [`03076da`](https://github.com/AgriLogy/agri-api/commit/03076da8644c26789fd772c6942daf604e72a751))
+
+/sectors POST and PATCH now accept the shape drawn on the farm map (GeoJSON Polygon/MultiPolygon)
+  plus the sector's map colour; GET returns them. Server half of moving sector polygons out of
+  agri-web's localStorage, where they were per-device, per-browser and lost on a cache clear.
+
+area_ha and perimeter_m are derived here on every write via agri.core.geometry and are refused if a
+  client sends them, so the numbers cannot drift from the polygon they describe.
+
+geometry is a three-state field (omitted = leave the shape alone, null = erase it, a geometry =
+  replace and recompute). Without the first state every rename would silently erase the farmer's
+  polygon; that case has a test.
+
+Deployments predating agri-db b8c2f0d5e713 have no geometry columns: a cached schema_compat probe
+  makes reads omit the geometry keys and shape-carrying writes answer 503 naming the migration,
+  while names and zone assignment keep working.
+
+Pins agri-core at 41f1b91 (agri-core#74) because no tag carries the geometry module yet; swap back
+  to the tag once semantic-release runs.
+
+10 new DB-free unit tests.
+
+
 ## v1.123.2 (2026-07-28)
 
 ### Bug Fixes
