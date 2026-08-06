@@ -28,7 +28,7 @@ jobs:
     with:
       repo_dir: /root/agri-api
       branch: main
-      build_services: agri-api-web
+      build_services: agri-api-web agryserver
       migrate_service: agri-api-web
       migrate_command: bash /code/docker-entrypoint.sh migrate
       # agri-api-fast = the FastAPI strangler sidecar (:8001) — same image,
@@ -40,10 +40,17 @@ jobs:
       # agri-api-mqtt` by hand. Including it is also what makes the
       # container-name broker route (compose `chirpstack` network) take effect.
       #
+      # agryserver = the port 9090 ingest gateway. No 9090 service has ever
+      # appeared in this list, so the droplet's gateway container has never been
+      # recreated by a deploy — it kept serving an image built from source that
+      # #66 later deleted from main. Adding it here is what makes the gateway
+      # deployable again; the FIRST deploy carrying this change replaces that
+      # long-lived container.
+      #
       # ⚠️ PRECONDITION on the droplet: the external network named by
       # CHIRPSTACK_NETWORK (default chirpstack_default) MUST exist, otherwise
       # compose refuses the whole `up` and the deploy fails for every service.
       # Verify with `docker network ls | grep -i chirpstack` before the first
       # deploy carrying this change.
-      compose_services: agri-api-web agri-api-worker agri-api-beat agri-api-fast agri-api-mqtt
+      compose_services: agri-api-web agri-api-worker agri-api-beat agri-api-fast agri-api-mqtt agryserver
     secrets: inherit
