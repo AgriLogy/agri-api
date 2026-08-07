@@ -64,19 +64,14 @@ dependencies = [
     # typing-extensions>=4.14.1. Newer typing-extensions is back-compatible.
     "typing_extensions>=4.14.1",
     # Shared framework-agnostic library (handlers + business logic). Full
-    # Revly: pinned by git tag (not @main). agri-core transitively pulls the
-    # PRIVATE agri-db, so CI/Docker need AGRI_DB_RO_TOKEN as a git credential
-    # for `uv sync` to resolve it.
+    # Revly: pinned by git tag (not @main). agri-core transitively pulls
+    # agri-db; CI/Docker use AGRI_DB_RO_TOKEN as a git credential for `uv sync`
+    # to resolve it (a no-op while both repos are public).
     #
-    # ⚠️ TEMPORARILY A COMMIT SHA, NOT A TAG. 41f1b91 is agri-core#74, which
-    # adds agri.core.geometry — required by fastapp/routers/sectors.py, which
-    # imports it at module load, so a pin without it takes the whole app down.
-    # No tag carries it yet: semantic-release cuts the tag on merge to
-    # agri-core main, and no workflow has run in this org since the repos were
-    # made private. A SHA is immutable and reproducible, so this is correct
-    # rather than merely expedient — but SWAP IT BACK to the tag (0.27.0) once
-    # the release actually runs, to restore the tag-pinning convention.
-    "agri-core @ git+https://github.com/AgriLogy/agri-core.git@41f1b91",
+    # 0.27.0 is the release carrying agri.core.geometry (agri-core#74), which
+    # fastapp/routers/sectors.py imports at module load — a pin without it
+    # takes the whole app down, so this floor is load-bearing, not cosmetic.
+    "agri-core @ git+https://github.com/AgriLogy/agri-core.git@0.27.0",
     # FastAPI sidecar (back/src/fastapp) — the strangler target the Django
     # surface migrates into, served by uvicorn on :8001 (entrypoint `fast`
     # role). Same image/venv as Django so both stay in lockstep.
