@@ -36,7 +36,18 @@ def _require_admin(request) -> Response | None:
 
 
 def _zone_short(z: Zone) -> dict[str, Any]:
-    return {"id": z.id, "name": z.name}
+    return {
+        "id": z.id,
+        "name": z.name,
+        # Basin geometry for the water-level widget (getattr: prod DB may
+        # predate the restore migration on some environments).
+        "basin_max_depth_m": getattr(z, "basin_max_depth_m", None),
+        "basin_area_m2": getattr(z, "basin_area_m2", None),
+        "sensor_mount_offset_m": getattr(z, "sensor_mount_offset_m", None),
+        "basin_length_m": getattr(z, "basin_length_m", None),
+        "basin_width_m": getattr(z, "basin_width_m", None),
+        "basin_height_m": getattr(z, "basin_height_m", None),
+    }
 
 
 def _active_graph_dict(ag: ActiveGraph) -> dict[str, Any]:

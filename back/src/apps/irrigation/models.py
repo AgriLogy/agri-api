@@ -75,6 +75,36 @@ class Zone(_IrrigationBase):
         default=0,
         help_text="Elevation above sea level in metres (for clear-sky radiation Rso).",
     )
+    # Basin / reservoir geometry for the ultrasonic water-level sensor.
+    # Rectangular basin: L x W x H_tot (sensor plane to bottom). D_max =
+    # distance sensor -> max-water line (mount offset / dead band). The
+    # captor reports D(t) = sensor -> water surface; h(t) = H_tot - D(t).
+    # Legacy basin_max_depth_m / basin_area_m2 / sensor_mount_offset_m are
+    # kept for back-compat (columns already on prod DB via dropped 0062).
+    basin_max_depth_m = models.FloatField(
+        null=True, blank=True,
+        help_text="Basin maximum depth in metres.",
+    )
+    basin_area_m2 = models.FloatField(
+        null=True, blank=True,
+        help_text="Basin surface area in square metres.",
+    )
+    sensor_mount_offset_m = models.FloatField(
+        null=True, blank=True,
+        help_text="Distance from the level sensor to the full level, in metres.",
+    )
+    basin_length_m = models.FloatField(
+        null=True, blank=True,
+        help_text="Rectangular basin interior length in metres.",
+    )
+    basin_width_m = models.FloatField(
+        null=True, blank=True,
+        help_text="Rectangular basin interior width in metres.",
+    )
+    basin_height_m = models.FloatField(
+        null=True, blank=True,
+        help_text="Sensor plane to basin bottom in metres (H_tot).",
+    )
     # User → Sector → Zone grouping (organizational; nullable = unassigned).
     # db_constraint=False mirrors the schema-of-record FK (ON DELETE SET NULL) in
     # agri-db without a Django-managed DB constraint. Column self-deploys via

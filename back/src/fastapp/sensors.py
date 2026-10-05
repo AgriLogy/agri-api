@@ -233,8 +233,8 @@ SENSOR_SPEC: dict[str, SensorSpec] = {
     ),
     "waterlevel": SensorSpec(
         agri_db="AnalyticsWaterlevelsensor",
-        default_unit="cm",
-        available_units=["cm", "m"],
+        default_unit="m",
+        available_units=["m", "cm"],
         value_fields=["value"],
         char_fields=[],
         raw_order=["id", "zone", "user", "value", "timestamp"],

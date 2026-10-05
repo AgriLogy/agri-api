@@ -68,6 +68,12 @@ ZONE_FIELDS = [
     "pomp_flow_rate",
     "irrigation_water_quantity",
     "elevation_m",
+    "basin_max_depth_m",
+    "basin_area_m2",
+    "sensor_mount_offset_m",
+    "basin_length_m",
+    "basin_width_m",
+    "basin_height_m",
 ]
 
 ZONE_PARAMS_FIELDS = [
@@ -79,6 +85,12 @@ ZONE_PARAMS_FIELDS = [
     "critical_moisture_threshold",
     "pomp_flow_rate",
     "irrigation_water_quantity",
+    "basin_max_depth_m",
+    "basin_area_m2",
+    "sensor_mount_offset_m",
+    "basin_length_m",
+    "basin_width_m",
+    "basin_height_m",
 ]
 
 
@@ -99,6 +111,17 @@ def _validate_zone(payload: dict[str, Any]) -> dict | None:
     pfr = payload.get("pomp_flow_rate")
     if pfr is not None and pfr < 0:
         return {"pomp_flow_rate": "Flow rate must be non-negative."}
+    for f in (
+        "basin_max_depth_m",
+        "basin_area_m2",
+        "sensor_mount_offset_m",
+        "basin_length_m",
+        "basin_width_m",
+        "basin_height_m",
+    ):
+        v = payload.get(f)
+        if v is not None and v < 0:
+            return {f: "Basin geometry must be non-negative."}
     fc = payload.get("soil_param_FC")
     wp = payload.get("soil_param_WP")
     if fc is not None and wp is not None and fc < wp:
@@ -126,6 +149,12 @@ class ZoneWriteIn(Schema):
     pomp_flow_rate: float | None = None
     irrigation_water_quantity: float | None = None
     elevation_m: float | None = None
+    basin_max_depth_m: float | None = None
+    basin_area_m2: float | None = None
+    sensor_mount_offset_m: float | None = None
+    basin_length_m: float | None = None
+    basin_width_m: float | None = None
+    basin_height_m: float | None = None
 
 
 class AlertAdminPatchIn(Schema):

@@ -737,11 +737,11 @@ class WaterLevelSensor(_ReadingBase):
 
     @property
     def default_unit(self) -> str:
-        return "cm"
+        return "m"
 
     @property
     def available_units(self) -> List[str]:
-        return ["cm", "m"]
+        return ["m", "cm"]
 
 
 class SoilSalinitySensor(_ReadingBase):

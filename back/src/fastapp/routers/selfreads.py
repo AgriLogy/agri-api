@@ -305,6 +305,13 @@ def list_my_zones(user: AuthedUser = Depends(get_current_user)):
                 "name": z.name,
                 "sector_id": z.sector_id,
                 "sector_name": z.sector.name if z.sector else None,
+                # Basin geometry (nullable; only set for level-sensor zones).
+                "basin_max_depth_m": getattr(z, "basin_max_depth_m", None),
+                "basin_area_m2": getattr(z, "basin_area_m2", None),
+                "sensor_mount_offset_m": getattr(z, "sensor_mount_offset_m", None),
+                "basin_length_m": getattr(z, "basin_length_m", None),
+                "basin_width_m": getattr(z, "basin_width_m", None),
+                "basin_height_m": getattr(z, "basin_height_m", None),
             }
             for z in zones
         ]
