@@ -1,6 +1,36 @@
 # CHANGELOG
 
 
+## v1.125.0 (2026-10-05)
+
+### Build System
+
+- **deps**: Pin agri-core at 0.27.0, replacing the temporary SHA
+  ([#458](https://github.com/AgriLogy/agri-api/pull/458),
+  [`7ac7293`](https://github.com/AgriLogy/agri-api/commit/7ac7293738ddb02a7fd9331b54e205ed5121ffb8))
+
+Restores the tag-pinning convention. 41f1b91 was a commit SHA because no tag carried
+  agri.core.geometry at the time: semantic-release cuts agri-core's tag on merge to its main, and no
+  workflow ran in this org while the repos were private. That release has since run, so 0.27.0
+  exists and carries the module.
+
+The geometry module is byte-identical between 41f1b91 and 0.27.0 — the only commit between them is
+  semantic-release's version bump — so this changes the provenance of the dependency, not the code
+  that ships.
+
+Also drops the stale 'PRIVATE agri-db' note from the dependency comment.
+
+### Features
+
+- **basin**: Rectangular basin geometry + meters for water level
+  ([`55bdc65`](https://github.com/AgriLogy/agri-api/commit/55bdc658c9e55fbeac147404ef2dbf84250ed416))
+
+- Zone: restore basin_max_depth_m/basin_area_m2/sensor_mount_offset_m (lost 0062 source) + new
+  basin_length_m/width_m/height_m (LxWxH_tot) - water_level default_unit cm -> m (captor reports
+  meters; registry already says m) - GET /zones exposes all six basin fields (Django + fastapp) -
+  admin zone params CRUD + validation for the new fields
+
+
 ## v1.124.0 (2026-08-06)
 
 ### Features
