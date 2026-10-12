@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v1.127.0 (2026-10-12)
+
+### Features
+
+- **forage**: Borehole depth sensor, zone fields and thresholds
+  ([`a1cf719`](https://github.com/AgriLogy/agri-api/commit/a1cf719e15378ebd454e37ca9830668da189365a))
+
+
 ## v1.126.0 (2026-10-12)
 
 ### Features
