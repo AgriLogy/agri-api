@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v1.126.0 (2026-10-12)
+
+### Features
+
+- **sensors**: Django-orm hourly fallback when no Postgres DSN (local dev)
+  ([`7e943f4`](https://github.com/AgriLogy/agri-api/commit/7e943f4782b9c896bc2a237f018d55a30c9a8c85))
+
+
 ## v1.125.0 (2026-10-05)
 
 ### Build System
