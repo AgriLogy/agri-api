@@ -22,6 +22,61 @@ from typing import Any
 from django.db.models import CharField, FloatField
 from django.utils import timezone as djtz
 
+try:
+    from agri.core.database.config import (
+        DatabaseNotConfiguredError as _DB_NOT_CONFIGURED,
+    )
+except Exception:  # pragma: no cover - agri-core always ships config
+    _DB_NOT_CONFIGURED = RuntimeError
+
+
+def _orm_hourly_averages(
+    model_cls,
+    *,
+    user_id: int,
+    zone_id: int | None = None,
+    start: datetime | None = None,
+    end: datetime | None = None,
+    value_columns: tuple[str, ...] = ("value",),
+) -> list[dict[str, Any]]:
+    """Clock-hour averages via the Django ORM (local-dev fallback).
+
+    Returns the same bucket shape as ``AgriMainDBClient.hourly_averages``:
+    ``{"hour": <aware datetime>, "last_id": <int>, <col>: <avg>}``.
+    """
+    qs = model_cls.objects.filter(user_id=user_id)
+    if zone_id is not None:
+        qs = qs.filter(zone_id=zone_id)
+    if start is not None:
+        qs = qs.filter(timestamp__gte=start)
+    if end is not None:
+        qs = qs.filter(timestamp__lt=end)
+    qs = qs.order_by("timestamp")
+
+    groups: dict[datetime, dict[str, Any]] = {}
+    for row in qs:
+        ts = row.timestamp
+        if ts is None:
+            continue
+        hour = ts.replace(minute=0, second=0, microsecond=0)
+        g = groups.get(hour)
+        if g is None:
+            g = groups[hour] = {"sums": {}, "n": 0, "last_id": 0}
+        g["n"] += 1
+        g["last_id"] = max(g["last_id"], row.id or 0)
+        for c in value_columns:
+            v = getattr(row, c, None)
+            if isinstance(v, (int, float)):
+                g["sums"][c] = g["sums"].get(c, 0.0) + v
+    buckets = []
+    for hour in sorted(groups):
+        g = groups[hour]
+        b: dict[str, Any] = {"hour": hour, "last_id": g["last_id"]}
+        for c in value_columns:
+            b[c] = g["sums"][c] / g["n"] if c in g["sums"] else None
+        buckets.append(b)
+    return buckets
+
 
 def value_fields(model_cls) -> list[str]:
     """Float measurement columns to average per hour — ``["value"]`` for most
@@ -89,10 +144,23 @@ def hourly_readings(
         else None
     )
 
-    with session_scope() as session:
-        buckets = AgriMainDBClient.hourly_averages(
-            session,
-            _agri_db_model(model_cls),
+    try:
+        with session_scope() as session:
+            buckets = AgriMainDBClient.hourly_averages(
+                session,
+                _agri_db_model(model_cls),
+                user_id=user_id,
+                zone_id=zone_id,
+                start=start_dt,
+                end=end_dt,
+                value_columns=cols or ("value",),
+            )
+    except _DB_NOT_CONFIGURED:
+        # Local-dev fallback (SQLite, no Postgres DSN): same wire shape,
+        # averaged per clock hour with the Django ORM. Prod always has a
+        # DSN, so this path never runs there.
+        buckets = _orm_hourly_averages(
+            model_cls,
             user_id=user_id,
             zone_id=zone_id,
             start=start_dt,
