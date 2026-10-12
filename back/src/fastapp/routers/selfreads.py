@@ -312,6 +312,11 @@ def list_my_zones(user: AuthedUser = Depends(get_current_user)):
                 "basin_length_m": getattr(z, "basin_length_m", None),
                 "basin_width_m": getattr(z, "basin_width_m", None),
                 "basin_height_m": getattr(z, "basin_height_m", None),
+                # Borehole (forage) cylinder geometry + thresholds.
+                "forage_diameter_m": getattr(z, "forage_diameter_m", None),
+                "forage_total_depth_m": getattr(z, "forage_total_depth_m", None),
+                "forage_high_m": getattr(z, "forage_high_m", None),
+                "forage_low_m": getattr(z, "forage_low_m", None),
             }
             for z in zones
         ]

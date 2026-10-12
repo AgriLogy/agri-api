@@ -744,6 +744,30 @@ class WaterLevelSensor(_ReadingBase):
         return ["m", "cm"]
 
 
+class ForageSensor(_ReadingBase):
+    """Borehole (forage) depth-to-water in metres, read straight off the
+    captor (depth = distance, no volume computation)."""
+
+    zone = models.ForeignKey(
+        "analytics.Zone", on_delete=models.CASCADE, related_name="forage_sensors"
+    )
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="forage_sensors_per_user"
+    )
+    value = models.FloatField(
+        null=True, blank=True, help_text="Depth to the water surface in metres."
+    )
+    timestamp = models.DateTimeField()
+
+    @property
+    def default_unit(self) -> str:
+        return "m"
+
+    @property
+    def available_units(self) -> List[str]:
+        return ["m", "cm"]
+
+
 class SoilSalinitySensor(_ReadingBase):
     zone = models.ForeignKey(
         "analytics.Zone", on_delete=models.CASCADE, related_name="soil_salinity_sensors"

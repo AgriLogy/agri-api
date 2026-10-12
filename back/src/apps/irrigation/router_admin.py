@@ -74,6 +74,10 @@ ZONE_FIELDS = [
     "basin_length_m",
     "basin_width_m",
     "basin_height_m",
+    "forage_diameter_m",
+    "forage_total_depth_m",
+    "forage_high_m",
+    "forage_low_m",
 ]
 
 ZONE_PARAMS_FIELDS = [
@@ -91,6 +95,10 @@ ZONE_PARAMS_FIELDS = [
     "basin_length_m",
     "basin_width_m",
     "basin_height_m",
+    "forage_diameter_m",
+    "forage_total_depth_m",
+    "forage_high_m",
+    "forage_low_m",
 ]
 
 
@@ -118,10 +126,14 @@ def _validate_zone(payload: dict[str, Any]) -> dict | None:
         "basin_length_m",
         "basin_width_m",
         "basin_height_m",
+        "forage_diameter_m",
+        "forage_total_depth_m",
+        "forage_high_m",
+        "forage_low_m",
     ):
         v = payload.get(f)
         if v is not None and v < 0:
-            return {f: "Basin geometry must be non-negative."}
+            return {f: "Geometry must be non-negative."}
     fc = payload.get("soil_param_FC")
     wp = payload.get("soil_param_WP")
     if fc is not None and wp is not None and fc < wp:
@@ -155,6 +167,10 @@ class ZoneWriteIn(Schema):
     basin_length_m: float | None = None
     basin_width_m: float | None = None
     basin_height_m: float | None = None
+    forage_diameter_m: float | None = None
+    forage_total_depth_m: float | None = None
+    forage_high_m: float | None = None
+    forage_low_m: float | None = None
 
 
 class AlertAdminPatchIn(Schema):

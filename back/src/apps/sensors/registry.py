@@ -14,6 +14,7 @@ from .models import (
     ElectricityConsumptionSensor,
     Et0Calculated,
     Et0Weather,
+    ForageSensor,
     FruitSizeSensor,
     HumidityWeather,
     LargeFruitDiameterSensor,
@@ -87,4 +88,5 @@ SENSOR_MODELS = [
     WaterPressureSensor,
     BatterySensor,
     SignalSensor,
+    ForageSensor,
 ]

@@ -82,28 +82,57 @@ class Zone(_IrrigationBase):
     # Legacy basin_max_depth_m / basin_area_m2 / sensor_mount_offset_m are
     # kept for back-compat (columns already on prod DB via dropped 0062).
     basin_max_depth_m = models.FloatField(
-        null=True, blank=True,
+        null=True,
+        blank=True,
         help_text="Basin maximum depth in metres.",
     )
     basin_area_m2 = models.FloatField(
-        null=True, blank=True,
+        null=True,
+        blank=True,
         help_text="Basin surface area in square metres.",
     )
     sensor_mount_offset_m = models.FloatField(
-        null=True, blank=True,
+        null=True,
+        blank=True,
         help_text="Distance from the level sensor to the full level, in metres.",
     )
     basin_length_m = models.FloatField(
-        null=True, blank=True,
+        null=True,
+        blank=True,
         help_text="Rectangular basin interior length in metres.",
     )
     basin_width_m = models.FloatField(
-        null=True, blank=True,
+        null=True,
+        blank=True,
         help_text="Rectangular basin interior width in metres.",
     )
     basin_height_m = models.FloatField(
-        null=True, blank=True,
+        null=True,
+        blank=True,
         help_text="Sensor plane to basin bottom in metres (H_tot).",
+    )
+    # Borehole (forage) cylinder: diameter + total depth for the visual,
+    # high/low depth thresholds (metres) for the level status. The captor
+    # reports D(t) = depth-to-water directly (no volume computation).
+    forage_diameter_m = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Borehole interior diameter in metres.",
+    )
+    forage_total_depth_m = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Borehole total depth in metres (H for the visual).",
+    )
+    forage_high_m = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Depth at or above which the level counts as HIGH (metres).",
+    )
+    forage_low_m = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Depth at or below which the level counts as LOW (metres).",
     )
     # User → Sector → Zone grouping (organizational; nullable = unassigned).
     # db_constraint=False mirrors the schema-of-record FK (ON DELETE SET NULL) in
@@ -350,6 +379,11 @@ class ActiveGraph(_IrrigationBase):
     # the dashboard section stays hidden until a zone enables it. Schema in
     # agri-db (migration b8c9d0e1f2a3).
     water_level_status = models.BooleanField(default=True, help_text="Niveau d'eau")
+
+    # Borehole (forage) level section, same opt-in pattern as water_level.
+    forage_level_status = models.BooleanField(
+        default=True, help_text="Niveau du forage"
+    )
 
     # --- Plant Sensors ---
     leaf_sensor_status = models.BooleanField(
