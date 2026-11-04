@@ -150,13 +150,20 @@ def _serialize(session: Session, s: AnalyticsSector) -> dict[str, Any]:
     # entirely (rather than sending nulls) lets the front tell "this server
     # cannot do shapes" apart from "this sector has not been drawn yet".
     if sector_geometry_available(session):
-        out["geometry"] = s.geometry
-        out["area_ha"] = s.area_ha
-        out["perimeter_m"] = s.perimeter_m
-        out["color"] = s.color
-        out["geometry_updated_at"] = (
-            s.geometry_updated_at.isoformat() if s.geometry_updated_at else None
-        )
+        # Read through the Core mirror: the pinned agri-db ORM model may not
+        # map these columns (see fastapp.farm_map_tables.sector_meta).
+        shape = session.execute(
+            select(*[sector_meta.c[k] for k in _GEOMETRY_KEYS]).where(
+                sector_meta.c.id == s.id
+            )
+        ).first()
+        g = dict(shape._mapping) if shape is not None else {}
+        out["geometry"] = g.get("geometry")
+        out["area_ha"] = g.get("area_ha")
+        out["perimeter_m"] = g.get("perimeter_m")
+        out["color"] = g.get("color")
+        updated = g.get("geometry_updated_at")
+        out["geometry_updated_at"] = updated.isoformat() if updated else None
     if sector_metadata_available(session):
         row = session.execute(
             select(*[sector_meta.c[k] for k in SECTOR_META_COLUMNS]).where(
@@ -170,6 +177,32 @@ def _serialize(session: Session, s: AnalyticsSector) -> dict[str, Any]:
         if out.get("is_active") is None:
             out["is_active"] = True
     return out
+
+
+_GEOMETRY_KEYS = ("geometry", "area_ha", "perimeter_m", "color", "geometry_updated_at")
+
+
+def _persist_geometry(session: Session, sector: Any, payload: SectorIn) -> None:
+    """Write what ``_apply_geometry`` put on ``sector`` to the database.
+
+    ``_apply_geometry`` sets plain attributes; with an ORM model that does not
+    map the shape columns those would never reach the row, so persist them
+    through the Core mirror. Call after flush (needs the id) and only after
+    ``_apply_geometry`` returned no error.
+    """
+    sent = payload.model_fields_set
+    if not sector_geometry_available(session):
+        return
+    values: dict[str, Any] = {}
+    if "color" in sent:
+        values["color"] = getattr(sector, "color", None)
+    if "geometry" in sent:
+        for key in ("geometry", "area_ha", "perimeter_m", "geometry_updated_at"):
+            values[key] = getattr(sector, key, None)
+    if values:
+        session.execute(
+            update(sector_meta).where(sector_meta.c.id == sector.id).values(**values)
+        )
 
 
 def _apply_metadata(session: Session, sector_id: int, payload: SectorIn):
@@ -387,6 +420,7 @@ def create_sector(
             return error
         session.add(sector)
         session.flush()
+        _persist_geometry(session, sector, payload)
         error = _apply_metadata(session, sector.id, payload)
         if error is not None:
             session.rollback()
@@ -415,6 +449,7 @@ def update_sector(
         if error is not None:
             return error
         session.flush()
+        _persist_geometry(session, sector, payload)
         error = _apply_metadata(session, sector.id, payload)
         if error is not None:
             session.rollback()

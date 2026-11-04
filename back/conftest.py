@@ -130,8 +130,9 @@ def _create_sector_schema(django_db_setup, django_db_blocker):
 
 @pytest.fixture(scope="session", autouse=True)
 def _create_farm_map_schema(django_db_setup, django_db_blocker, _create_sector_schema):
-    """Farm-map schema (agri-db c9e1a2b3d4f5, agri-api#459): crop columns on
-    ``analytics_sector`` + ``analytics_sensorinstallation`` +
+    """Farm-map schema (agri-db c9e1a2b3d4f5, agri-api#459): shape columns
+    (b8c2f0d5e713, as on prod) + crop columns on ``analytics_sector`` +
+    ``analytics_sensorinstallation`` +
     ``analytics_mappreference``. Not Django-modelled (fastapp reads them via
     Core tables), so create them with the migration's own DDL. Postgres only —
     the sqlite runs never reach the dual-ORM farm-map tests.
@@ -149,6 +150,11 @@ def _create_farm_map_schema(django_db_setup, django_db_blocker, _create_sector_s
         cursor.execute(
             """
             ALTER TABLE analytics_sector
+                ADD COLUMN IF NOT EXISTS geometry            JSONB,
+                ADD COLUMN IF NOT EXISTS area_ha             DOUBLE PRECISION,
+                ADD COLUMN IF NOT EXISTS perimeter_m         DOUBLE PRECISION,
+                ADD COLUMN IF NOT EXISTS color               VARCHAR(9),
+                ADD COLUMN IF NOT EXISTS geometry_updated_at TIMESTAMPTZ,
                 ADD COLUMN IF NOT EXISTS crop            VARCHAR(80),
                 ADD COLUMN IF NOT EXISTS variety         VARCHAR(80),
                 ADD COLUMN IF NOT EXISTS planting_date   DATE,

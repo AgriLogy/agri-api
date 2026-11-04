@@ -30,13 +30,20 @@ from sqlalchemy.dialects.postgresql import JSONB
 
 metadata = MetaData()
 
-#: Only the columns added by c9e1a2b3d4f5 (plus the keys needed to address a
-#: row). Everything else on analytics_sector stays with the ORM model.
+#: The analytics_sector columns the ORM pin may not map: the shape columns of
+#: b8c2f0d5e713 (agri-db 0.20.0 — the agri-core 0.27.0 pin still resolves
+#: agri-db 0.19.0, whose AnalyticsSector has no ``geometry`` attribute) and the
+#: crop columns of c9e1a2b3d4f5. Name / user stay with the ORM model.
 sector_meta = Table(
     "analytics_sector",
     metadata,
     Column("id", BigInteger, primary_key=True),
     Column("user_id", BigInteger, nullable=False),
+    Column("geometry", JSONB),
+    Column("area_ha", Float),
+    Column("perimeter_m", Float),
+    Column("color", String(9)),
+    Column("geometry_updated_at", DateTime(timezone=True)),
     Column("crop", String(80)),
     Column("variety", String(80)),
     Column("planting_date", Date),

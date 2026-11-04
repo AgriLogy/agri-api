@@ -10,13 +10,17 @@ from __future__ import annotations
 import datetime as dt
 
 import pytest
+from agri.core.geometry import area_hectares
 from django.conf import settings as dj_settings
 from django.db import connection
 from fastapi.testclient import TestClient
 from rest_framework_simplejwt.tokens import AccessToken
 
 from fastapp.main import app
-from fastapp.schema_compat import reset_farm_map_cache
+from fastapp.schema_compat import (
+    reset_farm_map_cache,
+    reset_sector_geometry_cache,
+)
 from fastapp.settings import get_settings
 
 _requires_pg = pytest.mark.skipif(
@@ -37,6 +41,7 @@ def _clean_farm_map_tables():
     """These tables are not Django-modelled, so Django's flush leaves them
     alone; clear them around each test and re-probe the schema."""
     reset_farm_map_cache()
+    reset_sector_geometry_cache()
     yield
     with connection.cursor() as cursor:
         cursor.execute("DELETE FROM analytics_sensorinstallation")
@@ -328,3 +333,46 @@ def test_status_is_owner_scoped(fast, owner, other):
     assert (
         fast.get("/farm-map/status", headers=_auth(other)).json()["installations"] == []
     )
+
+
+_SQUARE = {
+    "type": "Polygon",
+    "coordinates": [
+        [[-7.95, 32.20], [-7.94, 32.20], [-7.94, 32.21], [-7.95, 32.21], [-7.95, 32.20]]
+    ],
+}
+
+
+def test_sector_geometry_round_trips_through_http(fast, owner):
+    """Regression: with the shape columns present (as on prod) /sectors must
+    store and return the polygon even though the pinned agri-db ORM model does
+    not map those columns — it used to 500 on read and drop the shape on write.
+    """
+    created = fast.post(
+        "/sectors",
+        json={"name": "Drawn", "geometry": _SQUARE, "color": "#16a34a"},
+        headers=_auth(owner),
+    )
+    assert created.status_code == 201, created.text
+    sid = created.json()["id"]
+
+    listed = fast.get("/sectors", headers=_auth(owner))
+    assert listed.status_code == 200, listed.text
+    (row,) = [s for s in listed.json() if s["id"] == sid]
+    assert row["geometry"]["type"] == "Polygon"
+    assert row["color"] == "#16a34a"
+    assert row["area_ha"] == pytest.approx(area_hectares(_SQUARE), rel=1e-6)
+    assert row["perimeter_m"] > 0
+    assert row["geometry_updated_at"]
+
+    # A rename keeps the shape; an explicit null erases it.
+    renamed = fast.patch(
+        f"/sectors/{sid}", json={"name": "Renamed"}, headers=_auth(owner)
+    )
+    assert renamed.json()["geometry"] == row["geometry"]
+    erased = fast.patch(
+        f"/sectors/{sid}",
+        json={"name": "Renamed", "geometry": None},
+        headers=_auth(owner),
+    )
+    assert erased.json()["geometry"] is None and erased.json()["area_ha"] is None
