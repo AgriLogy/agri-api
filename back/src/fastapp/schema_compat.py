@@ -288,11 +288,73 @@ def reset_sector_geometry_cache() -> None:
     _sector_geometry_cache.clear()
 
 
+# ---------------------------------------------------------------------------
+# Farm map — agri-db c9e1a2b3d4f5 (agri-api#459, Phase 1)
+# ---------------------------------------------------------------------------
+FARM_MAP_MIGRATION = "c9e1a2b3d4f5"
+
+#: Error message for a farm-map write the schema cannot store.
+FARM_MAP_UNAVAILABLE = (
+    "The farm map is not available on this deployment: the sensor-installation "
+    "and map-preference tables are missing. Apply the agri-db migration that "
+    f"creates them ({FARM_MAP_MIGRATION}), then retry."
+)
+SECTOR_METADATA_UNAVAILABLE = (
+    "Sector crop details are not available on this deployment: analytics_sector "
+    "has no crop columns. Apply the agri-db migration that adds them "
+    f"({FARM_MAP_MIGRATION}), then retry. Names and shapes keep working."
+)
+
+_sector_metadata_cache: WeakKeyDictionary[Any, bool] = WeakKeyDictionary()
+
+
+def _probe_sector_metadata(engine: Any) -> bool:
+    """Are ALL crop-metadata columns present on ``analytics_sector``?"""
+    from fastapp.farm_map_tables import SECTOR_META_COLUMNS
+
+    try:
+        names = {c["name"] for c in sa_inspect(engine).get_columns(SECTOR_TABLE)}
+    except Exception:  # pragma: no cover - table absent / inspection refused
+        log.warning("could not inspect %s; assuming no crop columns", SECTOR_TABLE)
+        return False
+    return all(column in names for column in SECTOR_META_COLUMNS)
+
+
+def sector_metadata_available(session: Any) -> bool:
+    """``True`` when ``analytics_sector`` carries the crop-metadata columns."""
+    engine = _engine_of(session)
+    cached = _sector_metadata_cache.get(engine)
+    if cached is None:
+        cached = _probe_sector_metadata(engine)
+        _sector_metadata_cache[engine] = cached
+    return cached
+
+
+def farm_map_available(session: Any) -> bool:
+    """``True`` when both farm-map tables exist."""
+    from fastapp.farm_map_tables import (
+        MAP_PREFERENCE_TABLE,
+        SENSOR_INSTALLATION_TABLE,
+    )
+
+    return table_available(session, SENSOR_INSTALLATION_TABLE) and table_available(
+        session, MAP_PREFERENCE_TABLE
+    )
+
+
+def reset_farm_map_cache() -> None:
+    """Forget probed engines (sector metadata + tables). Tests only."""
+    _sector_metadata_cache.clear()
+    _table_cache.clear()
+
+
 __all__ = [
     "ALERT_EVENT_TABLE",
     "DEVICE_COORDINATES_UNAVAILABLE",
     "DEVICE_COORDINATE_COLUMNS",
     "DEVICE_TABLE",
+    "FARM_MAP_MIGRATION",
+    "FARM_MAP_UNAVAILABLE",
     "HISTORY_MIGRATION",
     "HISTORY_UNAVAILABLE",
     "IRRIGATION_DECISION_TABLE",
@@ -304,14 +366,18 @@ __all__ = [
     "SENSOR_GROUP_TABLE",
     "SECTOR_GEOMETRY_COLUMNS",
     "SECTOR_GEOMETRY_UNAVAILABLE",
+    "SECTOR_METADATA_UNAVAILABLE",
     "SECTOR_TABLE",
     "alert_events_available",
     "device_coordinates_available",
+    "farm_map_available",
     "irrigation_decisions_available",
     "reset_device_coordinates_cache",
+    "reset_farm_map_cache",
     "reset_sector_geometry_cache",
     "reset_table_cache",
     "sector_geometry_available",
+    "sector_metadata_available",
     "sensor_calibration_available",
     "sensor_groups_available",
     "table_available",

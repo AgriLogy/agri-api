@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
-from typing import Any
+from typing import Any, Literal
 
 from agri.core.alerts import SENSOR_KEY_REGISTRY, db_model_for
 from agri.core.database import session_scope
@@ -43,9 +43,12 @@ from sqlalchemy.orm import Session
 
 from fastapp.auth import AuthedUser, get_current_user, require_level
 from fastapp.json import DjangoStyleJSONResponse
+from fastapp.farm_map_tables import SECTOR_META_COLUMNS, sector_meta
 from fastapp.schema_compat import (
     SECTOR_GEOMETRY_UNAVAILABLE,
+    SECTOR_METADATA_UNAVAILABLE,
     sector_geometry_available,
+    sector_metadata_available,
 )
 
 log = logging.getLogger(__name__)
@@ -71,8 +74,34 @@ class SectorIn(BaseModel):
     # derived server-side so they can never disagree with the stored shape.
     geometry: dict[str, Any] | None = None
     color: str | None = Field(default=None, max_length=9)
+    # Agronomic metadata (agri-db c9e1a2b3d4f5, agri-api#459). Only the fields
+    # the client actually SENDS are written, so a rename that omits them keeps
+    # whatever is stored; an explicit null clears one.
+    crop: str | None = Field(default=None, max_length=80)
+    variety: str | None = Field(default=None, max_length=80)
+    planting_date: dt.date | None = None
+    irrigation_type: (
+        Literal["drip", "sprinkler", "subsurface_drip", "pivot", "flood", "other"]
+        | None
+    ) = None
+    root_depth_cm: float | None = Field(default=None, gt=0, le=500)
+    is_active: bool | None = None
 
     model_config = {"extra": "forbid"}
+
+    def metadata_updates(self) -> dict[str, Any]:
+        """The crop-metadata fields present in the request body."""
+        out = {
+            k: getattr(self, k)
+            for k in SECTOR_META_COLUMNS
+            if k in self.model_fields_set
+        }
+        for key in ("crop", "variety"):
+            if isinstance(out.get(key), str):
+                out[key] = out[key].strip() or None
+        if "is_active" in out and out["is_active"] is None:
+            out["is_active"] = True  # NOT NULL column: null means "default"
+        return out
 
 
 class SectorZonesIn(BaseModel):
@@ -128,7 +157,36 @@ def _serialize(session: Session, s: AnalyticsSector) -> dict[str, Any]:
         out["geometry_updated_at"] = (
             s.geometry_updated_at.isoformat() if s.geometry_updated_at else None
         )
+    if sector_metadata_available(session):
+        row = session.execute(
+            select(*[sector_meta.c[k] for k in SECTOR_META_COLUMNS]).where(
+                sector_meta.c.id == s.id
+            )
+        ).first()
+        meta = dict(row._mapping) if row is not None else {}
+        for key in SECTOR_META_COLUMNS:
+            value = meta.get(key)
+            out[key] = value.isoformat() if isinstance(value, dt.date) else value
+        if out.get("is_active") is None:
+            out["is_active"] = True
     return out
+
+
+def _apply_metadata(session: Session, sector_id: int, payload: SectorIn):
+    """Write the crop-metadata fields the client sent. Returns a 503 response
+    when the schema predates the columns, else ``None``. Call after flush (the
+    sector needs an id)."""
+    updates = payload.metadata_updates()
+    if not updates:
+        return None
+    if not sector_metadata_available(session):
+        return DjangoStyleJSONResponse(
+            {"detail": SECTOR_METADATA_UNAVAILABLE}, status_code=503
+        )
+    session.execute(
+        update(sector_meta).where(sector_meta.c.id == sector_id).values(**updates)
+    )
+    return None
 
 
 def _apply_geometry(
@@ -329,6 +387,10 @@ def create_sector(
             return error
         session.add(sector)
         session.flush()
+        error = _apply_metadata(session, sector.id, payload)
+        if error is not None:
+            session.rollback()
+            return error
         return DjangoStyleJSONResponse(_serialize(session, sector), status_code=201)
 
 
@@ -353,6 +415,10 @@ def update_sector(
         if error is not None:
             return error
         session.flush()
+        error = _apply_metadata(session, sector.id, payload)
+        if error is not None:
+            session.rollback()
+            return error
         return _serialize(session, sector)
 
 
