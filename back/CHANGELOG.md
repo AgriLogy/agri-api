@@ -1,6 +1,49 @@
 # CHANGELOG
 
 
+## v1.128.0 (2026-11-04)
+
+### Features
+
+- **weather**: Real Open-Meteo forecast for the ET0 forecast
+  ([#465](https://github.com/AgriLogy/agri-api/pull/465),
+  [`8c5c2ee`](https://github.com/AgriLogy/agri-api/commit/8c5c2ee47af8f9ffe19ead409d65f5ad1382ebd8))
+
+## Summary
+
+Replaces the synthetic weather behind `GET /weather/et-forecast` with a real **Open-Meteo** forecast
+  (keyless).
+
+- **New default provider `openmeteo`** (`apps/sensors/forecast_provider.py`): fetches the hourly
+  forecast and aggregates it to agri-core's `DailyWeatherForecast`. Daily mean temperature, RH and
+  pressure; 10 m wind projected to 2 m (FAO-56 eq. 47); and a shortwave peak that preserves the
+  forecast daily energy under agri-core's half-sine day. - **Honest `provider` label:**
+  `get_daily_forecast_with_source()` returns the provider that actually served the data. It's
+  `"open-meteo"` only for real data. Any fallback (no coordinates, network/payload error,
+  `ET0_OPENMETEO=off`) serves the whole series from the mock and says `"mock"`, never mixing real
+  and fake days. Removes `active_provider()` and the unimplemented `openweather` path. - **fastapp
+  router:** the forecast uses the same coordinate fallback as the reference curve (picked location →
+  account → zone), so null-coordinate accounts still get a real forecast. - **30 min in-process
+  cache** per (coords, window). - New env vars are documented in `back/env-example`.
+
+**Verification** - New `test_openmeteo_forecast_provider.py` (offline): aggregation, units, cache,
+  every fallback path, plausible summer ET₀. - Weather tests on Postgres, including the 8 fastapp ↔
+  Django parity tests: **28/28 pass**. Full suite: no new failures vs `main`.
+
+- **Live check** (32.9°N −6.9°W, 780 m): `provider: "open-meteo"`; 7-day ET₀ 1.9–3.4 mm/day, within
+  ~0.14 mm/day on average of Open-Meteo's own published FAO-56 ET₀. The old mock gave ~3.1–3.7.
+
+⚠️ CI will be red until #463 (migration fix) is merged. Merge that first.
+
+Closes #464
+
+## Checklist
+
+- [x] Linked to a dedicated, scope-matched issue (`Closes #N` above) - [x] PR title follows
+  Conventional Commits (`feat: …`, `fix: …`, …) — squash-merge uses it as the release commit - [x]
+  Tests / lint pass locally - [x] **Schema changes only:** n/a — no schema change
+
+
 ## v1.127.1 (2026-11-04)
 
 ### Bug Fixes
