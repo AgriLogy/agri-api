@@ -154,7 +154,8 @@ def test_resolve_device_not_found_returns_all_none(monkeypatch):
 # (no latitude/longitude — the device-map migration is not applied) and the
 # post-migration one. Everything else is generated from the agri-db metadata,
 # retyped for sqlite (BigInteger identity PKs → INTEGER rowid so they
-# autoincrement; JSONB → JSON, which sqlite can render).
+# autoincrement; JSONB → JSON, which sqlite can render, minus its
+# Postgres-only server default).
 # ---------------------------------------------------------------------------
 _DEVICE_DDL_NO_COORDS = """
 CREATE TABLE analytics_device (
@@ -202,6 +203,8 @@ def _sqlite_engine(device_ddl: str):
                 column.autoincrement = True
             elif isinstance(column.type, JSONB):
                 column.type = JSON()
+                # Postgres-only defaults ('{}'::jsonb) do not parse on sqlite.
+                column.server_default = None
 
     engine = create_engine("sqlite://")
     meta.create_all(engine)

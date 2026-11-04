@@ -79,7 +79,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agri-core", git = "https://github.com/AgriLogy/agri-core.git?rev=0.27.0" },
+    { name = "agri-core", git = "https://github.com/AgriLogy/agri-core.git?rev=0.27.1" },
     { name = "amqp", specifier = "==5.3.1" },
     { name = "asgiref", specifier = "==3.8.1" },
     { name = "attrs", specifier = "==25.3.0" },
@@ -151,8 +151,8 @@ dev = [
 
 [[package]]
 name = "agri-core"
-version = "0.27.0"
-source = { git = "https://github.com/AgriLogy/agri-core.git?rev=0.27.0#2f728a4675e4ef82f50149480325e5c30fb93217" }
+version = "0.27.1"
+source = { git = "https://github.com/AgriLogy/agri-core.git?rev=0.27.1#8285c94f8147a421d008e07757eb79f0f97e8115" }
 dependencies = [
     { name = "agri-db" },
     { name = "pydantic" },
@@ -161,8 +161,8 @@ dependencies = [
 
 [[package]]
 name = "agri-db"
-version = "0.19.0"
-source = { git = "https://github.com/AgriLogy/agri-db.git?rev=0.19.0#aa816cc344ea16ff0c147b9e43217cec3b269067" }
+version = "0.23.1"
+source = { git = "https://github.com/AgriLogy/agri-db.git?rev=0.23.1#cc5a6ad7a6e26a1b97986a409641ef273f17ef8b" }
 dependencies = [
     { name = "alembic" },
     { name = "psycopg", extra = ["binary"] },
