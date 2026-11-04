@@ -3,13 +3,35 @@
 #
 # The prod DB already carries basin_max_depth_m / basin_area_m2 /
 # sensor_mount_offset_m (applied by the lost 0062 / alembic e8a1c7f4d2b9),
-# so those three use idempotent AddField semantics via separate state-only
-# handling: plain AddField is safe because Django issues ALTER TABLE ADD
-# COLUMN which fails if the column exists. To stay re-runnable we keep the
-# historical three as state-only (SeparateDatabaseAndState) and only the
-# three NEW columns hit the database.
+# but a FRESH database (the pytest test DB, CI) does not. A plain AddField
+# would fail on prod (column exists); a state-only AddField leaves fresh DBs
+# without the columns (every Zone query then 500s). So the historical three
+# are added in state unconditionally and in the database only when missing
+# (``_add_legacy_basin_columns``). The three NEW columns are plain AddFields.
 
 from django.db import migrations, models
+
+_LEGACY_BASIN_FIELDS = ("basin_max_depth_m", "basin_area_m2", "sensor_mount_offset_m")
+
+
+def _add_legacy_basin_columns(apps, schema_editor):
+    """Add each legacy basin column only if the table doesn't have it yet.
+
+    Introspection-based (not ``ADD COLUMN IF NOT EXISTS``) so it works on both
+    Postgres and the sqlite test settings.
+    """
+    Zone = apps.get_model("analytics", "Zone")
+    table = Zone._meta.db_table
+    with schema_editor.connection.cursor() as cursor:
+        existing = {
+            col.name
+            for col in schema_editor.connection.introspection.get_table_description(
+                cursor, table
+            )
+        }
+    for name in _LEGACY_BASIN_FIELDS:
+        if name not in existing:
+            schema_editor.add_field(Zone, Zone._meta.get_field(name))
 
 
 class Migration(migrations.Migration):
@@ -47,6 +69,9 @@ class Migration(migrations.Migration):
                 ),
             ],
         ),
+        # Runs after the state ops above, so the historical model has the
+        # fields; reverse is a no-op (never drop columns prod relies on).
+        migrations.RunPython(_add_legacy_basin_columns, migrations.RunPython.noop),
         migrations.AddField(
             model_name="zone",
             name="basin_length_m",

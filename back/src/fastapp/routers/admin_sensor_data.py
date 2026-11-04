@@ -73,6 +73,7 @@ _SLUG_TO_CLASSNAME: dict[str, str] = {
     "waterpressure": "WaterPressureSensor",
     "battery": "BatterySensor",
     "signal": "SignalSensor",
+    "forage": "ForageSensor",
 }
 
 
