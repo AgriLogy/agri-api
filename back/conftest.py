@@ -94,6 +94,27 @@ def _create_sector_schema(django_db_setup, django_db_blocker):
         if Sector._meta.db_table not in existing:
             with connection.schema_editor() as editor:
                 editor.create_model(Sector)
+        # The Django model predates the shape (agri-db b8c2f0d5e713) and crop
+        # (c9e1a2b3d4f5) columns, but the agri.db ORM maps them, as prod has
+        # them: add them here so fastapp's sector reads see the live schema.
+        if connection.vendor == "postgresql":
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    ALTER TABLE analytics_sector
+                        ADD COLUMN IF NOT EXISTS geometry            JSONB,
+                        ADD COLUMN IF NOT EXISTS area_ha             DOUBLE PRECISION,
+                        ADD COLUMN IF NOT EXISTS perimeter_m         DOUBLE PRECISION,
+                        ADD COLUMN IF NOT EXISTS color               VARCHAR(9),
+                        ADD COLUMN IF NOT EXISTS geometry_updated_at TIMESTAMPTZ,
+                        ADD COLUMN IF NOT EXISTS crop            VARCHAR(80),
+                        ADD COLUMN IF NOT EXISTS variety         VARCHAR(80),
+                        ADD COLUMN IF NOT EXISTS planting_date   DATE,
+                        ADD COLUMN IF NOT EXISTS irrigation_type VARCHAR(30),
+                        ADD COLUMN IF NOT EXISTS root_depth_cm   DOUBLE PRECISION,
+                        ADD COLUMN IF NOT EXISTS is_active       BOOLEAN NOT NULL DEFAULT true
+                    """
+                )
         with connection.cursor() as cursor:
             cols = {
                 c.name

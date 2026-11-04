@@ -356,6 +356,15 @@ SENSOR_SPEC: dict[str, SensorSpec] = {
         char_fields=[],
         raw_order=["id", "zone", "user", "value", "timestamp"],
     ),
+    # Borehole depth-to-water (agri-db 0.22.0 analytics_foragesensor).
+    "forage": SensorSpec(
+        agri_db="AnalyticsForagesensor",
+        default_unit="m",
+        available_units=["m", "cm"],
+        value_fields=["value"],
+        char_fields=[],
+        raw_order=["id", "zone", "user", "value", "timestamp"],
+    ),
 }
 
 

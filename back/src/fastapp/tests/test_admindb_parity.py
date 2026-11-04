@@ -163,6 +163,10 @@ _FASTAPP_ONLY_KEYS = {
     "analytics.sensorgroup",
     "analytics.sensorgroupsensor",
     "analytics.sensorcalibration",
+    # farm map (agri-db c9e1a2b3d4f5, agri-api#459): placed sensors + per-user
+    # map preferences, served only by the fastapp farm-map router
+    "analytics.sensorinstallation",
+    "analytics.mappreference",
 }
 
 

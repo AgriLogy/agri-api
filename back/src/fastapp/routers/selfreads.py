@@ -107,6 +107,7 @@ _ACTIVE_GRAPH_STATUS_KEYS = (
     "water_ph_status",
     "water_ec_status",
     "water_level_status",
+    "forage_level_status",
     "leaf_sensor_status",
     "fruit_size_status",
     "large_fruit_diameter_status",
