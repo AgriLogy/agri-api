@@ -23,9 +23,8 @@ from agri.core.et_forecast import et0_forecast
 from agri.db.analytics import AnalyticsZone
 from agri.db.users import CustomUserCustomuser
 from apps.sensors.forecast_provider import (
-    active_provider,
     fetch_openmeteo_et0,
-    get_daily_forecast,
+    get_daily_forecast_with_source,
 )
 from fastapp.auth import AuthedUser, get_current_user
 
@@ -93,21 +92,23 @@ def et_forecast(
 
     # Django uses timezone.now().date() (USE_TZ=True → UTC).
     start = datetime.datetime.now(datetime.timezone.utc).date()
-    daily = get_daily_forecast(
-        start=start, days=days, latitude=latitude, longitude=longitude
-    )
-    forecast = et0_forecast(
-        daily, latitude=latitude, longitude=longitude, elevation_m=elevation_m
-    )
 
-    # Real reference curve: Open-Meteo's own published FAO-56 ET₀, keyed by ISO
-    # date. Coordinates: the farmer's picked location (lat/lon params) wins, then
-    # the account lat/lon, then the zone's stored weather coordinates — so the
-    # curve populates even for the common case of a null-coordinate account.
-    # Best-effort — an empty map leaves ``et0_openmeteo_mm`` null on every day.
+    # Coordinates for both the weather forecast and the reference curve: the
+    # farmer's picked location (lat/lon params) wins, then the account lat/lon,
+    # then the zone's stored weather coordinates — most farmer accounts have no
+    # server-side lat/lon, so the fallbacks keep the real forecast populated.
     om_lat, om_lon = _pick_coords(
         (lat, lon), (latitude, longitude), (zone_lat, zone_lon)
     )
+    daily, provider = get_daily_forecast_with_source(
+        start=start, days=days, latitude=om_lat, longitude=om_lon
+    )
+    forecast = et0_forecast(
+        daily, latitude=om_lat, longitude=om_lon, elevation_m=elevation_m
+    )
+
+    # Real reference curve: Open-Meteo's own published FAO-56 ET₀, keyed by ISO
+    # date. Best-effort — an empty map leaves ``et0_openmeteo_mm`` null.
     reference = fetch_openmeteo_et0(
         start=start, days=days, latitude=om_lat, longitude=om_lon
     )
@@ -116,7 +117,7 @@ def et_forecast(
 
     return {
         "zone_id": zone_id,
-        "provider": active_provider(),
+        "provider": provider,
         "reference_provider": "open-meteo",
         "days": forecast,
     }

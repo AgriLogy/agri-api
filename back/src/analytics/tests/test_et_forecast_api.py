@@ -5,6 +5,13 @@ import pytest
 URL = "/weather/et-forecast"
 
 
+@pytest.fixture(autouse=True)
+def _offline_mock_provider(monkeypatch):
+    # The default provider is now Open-Meteo (network). Pin the deterministic
+    # mock so these contract tests stay offline + reproducible.
+    monkeypatch.setenv("ET_FORECAST_PROVIDER", "mock")
+
+
 @pytest.mark.django_db
 class TestEtForecast:
     def test_requires_auth(self, anon_client, normal_user, zone_factory):

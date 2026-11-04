@@ -75,3 +75,13 @@ MQTT_TLS=false
 # (Django rejects Host headers not in ALLOWED_HOSTS).
 # When you copy this file to back/.env, set:
 # ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0,agri-api-web
+
+# ---- ET0 forecast weather (apps/sensors/forecast_provider.py) ----------------
+# openmeteo (default, keyless, real forecast) | mock (deterministic, offline).
+# Real providers fall back to mock when unavailable; the API's `provider` field
+# reports which one actually served the data.
+ET_FORECAST_PROVIDER=openmeteo
+# Master switch for ALL Open-Meteo calls (forecast + reference curve): on | off
+ET0_OPENMETEO=on
+# OPENMETEO_TIMEOUT_S=4.0
+# OPENMETEO_FORECAST_TTL_S=1800

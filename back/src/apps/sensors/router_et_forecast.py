@@ -3,7 +3,7 @@
     GET /weather/et-forecast?zone_id=<id>&days=<n>
 
 Resolves the caller's zone, pulls daily weather from the forecast provider
-(mock by default — see ``forecast_provider``), and runs the pure agri-core
+(Open-Meteo by default, mock fallback — see ``forecast_provider``), and runs the pure agri-core
 ET₀-forecast compute. Read-only; owner-scoped.
 """
 
@@ -17,7 +17,7 @@ from ninja.responses import Response
 
 from agri.core.et_forecast import et0_forecast
 from agriapi.api.auth import JwtAuth
-from apps.sensors.forecast_provider import active_provider, get_daily_forecast
+from apps.sensors.forecast_provider import get_daily_forecast_with_source
 
 router = Router()
 
@@ -44,7 +44,7 @@ def et_forecast(request, zone_id: int, days: int = 7):
     elevation_m = float(getattr(zone, "elevation_m", 0.0) or 0.0)
 
     start = timezone.now().date()
-    daily = get_daily_forecast(
+    daily, provider = get_daily_forecast_with_source(
         start=start, days=days, latitude=latitude, longitude=longitude
     )
     forecast = et0_forecast(
@@ -53,6 +53,6 @@ def et_forecast(request, zone_id: int, days: int = 7):
 
     return {
         "zone_id": zone.id,
-        "provider": active_provider(),
+        "provider": provider,
         "days": forecast,
     }
