@@ -1,6 +1,48 @@
 # CHANGELOG
 
 
+## v1.127.1 (2026-11-04)
+
+### Bug Fixes
+
+- **migrations**: Create legacy basin columns on fresh databases
+  ([#463](https://github.com/AgriLogy/agri-api/pull/463),
+  [`bcb0313`](https://github.com/AgriLogy/agri-api/commit/bcb0313fcd690b2b11b5456a6bc1968c63f53dd0))
+
+## Summary
+
+Migration `0068` added the three legacy basin columns (`basin_max_depth_m`, `basin_area_m2`,
+  `sensor_mount_offset_m`) as state-only operations, so fresh databases (pytest, CI) never got them
+  and every `analytics_zone` query failed.
+
+This replaces that with an introspection-based `RunPython` that adds each column **only when it's
+  missing**: - prod (columns already present) → no-op - fresh DB → columns created - works on both
+  Postgres and the sqlite test settings; reverse is a no-op
+
+The schema is owned by agri-db/Alembic; this only fixes Django's migration graph used to build test
+  databases.
+
+**Verification** - Fresh Postgres 16, full `pytest src/`: **262 failed + 82 errors → 12 failed /
+  1142 passed**. The 12 left fail identically on `main` with the columns patched in by hand
+  (admin/sensors/selfreads parity tests) and are out of scope. - Prod-like DB (migrate to 0067, add
+  the 3 columns manually, then migrate): 0068 and 0069 apply cleanly. - sqlite (`make test`
+  settings): `test_et_forecast_api.py` 5/5 pass.
+
+**Now also carries #468** (merged into this branch): agri-core 0.27.1 / agri-db 0.23.1 + fastapp
+  basin/forage parity. With it, the full suite is green (1129 passed, 0 failed) and this PR's CI
+  passes end to end.
+
+Closes #462 Closes #467
+
+## Checklist
+
+- [x] Linked to a dedicated, scope-matched issue (`Closes #N` above) - [x] PR title follows
+  Conventional Commits (`feat: …`, `fix: …`, …) — squash-merge uses it as the release commit - [x]
+  Tests / lint pass locally (remaining 12 failures are pre-existing, see above) - [x] **Schema
+  changes only:** no agri-db change needed — prod already has these columns; this only affects
+  Django-built test DBs
+
+
 ## v1.127.0 (2026-10-12)
 
 ### Features
