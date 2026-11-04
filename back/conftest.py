@@ -130,8 +130,7 @@ def _create_sector_schema(django_db_setup, django_db_blocker):
 
 @pytest.fixture(scope="session", autouse=True)
 def _create_farm_map_schema(django_db_setup, django_db_blocker, _create_sector_schema):
-    """Farm-map schema (agri-db c9e1a2b3d4f5, agri-api#459): shape columns
-    (b8c2f0d5e713, as on prod) + crop columns on ``analytics_sector`` +
+    """Farm-map tables (agri-db c9e1a2b3d4f5, agri-api#459):
     ``analytics_sensorinstallation`` +
     ``analytics_mappreference``. Not Django-modelled (fastapp reads them via
     Core tables), so create them with the migration's own DDL. Postgres only —
@@ -147,22 +146,6 @@ def _create_farm_map_schema(django_db_setup, django_db_blocker, _create_sector_s
         yield
         return
     with django_db_blocker.unblock(), connection.cursor() as cursor:
-        cursor.execute(
-            """
-            ALTER TABLE analytics_sector
-                ADD COLUMN IF NOT EXISTS geometry            JSONB,
-                ADD COLUMN IF NOT EXISTS area_ha             DOUBLE PRECISION,
-                ADD COLUMN IF NOT EXISTS perimeter_m         DOUBLE PRECISION,
-                ADD COLUMN IF NOT EXISTS color               VARCHAR(9),
-                ADD COLUMN IF NOT EXISTS geometry_updated_at TIMESTAMPTZ,
-                ADD COLUMN IF NOT EXISTS crop            VARCHAR(80),
-                ADD COLUMN IF NOT EXISTS variety         VARCHAR(80),
-                ADD COLUMN IF NOT EXISTS planting_date   DATE,
-                ADD COLUMN IF NOT EXISTS irrigation_type VARCHAR(30),
-                ADD COLUMN IF NOT EXISTS root_depth_cm   DOUBLE PRECISION,
-                ADD COLUMN IF NOT EXISTS is_active       BOOLEAN NOT NULL DEFAULT true
-            """
-        )
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS analytics_sensorinstallation (

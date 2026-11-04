@@ -1,12 +1,11 @@
 """SQLAlchemy Core mirrors of the farm-map schema (agri-db ``c9e1a2b3d4f5``).
 
 agri-db owns these tables (``agri.db.farm_map`` + the sector crop columns on
-``AnalyticsSector``), but agri-api only sees agri-db through the agri-core pin,
-which predates them. Rather than block on an agri-db -> agri-core -> agri-api
-release chain, the farm-map router reads and writes through these Core
-``Table`` objects — the same approach ``selfreads`` uses for the device
-coordinate columns. Swap to the ORM models once the agri-core pin carries an
-agri-db release that includes ``agri.db.farm_map``.
+``AnalyticsSector``). The farm-map router was written while agri-api's pin
+still resolved agri-db 0.19.0, so it reads and writes through these Core
+``Table`` objects. Since agri-core 0.27.1 the pin resolves agri-db 0.23.1,
+which ships the ORM models too; the mirrors stay correct (same columns) and
+can be swapped for ``agri.db.farm_map`` in a follow-up.
 
 Kept on a private ``MetaData`` so nothing here can leak into ``create_all`` or
 Alembic autogenerate for the shared metadata.
@@ -30,10 +29,9 @@ from sqlalchemy.dialects.postgresql import JSONB
 
 metadata = MetaData()
 
-#: The analytics_sector columns the ORM pin may not map: the shape columns of
-#: b8c2f0d5e713 (agri-db 0.20.0 — the agri-core 0.27.0 pin still resolves
-#: agri-db 0.19.0, whose AnalyticsSector has no ``geometry`` attribute) and the
-#: crop columns of c9e1a2b3d4f5. Name / user stay with the ORM model.
+#: The analytics_sector shape (b8c2f0d5e713) and crop (c9e1a2b3d4f5) columns.
+#: Read/written through Core so sectors work regardless of which agri-db the
+#: ORM resolves (with agri-db < 0.20.0 the ORM lacked them and /sectors 500'd).
 sector_meta = Table(
     "analytics_sector",
     metadata,
