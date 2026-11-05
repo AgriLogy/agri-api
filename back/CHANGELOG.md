@@ -1,6 +1,58 @@
 # CHANGELOG
 
 
+## v1.129.0 (2026-11-05)
+
+### Features
+
+- **farm-map**: Sensor installations, map preferences and live map status
+  ([#466](https://github.com/AgriLogy/agri-api/pull/466),
+  [`41b0ac9`](https://github.com/AgriLogy/agri-api/commit/41b0ac98c71750ccf8a76102fd3c585bb9944034))
+
+## Summary
+
+Backend for Phase 1 of the farm-map upgrade (spec attached to #459). Requires agri-db `c9e1a2b3d4f5`
+  (AgriLogy/agri-db#78, released in agri-db 0.23.x; agri-api now resolves 0.23.1 via #468).
+
+- **`/sensor-installations`** (GET / POST / PATCH / DELETE): named sensor points. - Owner-scoped;
+  any referenced sector, zone or device must belong to the caller. - Writes need the editor tier;
+  technicians are refused. - A repeated `client_ref` returns the existing row, so importing
+  browser-stored sensors is idempotent. - **`/map-preferences`** (GET / PUT): basemap, layer
+  visibility/opacity and camera. A partial PUT keeps the fields it doesn't send. -
+  **`/farm-map/status`**: per sensor, the latest value, unit, timestamp, battery, signal and
+  triggered alerts, plus a status: normal, warning (stale > 6 h), offline (> 24 h), critical
+  (alert), no_data or unlinked. Per sector, the worst status of its sensors. Missing data is
+  reported as missing, never as a value. - **`/sectors`**: crop metadata. Only fields that are sent
+  are written, so a rename keeps them. - **Table access:** the new tables are read and written
+  through Core table mirrors (`fastapp/farm_map_tables.py`) until the agri-core pin carries the new
+  agri-db release. Before the migration is applied, schema probes make reads degrade and writes
+  answer 503. - **nginx:** routes for the new paths, prod and staging. ⚠️ `deploy/nginx/back.conf`
+  still has to be synced to the droplet by hand.
+
+### 🐞 Also fixes an existing production bug: `GET /sectors` returns 500 The agri-core 0.27.0 pin
+  resolves agri-db **0.19.0**, whose `AnalyticsSector` has no `geometry` attribute; the geometry
+  columns arrived in agri-db 0.20.0. Wherever `b8c2f0d5e713` is applied, `GET /sectors` raises
+  `AttributeError` (500), and shapes sent to POST/PATCH are silently dropped.
+
+Fix (commit `74fbc9d`): the shape columns are now read and written through the same Core mirror. A
+  regression test covers it, and the test DB now has the shape columns, as production does.
+
+### Verification - 41 new tests (HTTP on Postgres + DB-free unit tests). The full suite has no new
+  failures: the same 10 pre-existing admin/sensors/selfreads parity failures. - End to end in
+  Chromium against this branch, a local Postgres and agri-web: draw a sector (area computed), place
+  a named sensor through the form, reload, see the live popup value, switch basemap and save
+  preferences.
+
+Closes #459
+
+## Checklist
+
+- [x] Linked to a dedicated, scope-matched issue (`Closes #N` above) - [x] PR title follows
+  Conventional Commits (`feat: …`, `fix: …`, …) — squash-merge uses it as the release commit - [x]
+  Tests / lint pass locally (pre-existing failures listed above) - [x] **Schema changes only:**
+  agri-db `c9e1a2b3d4f5` must be applied before this deploy (it degrades safely if it isn't)
+
+
 ## v1.128.0 (2026-11-04)
 
 ### Features
