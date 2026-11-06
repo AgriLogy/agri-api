@@ -1,6 +1,101 @@
 # CHANGELOG
 
 
+## v1.130.0 (2026-11-06)
+
+### Features
+
+- **ingest**: Persist Bivocom uplinks through the device-sensor mapping
+  ([#471](https://github.com/AgriLogy/agri-api/pull/471),
+  [`749119a`](https://github.com/AgriLogy/agri-api/commit/749119a83c939b76f8c5d12e428f4492a7df27ac))
+
+Closes #452. Closes #284.
+
+Supersedes the closed #285, ported to the live FastAPI path. The reason #285 was held (gating ingest
+  would have 404'd production's one unregistered feed, Router02) no longer applies.
+
+## Problem `POST /ingest/bivocom` validated and returned `202` **without writing anything**, in both
+  Django and FastAPI. A router cut over to agri-bridge would have lost every reading while reporting
+  success. Separately, agri-bridge's default target `agri-api-web:8000/api/v1/bivocom/uplink`
+  **never existed** (404 on both services).
+
+## What changes **Ingest** (`fastapp.ingest.handle_bivocom_uplink`, served at `POST
+  /ingest/bivocom`): - `device_id` must match a registered `analytics_device.serial`. Unknown →
+  **404**; inactive or ownerless → **422**. - Each tag goes through the device's active
+  `analytics_devicesensor` rows to a `sensor_key` and zone: the mapping's own zone, else the
+  device's. - Readings are stamped with `device_id` (ownership follows the device) and pushed
+  through alert dispatch. A dispatch failure never drops later tags. Values are stored raw;
+  calibration still applies on read. - Tags that can't be written are skipped and returned with a
+  reason: `unmapped`, `unknown_sensor_key`, `no_zone`, or `zone_not_owned`. The last covers a
+  mapping made before the device changed owners, which must not keep feeding the old owner's zone. -
+  Response: **201** when something was written, **202** when nothing was. The body is `{accepted,
+  device_id, tag_count, inserted, skipped}`.
+
+**Admin CRUD** at `/devices/{id}/sensors` (GET, POST, PATCH `/{sid}`, DELETE `/{sid}`; admin tier
+  only, same envelopes as `/devices`): - Tags are unique per device, `sensor_key` must be in the
+  registry, and a zone override must belong to the device's owner. - PATCH with `zone_id: null`
+  clears the override. Omitting the field leaves it unchanged. - Deleting a device now removes its
+  mappings, since `device_id` is a soft FK.
+
+**Removed:** the Django `apps.bivocom` stub (router, schemas, tests, `INSTALLED_APPS` entry, ninja
+  mount), so there's one implementation and no route left that accepts and discards. nginx already
+  sends `/ingest/` to the sidecar. The stub parity test is gone; it's replaced by real behaviour
+  tests.
+
+**Compose:** agri-bridge now targets `http://agri-api-fast:8001/ingest/bivocom`. A follow-up in
+  agri-bridge will change its built-in default to match.
+
+**Docs** (`docs/flows/mqtt-ingest.md`): both bridge channels now persist, so a bridge must use
+  **HTTP or MQTT, not both**, or readings are stored twice. The bridge's MQTT channel stays off by
+  default (`MQTT_URL` unset).
+
+## Verification - New `test_bivocom_device_sensors.py`: 14 tests (8 ingest, 6 CRUD, including an
+  end-to-end mapping-via-API test). - Full suite on Postgres 16 (CI env, locally): **1179 passed, 14
+  skipped, 0 failed**. `manage.py check` is clean, and ruff check/format are clean. - Pushed with
+  the pre-push hook passing on its own (fixed in #470). - **Live end to end** on the local stack,
+  against a copy of the June 22 prod data: 1. Registered `router-user-Router02` (owner Router02,
+  zone 1) and mapped 3 tags through the admin API. 2. POSTed a Router0X payload to agri-bridge
+  :9090. The bridge reported `backend_status: 201`. 3. The 3 readings landed in zone 1 with
+  `device_id` and the payload timestamp. The unmapped `wind_speed` was skipped. 4. Router02's normal
+  `/sensors/temperatureweather` API returned the new reading. 5. Before registration, the same
+  payload made the bridge return 502 with the backend's 404 message: loud, not silent. 6. Test data
+  removed afterwards.
+
+## Not in this PR - The admin UI for mappings (agri-admin). - The agri-bridge default-target change.
+  - Raw-tag mapping on the MQTT Bivocom path, which is still keyed by client username + canonical
+  tags.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+### Testing
+
+- Make the pre-push pytest hook pass on main ([#470](https://github.com/AgriLogy/agri-api/pull/470),
+  [`3076de8`](https://github.com/AgriLogy/agri-api/commit/3076de85b35c17da0ce542bd6a1b5fb80909b539))
+
+Closes #469.
+
+The pre-push hook failed 17 tests on a clean `main` (375 passed), so every push was blocked while CI
+  on Postgres was green. It also marked `ruff check` failed after every release.
+
+## Changes - **Hook env matches CI:** `CELERY_TASK_ALWAYS_EAGER=True`. 7 dispatch tests stop trying
+  to reach a `redis` host, and the hook drops from 164 s to 26 s. - **`access_level` on SQLite:**
+  `conftest._add_access_level_column` now adds the column on SQLite too, so 7 session and
+  preferred-language tests run instead of erroring. - **One class marked Postgres-only:**
+  `AlertSuggestStrategyEndpointTests` (`/alerts/suggest` reads through agri-core's SQLAlchemy
+  session). It still runs in CI. - **`uv run --frozen` in the hook commands**
+  (`.pre-commit-config.yaml`, `.githooks/pre-push`): release commits bump `pyproject.toml`'s version
+  but not `uv.lock`, so a plain `uv run` rewrote the lock and pre-commit reported `ruff check` as
+  failed.
+
+## Verification - Hook command on SQLite: **388 passed, 38 skipped, 0 failed** (before: 375 passed,
+  17 failed). - The same files on Postgres (CI env): **447 passed**. - This branch was pushed with
+  every hook passing, no `--no-verify`.
+
+Unblocks the Bivocom ingest PR for #452 and #284.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+
 ## v1.129.0 (2026-11-05)
 
 ### Features
