@@ -951,6 +951,7 @@ class SendAlertEmailTaskTests(TestCase):
         self.assertIn(self.user.email, mail.outbox[0].to)
 
 
+@_REQUIRES_PG  # /alerts/suggest reads history via agri-core (AGRI_DB_URL)
 class AlertSuggestStrategyEndpointTests(TestCase):
     """The /alerts/suggest endpoint plumbs the threshold ``strategy`` through to
     agri-core and validates it. The threshold math per strategy is covered by

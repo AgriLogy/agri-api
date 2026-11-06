@@ -45,7 +45,7 @@ if ! command -v uv >/dev/null 2>&1; then
 fi
 
 echo "→ ruff check"
-uv run ruff check .
+uv run --frozen ruff check .
 
 # Format check is not yet enforced — see .github/workflows/ci.yml for why.
 # Run `make format` voluntarily before pushing if you've touched a lot of

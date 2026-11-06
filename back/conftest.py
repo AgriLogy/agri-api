@@ -312,16 +312,28 @@ def _add_access_level_column(django_db_setup, django_db_blocker):
     """
     from django.db import connection
 
-    if not connection.settings_dict["ENGINE"].endswith("postgresql"):
-        yield
-        return
-
     with django_db_blocker.unblock(), connection.cursor() as cursor:
-        cursor.execute(
-            'ALTER TABLE "CustomUser_customuser" '
-            "ADD COLUMN IF NOT EXISTS access_level VARCHAR(16) NOT NULL "
-            "DEFAULT 'editor'"
-        )
+        if connection.settings_dict["ENGINE"].endswith("postgresql"):
+            cursor.execute(
+                'ALTER TABLE "CustomUser_customuser" '
+                "ADD COLUMN IF NOT EXISTS access_level VARCHAR(16) NOT NULL "
+                "DEFAULT 'editor'"
+            )
+        else:
+            # sqlite (the pre-push hook) has no ADD COLUMN IF NOT EXISTS; the
+            # Django-side reads of access_level (/users/me, session checks) work
+            # on sqlite once the column exists, so add it rather than skip.
+            columns = {
+                c.name
+                for c in connection.introspection.get_table_description(
+                    cursor, "CustomUser_customuser"
+                )
+            }
+            if "access_level" not in columns:
+                cursor.execute(
+                    'ALTER TABLE "CustomUser_customuser" '
+                    "ADD COLUMN access_level VARCHAR(16) NOT NULL DEFAULT 'editor'"
+                )
     yield
 
 
