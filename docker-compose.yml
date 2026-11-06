@@ -72,7 +72,57 @@ services:
     restart: unless-stopped
     networks: [agro]
 
-  # ---------- agri-bridge — stateless HTTP ingest gateway -----------
+  # ---------- Port 9090 ingest gateway — TWO implementations ----------
+  #
+  # `agryserver` (default) is what the droplet actually serves. `agri-bridge`
+  # is its intended replacement and is gated behind the `bridge` profile until
+  # the cutover happens. Both bind host port 9090, so exactly one may run:
+  #
+  #   docker compose up                    -> agryserver   (matches prod)
+  #   docker compose --profile bridge up   -> BOTH, and the second to start
+  #                                           fails on the port bind
+  #
+  # To exercise agri-bridge locally, stop agryserver first:
+  #   docker compose stop agryserver && docker compose --profile bridge up -d agri-bridge
+  #
+  # #66 removed agryserver from this file in favour of agri-bridge, but the
+  # deploy never carried the swap: deploy-back.yml's compose_services list has
+  # never included a 9090 service, so `up -d --no-deps` recreates only the
+  # Django/Celery/FastAPI containers and leaves the long-running agryserver
+  # container from the legacy compose project untouched. The result was a
+  # gateway serving code that existed in no branch. Restoring it here makes the
+  # deployed thing reproducible again; delete this service once the cutover is
+  # real.
+
+  # ---------- Legacy Node gateway (ACTIVE IN PROD) --------------------
+  agryserver:
+    container_name: agryserver
+    build:
+      context: ./Devops/server
+      dockerfile: Dockerfile
+    logging: *default-logging
+    environment:
+      # server.js still defaults PY_HOST to `agrybackend`, the container name
+      # retired by the agrilogy-back -> agri-api rename (#50). Left implicit,
+      # a recreated container cannot resolve the backend at all.
+      PY_HOST: agri-api-web
+      PY_PORT: 8000
+      PY_PATH: /api/sensors/weather/ingest/
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./shared_data:/shared_data:rw
+    depends_on:
+      agri-api-web:
+        condition: service_healthy
+    restart: unless-stopped
+    # Bounds the blast radius: before the append-only rewrite this process
+    # peaked at 1.1 GB RSS and the kernel OOM-killer took it out repeatedly,
+    # dragging the whole 2 GB droplet into swap. Steady state is now ~16 MB.
+    mem_limit: 256m
+    networks: [agro]
+
+  # ---------- agri-bridge — stateless HTTP ingest gateway (STAGED) ----
   # Receives Router0X-format payloads from field devices, translates to
   # the Bivocom v1 wire format, forwards to agri-api. Sources live in
   # the sibling AgriLogy/agri-bridge repo so the gateway can ship on
@@ -81,6 +131,7 @@ services:
   # service-level changes here.
   agri-bridge:
     container_name: agri-bridge
+    profiles: ["bridge"]
     build:
       context: ../agri-bridge
       dockerfile: Dockerfile
