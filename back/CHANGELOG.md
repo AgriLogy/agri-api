@@ -1,6 +1,26 @@
 # CHANGELOG
 
 
+## v1.132.0 (2026-11-06)
+
+### Features
+
+- **assistant**: Groq provider preset ([#475](https://github.com/AgriLogy/agri-api/pull/475),
+  [`076efd8`](https://github.com/AgriLogy/agri-api/commit/076efd8f63d6ee82aa714d7fabecae995b0c6255))
+
+Closes 474
+
+- `groq` entry in `PROVIDER_CATALOG` (base URL, default `openai/gpt-oss-120b`, production
+  tool-capable models as suggestions), routed to `OpenAICompatProvider`. The admin card builds its
+  provider list from the catalog, so Groq appears there automatically. - Tool-result messages no
+  longer carry `name` (Groq returns 400 on `messages[].name`; OpenAI only needs `tool_call_id`). -
+  Tests: Groq preset routing; no message carries `name`; provider set updated.
+
+Verified: ruff, format, full suite 1203 passed / 14 skipped.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+
 ## v1.131.0 (2026-11-06)
 
 ### Features
