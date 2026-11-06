@@ -165,7 +165,7 @@ def test_config_round_trip_never_returns_the_key(fast, admin):
     assert body["has_api_key"] is True
     assert body["api_key_hint"] == "ABCD"
     assert "sk-ant-secret" not in res.text
-    assert set(body["providers"]) == {"anthropic", "openai", "ollama"}
+    assert set(body["providers"]) == {"anthropic", "openai", "groq", "ollama"}
 
     got = fast.get(CONFIG, headers=_auth(admin))
     assert got.status_code == 200
@@ -607,6 +607,8 @@ def test_openai_compat_tool_loop():
     assert seen[0]["messages"][0] == {"role": "system", "content": "S"}
     tool_msg = seen[1]["messages"][-1]
     assert tool_msg["role"] == "tool" and tool_msg["tool_call_id"] == "c1"
+    # Groq returns 400 on messages[].name, so no message may carry one.
+    assert all("name" not in m for m in seen[1]["messages"])
 
 
 @pytest.mark.parametrize(
@@ -634,3 +636,16 @@ def test_ollama_sends_no_auth_header():
         system="S", context="C", history=[], message="?", tools=[], execute=dict
     )
     assert seen["auth"] is None
+
+
+def test_groq_preset_uses_the_openai_compat_client():
+    meta = providers_mod.PROVIDER_CATALOG["groq"]
+    assert meta["default_base_url"] == "https://api.groq.com/openai/v1"
+    assert meta["default_model"] in meta["suggested_models"]
+    cfg = ProviderConfig(
+        provider="groq",
+        model=meta["default_model"],
+        api_key="gsk-test",
+        base_url=meta["default_base_url"],
+    )
+    assert isinstance(providers_mod.build_provider(cfg), OpenAICompatProvider)

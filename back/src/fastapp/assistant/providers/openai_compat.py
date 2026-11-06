@@ -1,7 +1,7 @@
 """OpenAI-compatible backend for the assistant (#461).
 
 One client for every server that speaks the OpenAI chat-completions API:
-OpenAI itself, Groq, OpenRouter, Together, and Ollama (which serves the same
+OpenAI itself, Groq (``groq`` preset), OpenRouter, Together, and Ollama (which serves the same
 API under ``http://<host>:11434/v1``). Plain HTTP via ``httpx`` so no
 vendor SDK is pulled in for what is a generic protocol.
 
@@ -136,7 +136,8 @@ class OpenAICompatProvider:
                     {
                         "role": "tool",
                         "tool_call_id": call.get("id"),
-                        "name": name,
+                        # No "name": Groq rejects messages[].name with a 400,
+                        # and tool_call_id is all OpenAI needs.
                         "content": json.dumps(output, default=str, ensure_ascii=False),
                     }
                 )
