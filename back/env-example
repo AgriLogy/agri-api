@@ -17,6 +17,17 @@ CELERY_SCHEDULE_MODE=
 # REAL ingested data (Bivocom / LoRaWAN).
 ENABLE_SENSOR_SIMULATOR=
 
+# ----- Assistant LLM (#461) ----------------------------------------------------
+# Configure the provider (Claude / OpenAI-compatible / Ollama), model and API
+# key in the back-office: agri-admin -> Assistant (PUT /admin/assistant/config).
+# The key is stored encrypted with a key derived from SECRET_KEY, so rotating
+# SECRET_KEY means re-entering it there. The vars below are only a legacy
+# fallback (OpenAI-compatible) used when nothing is saved in the back-office.
+# AI_API_KEY=
+# AI_API_BASE_URL=https://api.groq.com/openai/v1
+# AI_MODEL=llama-3.3-70b-versatile
+# AI_TIMEOUT=30
+
 # ----- Email (notifications) ---------------------------------------------------
 # DEFAULT_FROM_EMAIL is what shows up in the From header.
 DEFAULT_FROM_EMAIL=Agrilogy <noreply@agrilogy.local>

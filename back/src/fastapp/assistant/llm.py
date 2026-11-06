@@ -1,49 +1,56 @@
-"""LLM orchestrator — a provider-agnostic, tool-calling assistant brain.
+"""LLM orchestrator: provider-agnostic, tool-calling assistant brain (#461).
 
-Strangler port of ``apps/assistant/llm.py``. Talks to any OpenAI-compatible
-chat-completions API (Groq, OpenRouter, Together, OpenAI, …) configured via the
-sidecar's ``AppSettings`` (``ai_api_base_url`` / ``ai_model`` / ``ai_api_key`` /
-``ai_timeout`` — the same AI_* env vars Django reads). It feeds the LLM the live
-tool catalog, lets it choose a tool, runs that tool through the injected
-``run_tool``, feeds the result back, and returns the model's natural-language
-answer plus the structured tool data for the card.
+The provider (Claude, OpenAI-compatible, Ollama) comes from the back-office
+config (see ``fastapp.assistant.config``). This module owns what must not
+depend on the provider:
 
-Uses the stdlib (urllib) — no new dependency. Any failure (no key, timeout,
-rate-limit, bad response) degrades gracefully to the rule-based orchestrator.
+* **confirm-before-write**: a ``mutating`` tool is never executed from chat.
+  The model can only propose it; the response carries a ``pending_action`` the
+  app renders as a confirmation button, which then calls the authenticated
+  ``POST /assistant/tools/{name}`` as the farmer;
+* **grounding**: the instruction prompt (``prompt.py``) plus per-request
+  context (date, selected zone, language, page);
+* **sources**: every tool result the answer used, with its readings' ``as_of``
+  times, so the app can show what the advice is based on and how old it is;
+* graceful degradation to the rule-based orchestrator on any provider error.
 """
 
 from __future__ import annotations
 
-import json
+import datetime
 import logging
-import urllib.error
-import urllib.request
-
-from fastapp.settings import get_settings
+from dataclasses import dataclass, field
+from typing import Any
 
 from .orchestrator import AssistantResponse, Orchestrator, RunTool
+from .prompt import SYSTEM_PROMPT, build_context
+from .providers import (
+    ChatTurn,
+    LLMProvider,
+    ProviderError,
+    ToolCallRecord,
+    ToolSpec,
+)
 from .tools import registry
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = (
-    "You are the Agrilogy assistant, embedded in a precision-farming dashboard. "
-    "Help the user understand and navigate their farm data: active alerts, the "
-    "latest sensor readings (soil moisture, temperature, VPD, ET0, humidity), "
-    "weather, and the app's pages. ALWAYS use the provided tools to fetch live "
-    "data — never invent numbers. Be concise and practical, and reply in the "
-    "user's language (French, English, or Arabic). If a request is unrelated to "
-    "Agrilogy or farming, politely decline.\n"
-    "Never mention tool or function names, and never write function-call syntax, "
-    "tags, or pseudo-code such as <function=...> in your answer — just give the "
-    "answer in natural prose. Format replies with simple Markdown: short "
-    "paragraphs, **bold** for key values, and bullet lists where they help."
-)
+# Bound what one chat turn sends upstream (cost + latency).
+MAX_HISTORY_TURNS = 12
+MAX_TURN_CHARS = 4000
 
 
-def _tool_schemas() -> list[dict]:
-    """Convert the tool catalog into OpenAI `tools` (function) schemas."""
-    schemas = []
+@dataclass
+class LLMAssistantResponse(AssistantResponse):
+    sources: list[dict[str, Any]] = field(default_factory=list)
+    pending_action: dict[str, Any] | None = None
+    model: str | None = None
+    fallback_reason: str | None = None
+
+
+def tool_specs() -> list[ToolSpec]:
+    """The tool catalog as provider-neutral JSON-schema specs."""
+    specs = []
     for tool in registry.catalog():
         properties: dict[str, dict] = {}
         required: list[str] = []
@@ -54,120 +61,150 @@ def _tool_schemas() -> list[dict]:
             }
             if pinfo.get("required"):
                 required.append(pname)
-        schemas.append(
-            {
-                "type": "function",
-                "function": {
-                    "name": tool["name"],
-                    "description": tool["description"],
-                    "parameters": {
-                        "type": "object",
-                        "properties": properties,
-                        "required": required,
-                    },
+        description = tool["description"]
+        if tool.get("mutating"):
+            description += (
+                " This action is not executed directly: the farmer is shown a "
+                "confirmation button."
+            )
+        specs.append(
+            ToolSpec(
+                name=tool["name"],
+                description=description,
+                parameters={
+                    "type": "object",
+                    "properties": properties,
+                    "required": required,
                 },
-            }
+            )
         )
-    return schemas
+    return specs
 
 
-def _post(payload: dict) -> dict:
-    settings = get_settings()
-    url = f"{settings.ai_api_base_url.rstrip('/')}/chat/completions"
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode("utf-8"),
-        method="POST",
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {settings.ai_api_key}",
-            # Some providers' edge/WAF (e.g. Groq) reject the default
-            # "Python-urllib/x.y" agent with 403 — send an explicit one.
-            "User-Agent": "agri-api-assistant/1.0",
-        },
-    )
-    with urllib.request.urlopen(req, timeout=settings.ai_timeout) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+def clean_history(history: list[dict] | None) -> list[ChatTurn]:
+    """Last N text turns, roles normalised, starting with a user turn."""
+    turns: list[ChatTurn] = []
+    for item in history or []:
+        role = item.get("role")
+        content = str(item.get("content") or "").strip()
+        if role not in ("user", "assistant") or not content:
+            continue
+        turns.append(ChatTurn(role, content[:MAX_TURN_CHARS]))
+    turns = turns[-MAX_HISTORY_TURNS:]
+    while turns and turns[0].role != "user":
+        turns.pop(0)
+    return turns
+
+
+def collect_sources(records: list[ToolCallRecord]) -> list[dict[str, Any]]:
+    """What the answer was based on: one entry per read-tool call, with each
+    metric's value + ``as_of`` so the app can show the data and its age."""
+    sources = []
+    for rec in records:
+        out = rec.output or {}
+        if not isinstance(out, dict) or out.get("status") == "awaiting_confirmation":
+            continue
+        entry: dict[str, Any] = {"tool": rec.name}
+        metrics = out.get("metrics")
+        if isinstance(metrics, list):
+            entry["items"] = [
+                {
+                    "label": m.get("label"),
+                    "value": m.get("value"),
+                    "unit": m.get("unit"),
+                    "as_of": m.get("as_of"),
+                }
+                for m in metrics
+                if isinstance(m, dict)
+            ]
+            stamps = [i["as_of"] for i in entry["items"] if i.get("as_of")]
+            entry["as_of"] = max(stamps) if stamps else None
+        else:
+            entry["as_of"] = out.get("last_update_timestamp") or out.get("as_of")
+        if out.get("error"):
+            entry["error"] = str(out["error"])
+        sources.append(entry)
+    return sources
 
 
 class LLMOrchestrator:
-    """Tool-calling orchestrator; falls back to `fallback` on any failure."""
+    """Answers through an LLM provider; falls back to ``fallback`` on failure."""
 
-    def __init__(self, fallback: Orchestrator) -> None:
+    def __init__(self, provider: LLMProvider, fallback: Orchestrator) -> None:
+        self.provider = provider
         self.fallback = fallback
 
     def respond(
-        self, message: str, *, run_tool: RunTool, context: str | None = None
+        self,
+        message: str,
+        *,
+        run_tool: RunTool,
+        context: str | None = None,
+        history: list[dict] | None = None,
+        zone: dict | None = None,
+        language: str | None = None,
+        now: datetime.datetime | None = None,
     ) -> AssistantResponse:
-        try:
-            return self._respond(message, run_tool=run_tool, context=context)
-        except Exception:
-            logger.exception("LLM orchestrator failed; falling back to rule-based")
-            return self.fallback.respond(message, run_tool=run_tool, context=context)
+        pending: list[dict[str, Any]] = []
 
-    def _respond(
-        self, message: str, *, run_tool: RunTool, context: str | None = None
-    ) -> AssistantResponse:
-        settings = get_settings()
-        system = SYSTEM_PROMPT
-        if context:
-            system += f"\nThe user is currently on the '{context}' page."
-        messages: list[dict] = [
-            {"role": "system", "content": system},
-            {"role": "user", "content": message},
-        ]
-
-        first = _post(
-            {
-                "model": settings.ai_model,
-                "messages": messages,
-                "tools": _tool_schemas(),
-                "tool_choice": "auto",
-                "temperature": 0.2,
-            }
-        )
-        choice = first["choices"][0]["message"]
-        tool_calls = choice.get("tool_calls") or []
-
-        if not tool_calls:
-            return AssistantResponse(
-                intent="llm", reply=(choice.get("content") or "").strip()
-            )
-
-        # The model wants data: run the tool(s), feed results back, ask again.
-        messages.append(choice)
-        used_tool: str | None = None
-        used_data: dict | None = None
-        for call in tool_calls:
-            name = call.get("function", {}).get("name", "")
-            try:
-                args = json.loads(call["function"].get("arguments") or "{}")
-            except (json.JSONDecodeError, KeyError, TypeError):
-                args = {}
-            try:
-                data = run_tool(name, args)
-            except Exception:
-                logger.exception("tool %s failed inside LLM loop", name)
-                data = {"error": f"tool {name} failed"}
-            if used_tool is None:
-                used_tool, used_data = name, data
-            messages.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": call.get("id"),
-                    "name": name,
-                    "content": json.dumps(data, default=str),
+        def execute(name: str, tool_input: dict[str, Any]) -> dict[str, Any]:
+            tool = registry.get(name)
+            if tool is None:
+                return {"error": f"Unknown tool '{name}'."}
+            if tool.mutating:
+                if pending:
+                    return {"error": "Only one action can be proposed at a time."}
+                params = dict(tool_input)
+                if zone and "zone_id" in (tool.params or {}):
+                    params.setdefault("zone_id", zone.get("id"))
+                pending.append({"tool": name, "params": params})
+                return {
+                    "status": "awaiting_confirmation",
+                    "detail": "Not executed. The farmer must confirm it in the app.",
+                    "proposed": params,
                 }
+            return run_tool(name, tool_input)
+
+        try:
+            result = self.provider.complete(
+                system=SYSTEM_PROMPT,
+                context=build_context(
+                    now=now or datetime.datetime.now(datetime.timezone.utc),
+                    language=language,
+                    zone=zone,
+                    page=context,
+                ),
+                history=clean_history(history),
+                message=message,
+                tools=tool_specs(),
+                execute=execute,
+            )
+        except ProviderError as exc:
+            logger.warning("assistant LLM failed (%s): %s", exc.kind, exc.message)
+            fb = self.fallback.respond(message, run_tool=run_tool, context=context)
+            return LLMAssistantResponse(
+                intent=fb.intent,
+                tool=fb.tool,
+                data=fb.data,
+                reply_key=fb.reply_key,
+                reply=fb.reply,
+                fallback_reason=exc.kind,
             )
 
-        second = _post(
-            {
-                "model": settings.ai_model,
-                "messages": messages,
-                "temperature": 0.2,
-            }
+        first_read = next(
+            (
+                r
+                for r in result.tool_calls
+                if (t := registry.get(r.name)) is not None and not t.mutating
+            ),
+            None,
         )
-        reply = (second["choices"][0]["message"].get("content") or "").strip()
-        return AssistantResponse(
-            intent="llm", tool=used_tool, data=used_data, reply=reply
+        return LLMAssistantResponse(
+            intent="llm",
+            reply=result.text,
+            tool=first_read.name if first_read else None,
+            data=first_read.output if first_read else None,
+            sources=collect_sources(result.tool_calls),
+            pending_action=pending[0] if pending else None,
+            model=result.model or None,
         )

@@ -33,7 +33,13 @@ from agri.core.database import session_scope
 from agri.db.assistant import AssistantConversation
 from fastapp.auth import AuthedUser, get_current_user
 
-from fastapp.assistant.orchestrator import get_orchestrator
+from agri.db.analytics import AnalyticsZone
+from fastapp.assistant.llm import LLMOrchestrator
+from fastapp.assistant.orchestrator import (
+    RuleBasedOrchestrator,
+    get_orchestrator,
+    is_command,
+)
 from fastapp.assistant.tools import registry
 
 router = APIRouter(tags=["assistant"])
@@ -43,10 +49,19 @@ class ToolInvokeIn(BaseModel):
     params: dict[str, Any] = {}
 
 
+class ChatHistoryItem(BaseModel):
+    role: str
+    content: str
+
+
 class ChatIn(BaseModel):
     message: str
     zone_id: int | None = None
     context: str | None = None
+    # Prior turns (text only), oldest first. The server keeps the last few.
+    history: list[ChatHistoryItem] = []
+    # "auto" (answer in the farmer's language) or ary | ar | fr | en.
+    language: str | None = None
 
 
 class ConversationIn(BaseModel):
@@ -97,17 +112,52 @@ def chat(payload: ChatIn, user: AuthedUser = Depends(get_current_user)):
             merged.setdefault("zone_id", payload.zone_id)
         return tool.handler(user, merged)
 
-    result = get_orchestrator().respond(
-        payload.message, run_tool=run_tool, context=payload.context
-    )
-
-    return {
+    if is_command(payload.message):
+        orchestrator = RuleBasedOrchestrator()
+        zone = None
+    else:
+        with session_scope() as session:
+            orchestrator = get_orchestrator(session)
+            zone = _owned_zone(session, user.id, payload.zone_id)
+    if isinstance(orchestrator, LLMOrchestrator):
+        result = orchestrator.respond(
+            payload.message,
+            run_tool=run_tool,
+            context=payload.context,
+            history=[h.model_dump() for h in payload.history],
+            zone=zone,
+            language=payload.language,
+        )
+    else:
+        result = orchestrator.respond(
+            payload.message, run_tool=run_tool, context=payload.context
+        )
+    body = {
         "intent": result.intent,
         "reply_key": result.reply_key,
         "reply": result.reply,
         "tool": result.tool,
         "data": result.data,
     }
+    # LLM-only fields are added only when present, so the rule-based envelope
+    # stays byte-identical to the Django original.
+    for key in ("sources", "pending_action", "model", "fallback_reason"):
+        value = getattr(result, key, None)
+        if value:
+            body[key] = value
+    return body
+
+
+def _owned_zone(session, user_id: int, zone_id: int | None) -> dict | None:
+    """The selected zone, only if it belongs to the caller."""
+    if zone_id is None:
+        return None
+    zone = session.scalars(
+        select(AnalyticsZone).where(
+            AnalyticsZone.id == zone_id, AnalyticsZone.user_id == user_id
+        )
+    ).first()
+    return {"id": zone.id, "name": zone.name} if zone is not None else None
 
 
 # ── conversation history (server-side, per user) ─────────────────────────────

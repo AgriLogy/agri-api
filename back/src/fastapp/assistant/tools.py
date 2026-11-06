@@ -85,6 +85,13 @@ def _round(value: float | None) -> float | None:
     return None if value is None else round(value, 2)
 
 
+def _as_of(reading) -> str | None:
+    """ISO time of a reading, so the assistant can say how old a value is and
+    never present a months-old reading as current (#461)."""
+    ts = getattr(reading, "timestamp", None)
+    return ts.isoformat() if ts is not None else None
+
+
 def _metric_status(key: str, value: float | None) -> str:
     """Coarse health classification for a metric, for at-a-glance UI colour."""
     if value is None:
@@ -168,6 +175,7 @@ def _get_farm_status(user: AuthedUser, params: dict) -> dict:
                     "value": value,
                     "unit": source.unit,
                     "status": _metric_status(key, value),
+                    "as_of": _as_of(reading),
                 }
             )
     return {"metrics": metrics, "zone_id": zone_id}
@@ -185,6 +193,7 @@ def _get_weather(user: AuthedUser, params: dict) -> dict:
                     "label": source.label,
                     "value": _round(reading.value) if reading else None,
                     "unit": source.unit,
+                    "as_of": _as_of(reading),
                 }
             )
     return {"metrics": metrics}
@@ -291,6 +300,7 @@ def _metric_snapshot(user: AuthedUser, keys: list[str], zone_id: int | None) -> 
                     "value": value,
                     "unit": source.unit,
                     "status": _metric_status(key, value),
+                    "as_of": _as_of(reading),
                 }
             )
     return {"metrics": metrics, "zone_id": zone_id}
