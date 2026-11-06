@@ -81,7 +81,6 @@ INSTALLED_APPS = [
     "analytics",
     "apps.users.apps.UsersConfig",
     # Hardware-family ingest apps (vertical-slice)
-    "apps.bivocom",
     "apps.lorawan.chirpstack",
     # Domain apps extracted from the analytics god-app (models tagged
     # app_label="analytics"; AppConfig labels stay distinct).

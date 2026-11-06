@@ -1,4 +1,5 @@
-"""fastapp /devices — admin device/router registry CRUD.
+"""fastapp /devices — admin device/router registry CRUD, plus each device's
+sensor mappings (``/devices/{pk}/sensors``, #284).
 
 Strangler port of ``apps/irrigation/router_devices.py`` (django-ninja). Admin
 only (``is_staff``); byte-parity with the Django version on every response and
@@ -17,9 +18,11 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import text
+from sqlalchemy import delete, select, text
 
+from agri.core.alerts import SENSOR_KEY_REGISTRY
 from agri.core.database import session_scope
+from agri.db.analytics import AnalyticsDevicesensor
 from fastapp.auth import LEVEL_ADMIN, AuthedUser, get_current_user, level_rank
 from fastapp.json import DjangoStyleJSONResponse
 from fastapp.schema_compat import (
@@ -350,4 +353,200 @@ def delete_device(pk: int, user: AuthedUser = Depends(get_current_user)):
         ).first()
         if deleted is None:
             raise HTTPException(status_code=404, detail="device not found.")
+        # device_id is a soft FK (analytics_device is Django-managed), so the
+        # device's sensor mappings would otherwise be orphaned.
+        session.execute(
+            delete(AnalyticsDevicesensor).where(AnalyticsDevicesensor.device_id == pk)
+        )
+        return DjangoStyleJSONResponse({"status": "deleted"})
+
+
+# ---------------------------------------------------------------------------
+# Device sensors — /devices/{pk}/sensors (#284)
+#
+# Each row maps one wire tag the router sends (e.g. a Bivocom Modbus tag) to a
+# registry sensor_key and an optional farm zone (null = the device's own zone).
+# Bivocom ingest (fastapp.ingest.handle_bivocom_uplink) routes uplinks by these
+# rows, so a router and its sensors are onboarded as data, not code.
+# ---------------------------------------------------------------------------
+class DeviceSensorWriteIn(BaseModel):
+    tag_name: str | None = None
+    sensor_key: str | None = None
+    # null on create = inherit the device's zone; explicit null on PATCH clears
+    # an override back to inheriting.
+    zone_id: int | None = None
+    is_active: bool | None = None
+
+
+def _serialize_sensor(s: AnalyticsDevicesensor) -> dict[str, Any]:
+    return {
+        "id": s.id,
+        "device": s.device_id,
+        "tag_name": s.tag_name,
+        "sensor_key": s.sensor_key,
+        "zone": s.zone_id,
+        "is_active": s.is_active,
+        "created_at": s.created_at.isoformat() if s.created_at else None,
+    }
+
+
+def _device_owner(session, pk: int):
+    """``(exists, owner_user_id)`` for a device id."""
+    row = session.execute(
+        text("SELECT user_id FROM analytics_device WHERE id = :pk"), {"pk": pk}
+    ).first()
+    return (row is not None), (row.user_id if row is not None else None)
+
+
+def _sensor_key_error(sensor_key: str):
+    if sensor_key not in SENSOR_KEY_REGISTRY:
+        return DjangoStyleJSONResponse(
+            {"detail": f"Unknown sensor_key '{sensor_key}'."}, status_code=400
+        )
+    return None
+
+
+def _zone_error(session, owner_id: int | None, zone_id: int):
+    """A zone override must exist and belong to the device's owner, so a router
+    can never be wired to feed someone else's farm."""
+    row = session.execute(
+        text("SELECT user_id FROM analytics_zone WHERE id = :z"), {"z": zone_id}
+    ).first()
+    if row is None:
+        return DjangoStyleJSONResponse({"detail": "zone not found."}, status_code=400)
+    if owner_id is None or row.user_id != owner_id:
+        return DjangoStyleJSONResponse(
+            {"detail": "zone is not owned by the device's owner."}, status_code=400
+        )
+    return None
+
+
+def _tag_clash(session, device_id: int, tag: str, exclude_id: int | None = None):
+    stmt = select(AnalyticsDevicesensor.id).where(
+        AnalyticsDevicesensor.device_id == device_id,
+        AnalyticsDevicesensor.tag_name == tag,
+    )
+    if exclude_id is not None:
+        stmt = stmt.where(AnalyticsDevicesensor.id != exclude_id)
+    if session.execute(stmt.limit(1)).first() is None:
+        return None
+    return DjangoStyleJSONResponse(
+        {"detail": f"tag_name '{tag}' is already mapped on this device."},
+        status_code=400,
+    )
+
+
+@router.get("/devices/{pk}/sensors", summary="Admin: list a device's sensors")
+def list_device_sensors(pk: int, user: AuthedUser = Depends(get_current_user)):
+    _require_admin(user)
+    with session_scope() as session:
+        exists, _ = _device_owner(session, pk)
+        if not exists:
+            raise HTTPException(status_code=404, detail="device not found.")
+        rows = session.scalars(
+            select(AnalyticsDevicesensor)
+            .where(AnalyticsDevicesensor.device_id == pk)
+            .order_by(AnalyticsDevicesensor.tag_name)
+        ).all()
+        return [_serialize_sensor(r) for r in rows]
+
+
+@router.post("/devices/{pk}/sensors", summary="Admin: attach a sensor to a device")
+def attach_device_sensor(
+    pk: int, payload: DeviceSensorWriteIn, user: AuthedUser = Depends(get_current_user)
+):
+    _require_admin(user)
+    tag = (payload.tag_name or "").strip()
+    sensor_key = (payload.sensor_key or "").strip()
+    if not tag or not sensor_key:
+        return DjangoStyleJSONResponse(
+            {"detail": "tag_name and sensor_key are required."}, status_code=400
+        )
+    if (err := _sensor_key_error(sensor_key)) is not None:
+        return err
+    with session_scope(commit=True) as session:
+        exists, owner_id = _device_owner(session, pk)
+        if not exists:
+            raise HTTPException(status_code=404, detail="device not found.")
+        if (err := _tag_clash(session, pk, tag)) is not None:
+            return err
+        if payload.zone_id is not None:
+            if (err := _zone_error(session, owner_id, payload.zone_id)) is not None:
+                return err
+        row = AnalyticsDevicesensor(
+            device_id=pk,
+            tag_name=tag,
+            sensor_key=sensor_key,
+            zone_id=payload.zone_id,
+            is_active=payload.is_active if payload.is_active is not None else True,
+            created_at=datetime.datetime.now(datetime.timezone.utc),
+        )
+        session.add(row)
+        session.flush()
+        return DjangoStyleJSONResponse(_serialize_sensor(row), status_code=201)
+
+
+@router.patch(
+    "/devices/{pk}/sensors/{sensor_id}", summary="Admin: update a device sensor"
+)
+def patch_device_sensor(
+    pk: int,
+    sensor_id: int,
+    payload: DeviceSensorWriteIn,
+    user: AuthedUser = Depends(get_current_user),
+):
+    _require_admin(user)
+    with session_scope(commit=True) as session:
+        row = session.scalars(
+            select(AnalyticsDevicesensor).where(
+                AnalyticsDevicesensor.id == sensor_id,
+                AnalyticsDevicesensor.device_id == pk,
+            )
+        ).first()
+        if row is None:
+            raise HTTPException(status_code=404, detail="device sensor not found.")
+        if payload.tag_name is not None:
+            tag = payload.tag_name.strip()
+            if not tag:
+                return DjangoStyleJSONResponse(
+                    {"detail": "tag_name cannot be empty."}, status_code=400
+                )
+            if (err := _tag_clash(session, pk, tag, exclude_id=sensor_id)) is not None:
+                return err
+            row.tag_name = tag
+        if payload.sensor_key is not None:
+            sensor_key = payload.sensor_key.strip()
+            if (err := _sensor_key_error(sensor_key)) is not None:
+                return err
+            row.sensor_key = sensor_key
+        if "zone_id" in payload.model_fields_set:
+            if payload.zone_id is not None:
+                _, owner_id = _device_owner(session, pk)
+                if (err := _zone_error(session, owner_id, payload.zone_id)) is not None:
+                    return err
+            row.zone_id = payload.zone_id
+        if payload.is_active is not None:
+            row.is_active = payload.is_active
+        session.flush()
+        return DjangoStyleJSONResponse(_serialize_sensor(row))
+
+
+@router.delete(
+    "/devices/{pk}/sensors/{sensor_id}", summary="Admin: detach a device sensor"
+)
+def delete_device_sensor(
+    pk: int, sensor_id: int, user: AuthedUser = Depends(get_current_user)
+):
+    _require_admin(user)
+    with session_scope(commit=True) as session:
+        deleted = session.execute(
+            delete(AnalyticsDevicesensor)
+            .where(
+                AnalyticsDevicesensor.id == sensor_id,
+                AnalyticsDevicesensor.device_id == pk,
+            )
+            .returning(AnalyticsDevicesensor.id)
+        ).first()
+        if deleted is None:
+            raise HTTPException(status_code=404, detail="device sensor not found.")
         return DjangoStyleJSONResponse({"status": "deleted"})

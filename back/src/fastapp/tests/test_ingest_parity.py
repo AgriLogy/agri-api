@@ -3,7 +3,6 @@ the django-ninja ingest routes byte-for-byte on the response envelope AND
 persist the same rows + enqueue the same alert tasks.
 
 Covered surfaces (all ``auth=None`` — device shared-secret, not JWT):
-  * POST /ingest/bivocom            (stub: validate + 202, no persist)
   * POST /ingest/lorawan/chirpstack (decode pH/battery/rssi → LoraUplink +
                                      per-metric rows under the ``lora`` zone)
   * POST /ingest/weather            (multi-sensor registry-driven ingest)
@@ -67,23 +66,6 @@ def zone(owner):
 
 def _rows(model_cls, **filt):
     return list(model_cls.objects.filter(**filt).values_list("value", flat=True))
-
-
-# ---------------------------------------------------------------------------
-# Bivocom (stub) — validate + 202, byte-identical envelope, no persistence.
-# ---------------------------------------------------------------------------
-def test_bivocom_uplink_parity(fast, django):
-    body = {
-        "device_id": "BV-001",
-        "timestamp": "2026-05-28T11:00:00Z",
-        "rssi": -78.5,
-        "tags": {"ta": 22.5, "ha": 64.0, "ms": 0.32},
-    }
-    dj = django.post("/ingest/bivocom", body, format="json")
-    fp = fast.post("/ingest/bivocom", json=body)
-    assert dj.status_code == fp.status_code == 202, (dj.content, fp.text)
-    assert dj.content == fp.content
-    assert fp.json() == {"accepted": True, "device_id": "BV-001", "tag_count": 3}
 
 
 # ---------------------------------------------------------------------------

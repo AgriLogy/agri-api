@@ -39,6 +39,5 @@ urlpatterns = [
     path("auth/", include("apps.users.urls")),
     # Hardware-family ingest endpoints migrated to django-ninja — served
     # from `v2_api.urls` (mounted at root above) at:
-    #   POST /api/v1/bivocom/uplink
     #   POST /api/v1/lorawan/chirpstack/uplink
 ]

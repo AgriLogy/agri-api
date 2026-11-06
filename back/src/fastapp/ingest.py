@@ -1,7 +1,7 @@
 """Device-ingest support for the fastapp sidecar (F9-ingest).
 
 Pure-SQLAlchemy port of the Django device-webhook write paths
-(``apps/bivocom/router.py``, ``apps/lorawan/chirpstack/router.py``,
+(``apps/lorawan/chirpstack/router.py``,
 ``apps/sensors/router_weather_ingest.py``). No Django ORM — readings are
 persisted through the shared agri-core SQLAlchemy session, and alert
 dispatch enqueues the SAME Celery tasks (by name, same kwargs) the Django
@@ -18,6 +18,7 @@ from __future__ import annotations
 import base64
 import datetime
 import logging
+from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import BigInteger, DateTime, Double, Integer, String, select, update
@@ -33,6 +34,7 @@ from agri.core.alerts import (
 )
 from agri.db.analytics import (
     AnalyticsAlert,
+    AnalyticsDevicesensor,
     AnalyticsNotificationzonesensor,
     AnalyticsZone,
 )
@@ -803,8 +805,150 @@ def handle_chirpstack_uplink(
     return len(readings)
 
 
+# ---------------------------------------------------------------------------
+# Bivocom — data-driven ingest through the DeviceSensor mapping (#452, #284)
+# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class BivocomResult:
+    """What one Bivocom uplink did. ``skipped`` maps each dropped tag to why,
+    so the gateway (and its logs) can see a misconfiguration instead of a
+    silent 2xx."""
+
+    device_id: int
+    inserted: int
+    skipped: dict[str, str]
+
+
+def handle_bivocom_uplink(
+    session: Session,
+    *,
+    serial: str,
+    timestamp: datetime.datetime,
+    tags: dict[str, float],
+) -> BivocomResult:
+    """Persist a Bivocom uplink, routed entirely by data.
+
+    ``serial`` (the gateway's ``device_id``) must match a registered
+    ``analytics_device`` row; that device's ACTIVE ``analytics_devicesensor``
+    rows map each wire tag to a ``sensor_key`` and a zone (the mapping's own
+    zone, else the device's). So an admin onboards a router and its sensors
+    from the back-office, with no per-device code.
+
+    Raises ``IngestError``: 404 for an unknown serial, 422 for an inactive or
+    ownerless device. Tags with no active mapping, no zone, or a zone that is
+    not the device owner's are skipped (reported, never written). Each written
+    reading is stamped with ``device_id`` (ownership follows the device) and
+    pushed through alert dispatch; a dispatch failure never aborts the loop.
+    Values are stored raw: per-device calibration is applied on read.
+    """
+    device = session.execute(
+        # Column-scoped, like resolve_device: never couple the live ingest path
+        # to unrelated optional columns (latitude/longitude, #436).
+        select(
+            AnalyticsDevice.id,
+            AnalyticsDevice.is_active,
+            AnalyticsDevice.zone_id,
+            AnalyticsDevice.user_id,
+        )
+        .where(AnalyticsDevice.serial == serial)
+        .order_by(AnalyticsDevice.id)
+        .limit(1)
+    ).first()
+    if device is None:
+        raise IngestError(f"No device registered for device_id '{serial}'.", status=404)
+    if not device.is_active:
+        raise IngestError("device is inactive.", status=422)
+    if device.user_id is None:
+        raise IngestError("device has no owner; assign one before ingest.", status=422)
+
+    mappings = {
+        m.tag_name: m
+        for m in session.execute(
+            select(
+                AnalyticsDevicesensor.tag_name,
+                AnalyticsDevicesensor.sensor_key,
+                AnalyticsDevicesensor.zone_id,
+            ).where(
+                AnalyticsDevicesensor.device_id == device.id,
+                AnalyticsDevicesensor.is_active.is_(True),
+            )
+        )
+    }
+    # Owner of every zone a mapping could target, in one query: a mapping made
+    # before the device changed hands must not keep feeding the old owner.
+    target_zones = {m.zone_id for m in mappings.values() if m.zone_id is not None}
+    if device.zone_id is not None:
+        target_zones.add(device.zone_id)
+    zone_owner = dict(
+        session.execute(
+            select(AnalyticsZone.id, AnalyticsZone.user_id).where(
+                AnalyticsZone.id.in_(target_zones)
+            )
+        ).all()
+        if target_zones
+        else []
+    )
+
+    inserted = 0
+    skipped: dict[str, str] = {}
+    for tag, value in tags.items():
+        mapping = mappings.get(tag)
+        if mapping is None:
+            skipped[tag] = "unmapped"
+            continue
+        if mapping.sensor_key not in SENSOR_KEY_REGISTRY:
+            skipped[tag] = "unknown_sensor_key"
+            continue
+        zone_id = mapping.zone_id if mapping.zone_id is not None else device.zone_id
+        if zone_id is None:
+            skipped[tag] = "no_zone"
+            continue
+        if zone_owner.get(zone_id) != device.user_id:
+            skipped[tag] = "zone_not_owned"
+            continue
+        write_reading(
+            session,
+            sensor_key=mapping.sensor_key,
+            user_id=device.user_id,
+            zone_id=zone_id,
+            value=value,
+            timestamp=timestamp,
+            device_id=device.id,
+        )
+        inserted += 1
+        try:
+            dispatch_alerts_for_reading(
+                session,
+                sensor_key=mapping.sensor_key,
+                zone_id=zone_id,
+                user_id=device.user_id,
+                value=value,
+                timestamp=timestamp,
+                device_id=device.id,
+            )
+        except Exception:
+            log.exception(
+                "alert dispatch failed for %s (bivocom serial=%s tag=%s)",
+                mapping.sensor_key,
+                serial,
+                tag,
+            )
+
+    log.info(
+        "bivocom.uplink",
+        extra={
+            "serial": serial,
+            "device_id": device.id,
+            "inserted": inserted,
+            "skipped": skipped,
+        },
+    )
+    return BivocomResult(device_id=device.id, inserted=inserted, skipped=skipped)
+
+
 __all__ = [
     "ALERT_GRACE_PERIODS",
+    "BivocomResult",
     "DEFAULT_ALERT_GRACE_PERIOD",
     "IngestError",
     "LoraUplinkRow",
@@ -815,6 +959,7 @@ __all__ = [
     "ensure_lora_zone",
     "first_zone_for",
     "grace_period_seconds_for",
+    "handle_bivocom_uplink",
     "handle_chirpstack_uplink",
     "handle_metrics",
     "parse_timestamp",

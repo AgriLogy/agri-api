@@ -87,13 +87,15 @@ services:
     logging: *default-logging
     environment:
       PORT: 9090
-      BACKEND_URL: http://agri-api-web:8000
-      BACKEND_PATH: /api/v1/bivocom/uplink
+      # Bivocom ingest is served by the FastAPI sidecar (#452). The old target,
+      # agri-api-web:8000/api/v1/bivocom/uplink, never existed (404).
+      BACKEND_URL: http://agri-api-fast:8001
+      BACKEND_PATH: /ingest/bivocom
       LOG_LEVEL: info
     ports:
       - "9090:9090"
     depends_on:
-      agri-api-web:
+      agri-api-fast:
         condition: service_healthy
     restart: unless-stopped
     networks: [agro]
