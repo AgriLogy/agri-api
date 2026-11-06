@@ -1,6 +1,78 @@
 # CHANGELOG
 
 
+## v1.131.0 (2026-11-06)
+
+### Features
+
+- **assistant**: Provider-agnostic LLM engine configured from the back-office
+  ([#473](https://github.com/AgriLogy/agri-api/pull/473),
+  [`7997bd4`](https://github.com/AgriLogy/agri-api/commit/7997bd43df40ecd9fd1da3eaa019252b54a94156))
+
+Closes #472. Part of #461 (phase 1, backend). The agri-web chat and agri-admin settings screen
+  follow in their own PRs.
+
+## Why The assistant had one OpenAI-compatible client driven by `AI_*` env vars. Those were never
+  set, even in prod, so farmers only ever got the rule-based commands. The LLM path it did have was
+  single-turn, had one tool round, fed the model undated readings, and executed write tools straight
+  from chat.
+
+## What **Providers** (`fastapp/assistant/providers/`), behind one provider-neutral interface. Tool
+  execution always stays on our side. - **Claude**, via the official Anthropic SDK: - a manual tool
+  loop, with all tool results returned in one message and `is_error` flagged; - the stable system
+  prompt cached; - `output_config.effort` and no sampling params; - `refusal` / `pause_turn` /
+  `max_tokens` handled; - server-side refusal fallback (`fallbacks="default"`) on models that
+  support it; - typed SDK errors mapped to `auth | rate_limit | unavailable | bad_request |
+  refusal`. - **OpenAI-compatible** (OpenAI, Groq, OpenRouter, **Ollama** at `…:11434/v1`), via
+  `httpx`. Same error kinds.
+
+**Back-office config** (admin tier): - `GET/PUT /admin/assistant/config` and `POST
+  /admin/assistant/test` (a small round trip using saved or unsaved settings). - Stored in
+  `analytics_systemsetting` under a reserved key. The **API key is Fernet-encrypted** with a key
+  derived from `SECRET_KEY`, and responses only show `has_api_key` plus its last 4 characters. - The
+  generic `/admin/settings` endpoints hide that key and refuse writes to it. - The audit log records
+  whether the key was replaced, kept or removed, never the key itself. - `AI_*` env vars remain the
+  fallback.
+
+**Chat** (`POST /assistant/chat`, new optional fields `history`, `language`): - **Conversation
+  input:** the last 12 turns plus the selected zone (only if the caller owns it). Language is
+  `auto`, `ary`, `ar`, `fr` or `en`. - **Instruction prompt** (`prompt.py`): - Darija in Arabic and
+  Latin script (3/7/9), MSA, French and mixed Darija/French. Reply in the farmer's script; don't
+  turn Darija into MSA. - Every farm fact must come from a tool. Stale data is flagged: older than 6
+  h is mentioned, older than 2 days is treated as outdated. - No invented readings or doses. -
+  General guidance is kept separate from farm-specific advice, and missing inputs trigger targeted
+  follow-up questions. - **Readings carry `as_of`** in tool metrics, and LLM responses include
+  `sources` (each tool's values and timestamps). - **Confirm-before-write:** a mutating tool
+  (`create_alert`, `set_notification_cadence`) is never executed from chat. The response carries
+  `pending_action`, and the app confirms through the existing authenticated `POST
+  /assistant/tools/{name}`. - **Unchanged behaviour:** - Explicit commands (`/alerts`, `help`…) stay
+  rule-based even with an LLM configured. - Provider failures fall back to the rule-based reply and
+  report `fallback_reason`. - New response fields appear only on the LLM path, so the rule-based
+  envelope is unchanged.
+
+**Other:** - **Runtime dependencies** gain `anthropic`, `cryptography` and `httpx`. `httpx` had been
+  dev-only, which made the Ollama path 500 in the real image. - **nginx:** new `/admin/assistant/`
+  location. - **`env-example`:** documents the back-office config.
+
+**Parity tests:** `test_get_farm_status_json_parity_no_readings` now ignores the new `as_of`. The
+  LLM-envelope parity test is replaced by `test_assistant_llm.py`, because the Django copy (not
+  routed) doesn't have these features.
+
+## Verification - `test_assistant_llm.py`: 24 tests, no network. They cover config round trip and
+  encryption at rest, key never returned, validation, admin-only access, reserved key hidden,
+  history/zone/language plumbing, foreign zone not leaked, mutating tool proposed but not executed
+  then confirmed, sources with `as_of`, fallback, commands, Anthropic and OpenAI wire shapes, error
+  mapping, and Ollama with no auth header. - Full suite on Postgres 16: **1202 passed, 14 skipped, 0
+  failed**. `manage.py check` is clean, and ruff check/format are clean. - **Live on the local stack
+  (rebuilt image):** - An invalid Claude key → `ok:false, error_kind: auth` from the real API. -
+  Ollama down → `unavailable`. - Saving an Ollama config fills in the default URL. - A Darija
+  free-form question with the LLM unreachable → rule-based reply with `fallback_reason:
+  unavailable`. - `/alerts` → rule-based. - **Not yet verified:** answer quality with a real model
+  (no key available here). The next step is an evaluation set of Darija, Arabic and mixed questions.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+
 ## v1.130.0 (2026-11-06)
 
 ### Features
