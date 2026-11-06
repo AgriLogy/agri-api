@@ -254,7 +254,13 @@ def test_get_farm_status_json_parity_no_readings(fast, django, owner):
         data={"params": {}},
     )
     assert dj.status_code == fp.status_code == 200
-    assert dj.json() == fp.json()
+    # Intentional divergence (#461): fastapp adds each reading's ``as_of`` so
+    # the assistant never presents an old value as current. Everything else
+    # still matches the Django original.
+    fast_body = fp.json()
+    for metric in fast_body["data"]["metrics"]:
+        assert metric.pop("as_of") is None  # no readings in this test
+    assert dj.json() == fast_body
 
 
 def test_list_recent_notifications_json_parity(fast, django, owner):
@@ -379,52 +385,7 @@ def test_create_alert_technician_blocked_byte_identical(fast, django, technician
     assert dj.content == fp.content
 
 
-# --- /chat LLM path: mock _post on BOTH sides, assert envelope matches ------
-
-
-def test_chat_llm_envelope_parity(fast, django, owner, monkeypatch):
-    """With an AI key set, /chat runs the tool-calling LLM orchestrator. Mock the
-    HTTP call identically on both sides: the model 'chooses' get_farm_status,
-    then replies with fixed text. The reply text is the canned mock (NOT
-    byte-matchable against a live model in prod) — here it lets us prove the
-    envelope + tool-routing + tool data match across surfaces."""
-    monkeypatch.setattr(get_settings(), "ai_api_key", "test-key")
-    monkeypatch.setattr(dj_settings, "AI_API_KEY", "test-key", raising=False)
-
-    tool_call_resp = {
-        "choices": [
-            {
-                "message": {
-                    "role": "assistant",
-                    "content": "",
-                    "tool_calls": [
-                        {
-                            "id": "c1",
-                            "function": {"name": "get_farm_status", "arguments": "{}"},
-                        }
-                    ],
-                }
-            }
-        ]
-    }
-    final_resp = {
-        "choices": [
-            {"message": {"role": "assistant", "content": "Your soil moisture is low."}}
-        ]
-    }
-    responses = [tool_call_resp, final_resp]
-
-    def fake_post(payload):
-        return responses[0] if payload.get("tools") else responses[1]
-
-    monkeypatch.setattr("fastapp.assistant.llm._post", fake_post)
-    monkeypatch.setattr("apps.assistant.llm._post", fake_post)
-
-    dj, fp = _both(
-        fast, django, owner, CHAT, method="post", data={"message": "how is my farm?"}
-    )
-    assert dj.status_code == fp.status_code == 200
-    assert dj.json() == fp.json()
-    assert fp.json()["intent"] == "llm"
-    assert fp.json()["tool"] == "get_farm_status"
-    assert fp.json()["reply"] == "Your soil moisture is low."
+# --- /chat LLM path ---------------------------------------------------------
+# No longer a parity surface: fastapp's LLM path is provider-agnostic and
+# admin-configured (#461), with confirm-before-write, history and sources the
+# Django copy does not have. Its behaviour is covered by test_assistant_llm.py.

@@ -253,13 +253,38 @@ class RuleBasedOrchestrator:
         )
 
 
-def get_orchestrator() -> Orchestrator:
-    """Factory — LLM orchestrator when AI_API_KEY is configured (with the
-    rule-based one as its fallback), otherwise the rule-based orchestrator."""
-    from fastapp.settings import get_settings
+def is_command(message: str) -> bool:
+    """True for an explicit shortcut: a slash command or an exact trigger word
+    (``/alerts``, ``help``, ``aide``…). Those always go to the rule-based
+    matcher, LLM configured or not, so shortcuts keep their exact behaviour."""
+    text = (message or "").strip().lower()
+    for rule in _RULES:
+        for trig in rule.triggers:
+            if text == trig or (trig.startswith("/") and text.startswith(trig)):
+                return True
+    return False
 
-    if get_settings().ai_api_key:
-        from .llm import LLMOrchestrator
 
-        return LLMOrchestrator(fallback=RuleBasedOrchestrator())
-    return RuleBasedOrchestrator()
+def get_orchestrator(session=None) -> Orchestrator:
+    """LLM orchestrator when a provider is configured (back-office setting, or
+    the legacy AI_* env vars), with the rule-based one as its fallback;
+    otherwise the rule-based orchestrator."""
+    from agri.core.database import session_scope
+
+    from .config import resolve
+
+    if session is None:
+        with session_scope() as s:
+            resolved = resolve(s)
+    else:
+        resolved = resolve(session)
+    if resolved.provider_config is None:
+        return RuleBasedOrchestrator()
+    from .llm import LLMOrchestrator
+    from .providers import ProviderError, build_provider
+
+    try:
+        provider = build_provider(resolved.provider_config)
+    except ProviderError:
+        return RuleBasedOrchestrator()
+    return LLMOrchestrator(provider=provider, fallback=RuleBasedOrchestrator())

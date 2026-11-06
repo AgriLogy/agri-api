@@ -29,6 +29,7 @@ _settings = get_settings()
 configure_logging(_settings.log_level, _settings.log_format)
 from fastapp.routers import (
     admin_analytics,
+    admin_assistant,
     admin_audit,
     admin_backfill,
     admin_billing,
@@ -154,6 +155,7 @@ app.include_router(ingest.router)  # F9: /ingest/* device webhooks (auth=None)
 app.include_router(admin_billing.router)  # /admin/billing/*
 app.include_router(admin_audit.router)  # /admin/audit
 app.include_router(admin_settings.router)  # /admin/settings + /admin/settings/{key}
+app.include_router(admin_assistant.router)  # /admin/assistant/{config,test}
 app.include_router(admin_kc.router)  # /admin/kc + /admin/kc/{id}
 app.include_router(admin_monitoring.router)  # /admin/monitoring/*
 app.include_router(admin_records.router)  # /admin/{notifications,conversations,...}

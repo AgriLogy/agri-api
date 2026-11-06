@@ -19,6 +19,7 @@ from sqlalchemy import select
 from agri.core.database import session_scope
 from agri.db.audit import AnalyticsSystemsetting
 from fastapp.adminutil import record_audit
+from fastapp.assistant.config import RESERVED_SETTING_KEYS
 from fastapp.auth import AuthedUser, get_current_staff_user
 from fastapp.json import DjangoStyleJSONResponse
 
@@ -77,10 +78,20 @@ def _grouped(session) -> dict[str, list[dict[str, Any]]]:
         )
     ).all()
     for s in rows:
+        # Reserved keys (the assistant LLM config, which holds an encrypted
+        # API key) are managed by their own admin-only endpoint, never here.
+        if s.key in RESERVED_SETTING_KEYS:
+            continue
         out.setdefault(s.category or "general", []).append(
             {"key": s.key, "value": s.value}
         )
     return out
+
+
+def _reserved_response(key: str):
+    return DjangoStyleJSONResponse(
+        {"detail": f"'{key}' is managed by its own admin endpoint."}, status_code=400
+    )
 
 
 @router.get("/admin/settings", summary="Admin: get system settings")
@@ -94,6 +105,9 @@ def get_settings(user: AuthedUser = Depends(get_current_staff_user)):
 def patch_settings(
     payload: SettingsPatchIn, user: AuthedUser = Depends(get_current_staff_user)
 ):
+    reserved = sorted(set(payload.values or {}) & RESERVED_SETTING_KEYS)
+    if reserved:
+        return _reserved_response(reserved[0])
     with session_scope(commit=True) as session:
         for key, value in (payload.values or {}).items():
             existing = session.scalars(
@@ -125,6 +139,8 @@ def create_setting(
     key = (payload.key or "").strip()
     if not key:
         return DjangoStyleJSONResponse({"detail": "key is required"}, status_code=400)
+    if key in RESERVED_SETTING_KEYS:
+        return _reserved_response(key)
     with session_scope(commit=True) as session:
         exists = session.scalars(
             select(AnalyticsSystemsetting.id).where(AnalyticsSystemsetting.key == key)
@@ -155,6 +171,8 @@ def create_setting(
 
 @router.delete("/admin/settings/{key}", summary="Admin: delete a system setting key")
 def delete_setting(key: str, user: AuthedUser = Depends(get_current_staff_user)):
+    if key in RESERVED_SETTING_KEYS:
+        return _reserved_response(key)
     with session_scope(commit=True) as session:
         existing = session.scalars(
             select(AnalyticsSystemsetting).where(AnalyticsSystemsetting.key == key)
