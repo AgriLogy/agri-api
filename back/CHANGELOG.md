@@ -1,6 +1,25 @@
 # CHANGELOG
 
 
+## v1.132.1 (2026-11-06)
+
+### Bug Fixes
+
+- **docker**: Keep .env out of the image; droplet runbook
+  ([#477](https://github.com/AgriLogy/agri-api/pull/477),
+  [`fe399a1`](https://github.com/AgriLogy/agri-api/commit/fe399a14146450e11f3d9bd03a42a8ca6c356772))
+
+Closes 476
+
+- `back/.dockerignore`: `.env*` (except `env-example`), `*.sqlite3`, caches. A fresh amd64 build has
+  no `/code/.env` or `/code/db.sqlite3`; `/.env` is still `env-example`. - `deploy/droplet/`:
+  compose override and runbook for one small droplet (Postgres container, loopback-only Redis/MQTT,
+  images built off-box). Host details deliberately left out. - `check-yaml` gets `--unsafe` so
+  compose `!override`/`!reset` tags pass.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+
 ## v1.132.0 (2026-11-06)
 
 ### Features
