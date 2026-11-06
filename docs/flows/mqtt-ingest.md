@@ -17,8 +17,9 @@ agri-bridge #9).
   identical alert enqueues, regardless of transport.
 - Broker = **ChirpStack's own MQTT broker** (LoRaWAN uplinks land there
   natively). Generic + Bivocom devices publish to the same broker.
-- **agri-bridge** now dual-publishes: HTTP forward (unchanged) **and** MQTT to
-  `agrilogy/{user}/bivocom` when `MQTT_URL` is set.
+- **agri-bridge** can dual-publish: HTTP forward **and** MQTT to
+  `agrilogy/{user}/bivocom` when `MQTT_URL` is set. ⚠️ Both channels persist
+  since #452, so use only one per bridge or readings are stored twice.
 - ⚠️ **Exactly one subscriber replica** — every subscriber receives every
   message, so N replicas = N× writes + N× alerts.
 
@@ -68,9 +69,9 @@ flowchart TD
     HCH["chirpstack_uplink()"]
     HWE["weather_ingest()"]
     HSE["sensor_ingest()"]
-    HBI["bivocom_uplink() — STUB (no persist yet)"]
+    HBI["bivocom_uplink() — device + DeviceSensor mapping"]
   end
-  BRH -->|"POST /api/v1/bivocom/uplink"| HBI
+  BRH -->|"POST /ingest/bivocom"| HBI
 
   subgraph CORE["agri-api · fastapp.ingest — inside session_scope(commit=True)"]
     HCU["handle_chirpstack_uplink()"]
@@ -237,9 +238,14 @@ Transport-agnostic — called by BOTH the MQTT subscriber and the HTTP router
 
 The pre-existing transport; still live. `chirpstack_uplink()` (`:112`),
 `weather_ingest()` (`:139`), `sensor_ingest()` (`:189`) are thin shells over the
-same `handle_*`. `bivocom_uplink()` (`:57`) is a **stub** (validate + 202, no
-persist) — which is why running the bridge's HTTP + MQTT channels together does
-**not** double-persist today.
+same `handle_*`. `bivocom_uplink()` persists through
+`fastapp.ingest.handle_bivocom_uplink()` (#452, #284): the payload's `device_id`
+must be a registered device `serial`, and that device's active
+`analytics_devicesensor` rows map each tag to a `sensor_key` + zone (admin CRUD
+at `/devices/{id}/sensors`). Unknown device → 404, inactive/ownerless → 422,
+unmappable tags are skipped and listed in the response. Because it now
+persists, **run agri-bridge on ONE channel** (HTTP *or* MQTT, never both), or
+every Bivocom reading is stored twice.
 
 ### 6. Read path → graphs — `back/src/fastapp/routers/sensors.py`
 
@@ -318,12 +324,14 @@ MQTT is merged but **dormant** until wired to a broker:
    `MQTT_TLS`) in the compose-project `.env` next to `docker-compose.yml`.
    Deploy → the container joins that network and starts consuming.
 2. **agri-bridge:** set `MQTT_URL` (+ creds) → the same broker in the bridge
-   container env. It then dual-publishes Bivocom uplinks.
+   container env. The bridge then publishes Bivocom uplinks over MQTT as well
+   as HTTP; since both channels persist, disable one of them (see 3).
 3. **Avoid double-delivery for ChirpStack:** if you point the subscriber at the
    ChirpStack topic, **disable ChirpStack's HTTP integration** for that
-   application, or the same uplink arrives twice (HTTP webhook + MQTT). (Today
-   the Bivocom HTTP endpoint is a no-op stub, so the bridge's dual channels are
-   safe; the ChirpStack HTTP webhook is NOT a stub — it persists.)
+   application, or the same uplink arrives twice (HTTP webhook + MQTT). The
+   same rule applies to agri-bridge: its Bivocom HTTP endpoint persists (#452),
+   so if you set the bridge's `MQTT_URL`, stop its HTTP forwarding (or vice
+   versa).
 4. Verify: publish a test message and confirm rows land + a chart updates.
 
 ## Testing & CI

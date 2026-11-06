@@ -40,7 +40,6 @@ from apps.irrigation.router_reads import router as analytics_reads_router
 from apps.sensors.router_et_forecast import router as et_forecast_router
 from apps.sensors.router_sensors import router as sensors_router
 from apps.sensors.router_weather_ingest import router as weather_ingest_router
-from apps.bivocom.router import router as bivocom_router
 from apps.lorawan.chirpstack.router import router as chirpstack_router
 from apps.users.router import router as users_auth_router
 from apps.users.router_admin import router as users_router
@@ -113,8 +112,9 @@ api.add_router("/technicians", technicians_router, tags=["technicians"])
 api.add_router("/devices", devices_router, tags=["devices"])
 
 # Device-ingest webhooks. Each declares ``auth=None`` per-route because the
-# gateway authenticates with a shared-secret header (TODO).
-api.add_router("/ingest/bivocom", bivocom_router, tags=["ingest"])
+# gateway authenticates with a shared-secret header (TODO). Bivocom is NOT
+# here: it is served only by fastapp (POST /ingest/bivocom, #452), so there is
+# one implementation and no stub left that could accept-and-discard uplinks.
 api.add_router("/ingest/lorawan/chirpstack", chirpstack_router, tags=["ingest"])
 api.add_router("/ingest", weather_ingest_router, tags=["ingest"])
 

@@ -270,8 +270,9 @@ class MqttIngest:
         # topic: {prefix}/{client}/bivocom
         # Body is the agri-bridge wire shape: {device_id, timestamp, tags:{k:v}}.
         # The bridge already emits canonical sensor_keys as tag names, so tags map
-        # straight onto handle_metrics (same path as weather). Raw-Modbus-tag
-        # Bivocom (via the DeviceSensor mapping) is a separate future step.
+        # straight onto handle_metrics (same path as weather), keyed by the topic's
+        # client username. The HTTP path (POST /ingest/bivocom) instead routes by
+        # the registered device + its DeviceSensor mapping (#452, #284).
         client_name = msg.topic.split("/")[1]
 
         def run():

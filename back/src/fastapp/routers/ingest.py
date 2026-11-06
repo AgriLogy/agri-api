@@ -3,7 +3,7 @@
 Strangler port of the django-ninja device routers, mounted (in ``agriapi.api``)
 at:
 
-* ``POST /ingest/bivocom``            (apps/bivocom/router.py)
+* ``POST /ingest/bivocom``            (data-driven, via analytics_devicesensor)
 * ``POST /ingest/lorawan/chirpstack`` (apps/lorawan/chirpstack/router.py)
 * ``POST /ingest/weather``            (apps/sensors/router_weather_ingest.py)
 * ``POST /ingest/sensor``             (apps/sensors/router_weather_ingest.py)
@@ -40,10 +40,10 @@ _INGEST_SKIP_KEYS: set[str] = {"npk"}
 # ---------------------------------------------------------------------------
 # Bivocom — POST /ingest/bivocom
 # ---------------------------------------------------------------------------
-# NB: the ninja route is currently a STUB (validate + log + 202, no persist /
-# no dispatch — the Phase-6.5 adapter handoff is still a TODO there). This port
-# is byte-parity with that stub; when the Django side starts persisting, port
-# the write here too.
+# Routed by DATA (#452, #284): ``device_id`` is the registered device's
+# ``serial``; its active DeviceSensor rows map each wire tag to a sensor_key +
+# zone (see ``fastapp.ingest.handle_bivocom_uplink``). agri-bridge posts here.
+# This replaced a validate-and-202 stub that silently discarded every reading.
 class BivocomUplink(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
@@ -53,23 +53,34 @@ class BivocomUplink(BaseModel):
     tags: dict[str, float] = Field(min_length=1)
 
 
-@router.post("/ingest/bivocom", status_code=202, summary="Bivocom gateway uplink")
+@router.post("/ingest/bivocom", summary="Bivocom gateway uplink")
 def bivocom_uplink(payload: BivocomUplink):
-    log.info(
-        "bivocom.uplink",
-        extra={
-            "device_id": payload.device_id,
-            "tag_count": len(payload.tags),
-            "rssi": payload.rssi,
-        },
-    )
+    """201 when at least one reading was written, 202 when the uplink was
+    understood but nothing was mappable (every tag listed in ``skipped``).
+    404 unknown device, 422 inactive/ownerless device."""
+    try:
+        with session_scope(commit=True) as session:
+            result = ingest.handle_bivocom_uplink(
+                session,
+                serial=payload.device_id,
+                timestamp=payload.timestamp,
+                tags=payload.tags,
+            )
+    except ingest.IngestError as exc:
+        log.warning(
+            "bivocom.uplink.rejected",
+            extra={"serial": payload.device_id, "status": exc.status},
+        )
+        return DjangoStyleJSONResponse({"detail": exc.message}, status_code=exc.status)
     return DjangoStyleJSONResponse(
         {
             "accepted": True,
             "device_id": payload.device_id,
             "tag_count": len(payload.tags),
+            "inserted": result.inserted,
+            "skipped": result.skipped,
         },
-        status_code=202,
+        status_code=201 if result.inserted else 202,
     )
 
 
