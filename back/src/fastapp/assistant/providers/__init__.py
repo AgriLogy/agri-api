@@ -30,10 +30,25 @@ PROVIDER_CATALOG: dict[str, dict] = {
         "supports_effort": True,
     },
     "openai": {
-        "label": "OpenAI-compatible (OpenAI, Groq, OpenRouter…)",
+        "label": "OpenAI-compatible (OpenAI, OpenRouter, Together…)",
         "default_base_url": "https://api.openai.com/v1",
         "default_model": "",
         "suggested_models": [],
+        "requires_api_key": True,
+        "supports_effort": False,
+    },
+    # Groq speaks the OpenAI API; a preset so the admin only pastes a key.
+    # Production models with tool use (console.groq.com/docs/models, 2026-11).
+    "groq": {
+        "label": "Groq",
+        "default_base_url": "https://api.groq.com/openai/v1",
+        "default_model": "openai/gpt-oss-120b",
+        "suggested_models": [
+            "openai/gpt-oss-120b",
+            "llama-3.3-70b-versatile",
+            "openai/gpt-oss-20b",
+            "llama-3.1-8b-instant",
+        ],
         "requires_api_key": True,
         "supports_effort": False,
     },
@@ -55,7 +70,7 @@ def build_provider(config: ProviderConfig) -> LLMProvider:
         from .anthropic_provider import AnthropicProvider
 
         return AnthropicProvider(config)
-    if config.provider in ("openai", "ollama"):
+    if config.provider in ("openai", "groq", "ollama"):
         from .openai_compat import OpenAICompatProvider
 
         return OpenAICompatProvider(config)
