@@ -14,6 +14,8 @@ repos:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: check-yaml
+        # Compose overrides use !override / !reset tags: check syntax only.
+        args: [--unsafe]
       - id: check-toml
       - id: check-merge-conflict
 
