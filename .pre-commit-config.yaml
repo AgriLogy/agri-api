@@ -33,13 +33,13 @@ repos:
     hooks:
       - id: ruff-check
         name: ruff check
-        entry: bash -c 'cd back && uv run ruff check .'
+        entry: bash -c 'cd back && uv run --frozen ruff check .'
         language: system
         pass_filenames: false
         stages: [pre-push]
       - id: pytest
         name: pytest (apps/users + analytics)
-        entry: bash -c 'cd back && DJANGO_SETTINGS_MODULE=agriapi.settings SECRET_KEY=ci DEBUG=True ALLOWED_HOSTS="*" USE_POSTGRES=False EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend" uv run pytest src/apps/users/ src/analytics/ -q'
+        entry: bash -c 'cd back && DJANGO_SETTINGS_MODULE=agriapi.settings SECRET_KEY=ci DEBUG=True ALLOWED_HOSTS="*" USE_POSTGRES=False EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend" CELERY_TASK_ALWAYS_EAGER=True uv run --frozen pytest src/apps/users/ src/analytics/ -q'
         language: system
         pass_filenames: false
         stages: [pre-push]
