@@ -25,7 +25,14 @@ from sqlalchemy import select
 from fastapp.auth import AuthedUser, get_current_user
 from fastapp.farm_map_tables import sector_meta
 from fastapp.json import DjangoStyleJSONResponse
-from fastapp.satellite.cdse import NDVI_LEGEND, CDSEClient, SatelliteError
+from fastapp.satellite.cdse import (
+    IMAGE_KINDS,
+    INDEXES,
+    NDVI_LEGEND,
+    CDSEClient,
+    SatelliteError,
+    legend,
+)
 from fastapp.schema_compat import sector_geometry_available
 from fastapp.settings import get_settings
 
@@ -89,6 +96,16 @@ def ndvi_config(user: AuthedUser = Depends(get_current_user)):
         "configured": bool(s.cdse_client_id and s.cdse_client_secret),
         "source": "Copernicus Sentinel-2 L2A (10 m)",
         "legend": NDVI_LEGEND,
+        "indexes": [
+            {
+                "id": k,
+                "use": v["use"],
+                "legend": legend(k),
+                "classes": {"low_below": v["classes"][0], "high_from": v["classes"][1]},
+            }
+            for k, v in INDEXES.items()
+        ],
+        "image_kinds": list(IMAGE_KINDS),
     }
 
 
@@ -121,13 +138,14 @@ def ndvi_dates(
 def ndvi_image(
     pk: int,
     date: dt.date = Query(...),
+    index: str = Query("ndvi", pattern="^(ndvi|ndmi|ndre|false_color)$"),
     user: AuthedUser = Depends(get_current_user),
 ):
     geometry = _sector_geometry(pk, user.id)
     if geometry is None:
         return _NO_SECTOR
     try:
-        png = get_client().ndvi_png(geometry, date)
+        png = get_client().ndvi_png(geometry, date, index)
     except SatelliteError as exc:
         return _err(exc)
     return Response(
@@ -141,6 +159,7 @@ def ndvi_image(
 def ndvi_stats(
     pk: int,
     days: int = Query(120, ge=7, le=730),
+    index: str = Query("ndvi", pattern="^(ndvi|ndmi|ndre)$"),
     user: AuthedUser = Depends(get_current_user),
 ):
     geometry = _sector_geometry(pk, user.id)
@@ -148,11 +167,12 @@ def ndvi_stats(
         return _NO_SECTOR
     start, end = _range(days)
     try:
-        series = get_client().ndvi_stats(geometry, start, end)
+        series = get_client().ndvi_stats(geometry, start, end, index)
     except SatelliteError as exc:
         return _err(exc)
     return {
         "sector_id": pk,
+        "index": index,
         "from": start.isoformat(),
         "to": end.isoformat(),
         "series": series,

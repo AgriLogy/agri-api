@@ -40,51 +40,129 @@ CATALOG_PATH = "/api/v1/catalog/1.0.0/search"
 COLLECTION = "sentinel-2-l2a"
 CRS84 = "http://www.opengis.net/def/crs/OGC/1.3/CRS84"
 
+# Normalised-difference indices: (a - b) / (a + b) over Sentinel-2 L2A bands.
+# Red-edge (B05) and SWIR (B11) are 20 m bands, resampled to the 10 m grid.
+INDEXES: dict[str, dict[str, Any]] = {
+    "ndvi": {
+        "bands": ("B08", "B04"),
+        "use": "vegetation greenness and vigour",
+        "classes": (0.3, 0.6),
+        "legend": [
+            (-0.2, "#a60026"),
+            (0.0, "#d73027"),
+            (0.2, "#fdae61"),
+            (0.4, "#fee08c"),
+            (0.6, "#a6d96a"),
+            (0.8, "#1a9850"),
+        ],
+    },
+    "ndmi": {
+        "bands": ("B08", "B11"),
+        "use": "canopy water content (water-stress support)",
+        "classes": (0.0, 0.2),
+        "legend": [
+            (-0.4, "#8c510a"),
+            (-0.2, "#d8b365"),
+            (0.0, "#f6e8c3"),
+            (0.2, "#c7eae5"),
+            (0.4, "#5ab4ac"),
+            (0.6, "#01665e"),
+        ],
+    },
+    "ndre": {
+        "bands": ("B08", "B05"),
+        "use": "chlorophyll in dense canopy (red edge)",
+        "classes": (0.2, 0.4),
+        "legend": [
+            (-0.1, "#a60026"),
+            (0.1, "#fdae61"),
+            (0.2, "#fee08c"),
+            (0.3, "#d9ef8b"),
+            (0.45, "#66bd63"),
+            (0.6, "#006837"),
+        ],
+    },
+}
+# False colour (NIR, red, green): a picture, not an index — image only.
+IMAGE_KINDS = (*INDEXES, "false_color")
+
 # Scene classification codes treated as "not ground": cloud shadow, cloud
-# medium/high probability, cirrus, snow. NDVI over those is meaningless.
+# medium/high probability, cirrus, snow. Index values there are meaningless.
 _MASK_SCL = "[3, 8, 9, 10, 11]"
 
-NDVI_IMAGE_EVALSCRIPT = f"""//VERSION=3
+
+def _hex_rgb(h: str) -> str:
+    return (
+        "[" + ", ".join(f"{int(h[i : i + 2], 16) / 255:.3f}" for i in (1, 3, 5)) + "]"
+    )
+
+
+def image_evalscript(kind: str) -> str:
+    if kind == "false_color":
+        return f"""//VERSION=3
 function setup() {{
-  return {{ input: ["B04", "B08", "SCL", "dataMask"], output: {{ bands: 4 }} }};
+  return {{ input: ["B03", "B04", "B08", "SCL", "dataMask"], output: {{ bands: 4 }} }};
 }}
 function evaluatePixel(s) {{
   if (!s.dataMask || {_MASK_SCL}.includes(s.SCL)) return [0, 0, 0, 0];
-  const ndvi = (s.B08 - s.B04) / (s.B08 + s.B04);
-  const c = colorBlend(ndvi,
-    [-0.2, 0.0, 0.2, 0.4, 0.6, 0.8],
-    [[0.65, 0.0, 0.15], [0.84, 0.19, 0.15], [0.99, 0.68, 0.38],
-     [1.0, 0.88, 0.55], [0.65, 0.85, 0.42], [0.1, 0.6, 0.31]]);
+  return [2.5 * s.B08, 2.5 * s.B04, 2.5 * s.B03, 1];
+}}
+"""
+    spec = INDEXES[kind]
+    a, b = spec["bands"]
+    stops = ", ".join(f"{v}" for v, _ in spec["legend"])
+    colours = ", ".join(_hex_rgb(c) for _, c in spec["legend"])
+    return f"""//VERSION=3
+function setup() {{
+  return {{ input: ["{a}", "{b}", "SCL", "dataMask"], output: {{ bands: 4 }} }};
+}}
+function evaluatePixel(s) {{
+  if (!s.dataMask || {_MASK_SCL}.includes(s.SCL)) return [0, 0, 0, 0];
+  const v = (s.{a} - s.{b}) / (s.{a} + s.{b});
+  const c = colorBlend(v, [{stops}], [{colours}]);
   return [c[0], c[1], c[2], 1];
 }}
 """
 
-NDVI_STATS_EVALSCRIPT = f"""//VERSION=3
+
+def stats_evalscript(kind: str) -> str:
+    """Index value + 3 class indicators. The Statistical API's mean of an
+    indicator band over clear pixels is the share of the sector in that class,
+    so area classes cost no extra request."""
+    spec = INDEXES[kind]
+    a, b = spec["bands"]
+    lo, hi = spec["classes"]
+    return f"""//VERSION=3
 function setup() {{
   return {{
-    input: [{{ bands: ["B04", "B08", "SCL", "dataMask"] }}],
+    input: [{{ bands: ["{a}", "{b}", "SCL", "dataMask"] }}],
     output: [
-      {{ id: "ndvi", bands: 1, sampleType: "FLOAT32" }},
+      {{ id: "index", bands: 1, sampleType: "FLOAT32" }},
+      {{ id: "classes", bands: 3, sampleType: "FLOAT32" }},
       {{ id: "dataMask", bands: 1 }}
     ]
   }};
 }}
 function evaluatePixel(s) {{
-  const ndvi = (s.B08 - s.B04) / (s.B08 + s.B04);
+  const v = (s.{a} - s.{b}) / (s.{a} + s.{b});
   const clear = s.dataMask === 1 && !{_MASK_SCL}.includes(s.SCL);
-  return {{ ndvi: [ndvi], dataMask: [clear ? 1 : 0] }};
+  return {{
+    index: [v],
+    classes: [v < {lo} ? 1 : 0, v >= {lo} && v < {hi} ? 1 : 0, v >= {hi} ? 1 : 0],
+    dataMask: [clear ? 1 : 0]
+  }};
 }}
 """
 
-# Legend shown by the front; keep in step with NDVI_IMAGE_EVALSCRIPT.
-NDVI_LEGEND = [
-    {"value": -0.2, "color": "#a60026"},
-    {"value": 0.0, "color": "#d73027"},
-    {"value": 0.2, "color": "#fdae61"},
-    {"value": 0.4, "color": "#fee08c"},
-    {"value": 0.6, "color": "#a6d96a"},
-    {"value": 0.8, "color": "#1a9850"},
-]
+
+def legend(kind: str) -> list[dict[str, Any]]:
+    return [{"value": v, "color": c} for v, c in INDEXES[kind]["legend"]]
+
+
+# Back-compat names (NDVI was the first index).
+NDVI_IMAGE_EVALSCRIPT = image_evalscript("ndvi")
+NDVI_STATS_EVALSCRIPT = stats_evalscript("ndvi")
+NDVI_LEGEND = legend("ndvi")
 
 
 class SatelliteError(Exception):
@@ -307,8 +385,12 @@ class CDSEClient:
         self._cache.set(key, json.dumps(out).encode(), self.DATES_TTL)
         return out
 
-    def ndvi_png(self, geometry: dict[str, Any], day: dt.date) -> bytes:
-        key = f"ndvi:png:{geometry_key(geometry)}:{day}"
+    def ndvi_png(
+        self, geometry: dict[str, Any], day: dt.date, kind: str = "ndvi"
+    ) -> bytes:
+        if kind not in IMAGE_KINDS:
+            raise SatelliteError("bad_request", f"Unknown image type {kind!r}.")
+        key = f"sat:png:{kind}:{geometry_key(geometry)}:{day}"
         if (hit := self._cache.get(key)) is not None:
             return hit
         w, h = image_size(geometry)
@@ -335,7 +417,7 @@ class CDSEClient:
                     {"identifier": "default", "format": {"type": "image/png"}}
                 ],
             },
-            "evalscript": NDVI_IMAGE_EVALSCRIPT,
+            "evalscript": image_evalscript(kind),
         }
         png = self._post(PROCESS_PATH, payload, "image/png").content
         self._cache.set(key, png, self.IMAGE_TTL)
@@ -346,10 +428,13 @@ class CDSEClient:
         geometry: dict[str, Any],
         start: dt.date,
         end: dt.date,
+        kind: str = "ndvi",
     ) -> list[dict[str, Any]]:
         """Per-day NDVI over clear pixels, oldest first; days without any
         clear pixel are dropped."""
-        key = f"ndvi:stats:{geometry_key(geometry)}:{start}:{end}"
+        if kind not in INDEXES:
+            raise SatelliteError("bad_request", f"Unknown index {kind!r}.")
+        key = f"sat:stats:{kind}:{geometry_key(geometry)}:{start}:{end}"
         if (hit := self._cache.get(key)) is not None:
             return json.loads(hit)
         payload = {
@@ -365,7 +450,7 @@ class CDSEClient:
                     "to": f"{(end + dt.timedelta(days=1)).isoformat()}T00:00:00Z",
                 },
                 "aggregationInterval": {"of": "P1D"},
-                "evalscript": NDVI_STATS_EVALSCRIPT,
+                "evalscript": stats_evalscript(kind),
                 # ~10 m in degrees (the request CRS is lon/lat).
                 "resx": 0.0001,
                 "resy": 0.0001,
@@ -382,12 +467,14 @@ def parse_stats(body: dict[str, Any]) -> list[dict[str, Any]]:
     for item in body.get("data") or []:
         if item.get("error"):
             continue
+        outputs = item.get("outputs") or {}
         stats = (
-            ((item.get("outputs") or {}).get("ndvi") or {})
+            (outputs.get("index") or outputs.get("ndvi") or {})
             .get("bands", {})
             .get("B0", {})
             .get("stats", {})
         )
+        cls_bands = (outputs.get("classes") or {}).get("bands") or {}
         total = stats.get("sampleCount") or 0
         nodata = stats.get("noDataCount") or 0
         valid = total - nodata
@@ -404,9 +491,21 @@ def parse_stats(body: dict[str, Any]) -> list[dict[str, Any]]:
                 "max": _r(stats.get("max")),
                 "std": _r(stats.get("stDev")),
                 "valid_fraction": round(valid / total, 2),
+                "classes": _classes(cls_bands),
             }
         )
     out.sort(key=lambda r: r["date"])
+    return out
+
+
+def _classes(bands: dict[str, Any]) -> dict[str, float] | None:
+    """Share of clear pixels in low / medium / high (means of 0/1 bands)."""
+    out: dict[str, float] = {}
+    for name, band in (("low", "B0"), ("medium", "B1"), ("high", "B2")):
+        mean = ((bands.get(band) or {}).get("stats") or {}).get("mean")
+        if not isinstance(mean, (int, float)) or math.isnan(float(mean)):
+            return None
+        out[name] = round(float(mean), 3)
     return out
 
 

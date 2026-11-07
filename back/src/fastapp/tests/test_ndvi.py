@@ -209,8 +209,67 @@ def test_parse_stats_drops_cloudy_and_failed_days():
             "max": 0.812,
             "std": 0.1,
             "valid_fraction": 0.75,
+            "classes": None,
         }
     ]
+
+
+def test_parse_stats_reads_index_output_and_area_classes():
+    def band(mean):
+        return {"stats": {"mean": mean}}
+
+    body = {
+        "data": [
+            {
+                "interval": {"from": "2026-10-06T00:00:00Z"},
+                "outputs": {
+                    "index": {
+                        "bands": {
+                            "B0": {
+                                "stats": {
+                                    "mean": 0.12,
+                                    "min": -0.1,
+                                    "max": 0.3,
+                                    "stDev": 0.05,
+                                    "sampleCount": 100,
+                                    "noDataCount": 0,
+                                }
+                            }
+                        }
+                    },
+                    "classes": {
+                        "bands": {"B0": band(0.2), "B1": band(0.5), "B2": band(0.3)}
+                    },
+                },
+            }
+        ]
+    }
+    out = parse_stats(body)[0]
+    assert out["mean"] == 0.12
+    assert out["classes"] == {"low": 0.2, "medium": 0.5, "high": 0.3}
+
+
+@pytest.mark.parametrize(
+    "kind,bands",
+    [("ndvi", "B08 - s.B04"), ("ndmi", "B08 - s.B11"), ("ndre", "B08 - s.B05")],
+)
+def test_index_evalscripts_use_the_right_bands(kind, bands):
+    assert bands in cdse.image_evalscript(kind)
+    script = cdse.stats_evalscript(kind)
+    assert bands in script and 'id: "classes", bands: 3' in script
+    lo, hi = cdse.INDEXES[kind]["classes"]
+    assert f"v < {lo}" in script and f"v >= {hi}" in script
+
+
+def test_false_colour_is_image_only():
+    assert "2.5 * s.B08" in cdse.image_evalscript("false_color")
+    client, _ = _client(lambda r: httpx.Response(200, content=b"x"))
+    with pytest.raises(SatelliteError):
+        client.ndvi_stats(
+            SQUARE, dt.date(2026, 9, 1), dt.date(2026, 10, 1), "false_color"
+        )
+    with pytest.raises(SatelliteError):
+        client.ndvi_png(SQUARE, dt.date(2026, 10, 6), "evi")
 
 
 # ------------------------------------------------------------------- router
@@ -225,10 +284,11 @@ class _FakeClient:
         assert geometry == SQUARE
         return [{"date": "2026-10-06", "cloud_cover": 3.0}]
 
-    def ndvi_png(self, geometry, day):
+    def ndvi_png(self, geometry, day, kind="ndvi"):
+        assert kind in ("ndvi", "ndmi", "ndre", "false_color")
         return b"\x89PNG-fake"
 
-    def ndvi_stats(self, geometry, start, end):
+    def ndvi_stats(self, geometry, start, end, kind="ndvi"):
         return [
             {
                 "date": "2026-10-06",
@@ -291,6 +351,23 @@ def test_ndvi_endpoints(api, monkeypatch, django_user_model, set_access_level):
     assert r.content == b"\x89PNG-fake"
     r = api.get(f"/farm-map/ndvi/sectors/{sid}/stats", headers=_auth(owner))
     assert r.json()["series"][0]["mean"] == 0.6
+    r = api.get(f"/farm-map/ndvi/sectors/{sid}/stats?index=ndmi", headers=_auth(owner))
+    assert r.status_code == 200 and r.json()["index"] == "ndmi"
+    assert (
+        api.get(
+            f"/farm-map/ndvi/sectors/{sid}/stats?index=false_color",
+            headers=_auth(owner),
+        ).status_code
+        == 422
+    )
+    r = api.get(
+        f"/farm-map/ndvi/sectors/{sid}/image?date=2026-10-06&index=false_color",
+        headers=_auth(owner),
+    )
+    assert r.status_code == 200
+    cfg = api.get("/farm-map/ndvi/config", headers=_auth(owner)).json()
+    assert [i["id"] for i in cfg["indexes"]] == ["ndvi", "ndmi", "ndre"]
+    assert "false_color" in cfg["image_kinds"]
 
     # Someone else's sector is invisible; so is an unauthenticated caller.
     assert (
