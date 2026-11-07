@@ -1,6 +1,35 @@
 # CHANGELOG
 
 
+## v1.133.0 (2026-11-07)
+
+### Features
+
+- **farm-map**: Ndvi per sector from Sentinel-2 via Copernicus
+  ([#479](https://github.com/AgriLogy/agri-api/pull/479),
+  [`e2a793d`](https://github.com/AgriLogy/agri-api/commit/e2a793d86f680b79649ce8f7868110e2cad0545e))
+
+Closes 478
+
+**Draft until verified against the real Copernicus API** (credentials pending). Endpoint paths are
+  confirmed to exist (unauthenticated probes: `/api/v1/process`, `/api/v1/statistics`,
+  `/api/v1/catalog/1.0.0/search` → 401, token endpoint → `invalid_client`); request bodies follow
+  the Sentinel Hub API and still need a live round-trip.
+
+- `fastapp/satellite/cdse.py`: token cache + one retry on 401, Catalog dates (dedupe per day, keep
+  clearest, paging), Process PNG (~10 m/px, clamped 16–1024, colour ramp, SCL 3/8/9/10/11 + no-data
+  transparent), Statistical P1D (clear pixels only; days with no clear pixel dropped). Errors →
+  `not_configured` 503 / `auth`,`unavailable` 502 / `rate_limit` 429 / `bad_request` 422. Redis
+  cache: images 30 d, dates/stats 6 h. - `routers/ndvi.py`: `/farm-map/ndvi/config`,
+  `/farm-map/ndvi/sectors/{id}/dates|image|stats`; owner-only via the sector Core mirror; nginx
+  already routes `/farm-map/` to fastapp.
+
+Tests: 12 new (MockTransport client + PG router incl. ownership/401/422/not-configured). Full suite
+  1215 passed / 14 skipped; ruff clean.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+
 ## v1.132.1 (2026-11-06)
 
 ### Bug Fixes
