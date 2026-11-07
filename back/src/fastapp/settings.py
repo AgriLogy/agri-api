@@ -93,6 +93,10 @@ class AppSettings(BaseSettings):
         default="redis://redis:6379/0", alias="CELERY_BROKER_URL"
     )
 
+    # -- Satellite NDVI (Copernicus Data Space OAuth client, server-side) -----
+    cdse_client_id: str = Field(default="", alias="CDSE_CLIENT_ID")
+    cdse_client_secret: str = Field(default="", alias="CDSE_CLIENT_SECRET")
+
     # -- Email (Resend HTTP backend — droplet blocks outbound SMTP) ----------
     resend_api_key: str = Field(default="", alias="RESEND_API_KEY")
     default_from_email: str = Field(
