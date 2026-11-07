@@ -96,3 +96,9 @@ ET_FORECAST_PROVIDER=openmeteo
 ET0_OPENMETEO=on
 # OPENMETEO_TIMEOUT_S=4.0
 # OPENMETEO_FORECAST_TTL_S=1800
+
+# Satellite NDVI (Copernicus Data Space). OAuth client from
+# https://shapps.dataspace.copernicus.eu/dashboard/#/account/settings
+# (User Settings -> OAuth clients). Empty = NDVI shows "not enabled".
+CDSE_CLIENT_ID=
+CDSE_CLIENT_SECRET=
