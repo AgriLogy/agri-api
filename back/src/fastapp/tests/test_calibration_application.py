@@ -466,3 +466,88 @@ def test_alert_uses_raw_when_the_calibration_is_inactive(_engine, monkeypatch):
         )
     schema_compat.reset_table_cache()
     assert enqueued == 0
+
+
+# ---------------------------------------------------------------------------
+# #460 — equation calibration on the read path
+# ---------------------------------------------------------------------------
+
+
+def test_corrected_value_applies_an_equation_calibration():
+    cal = Calibration(equation="a*x^2 + b", coefficients={"a": 0.5, "b": 1.0})
+    assert corrected_value(4.0, cal) == pytest.approx(9.0)
+
+
+def test_corrected_value_is_missing_outside_the_equation_domain():
+    # sqrt of a negative raw value: reported missing, never a fabricated or
+    # silently-uncorrected number that would look calibrated.
+    cal = Calibration(equation="a*sqrt(x)", coefficients={"a": 2.0})
+    assert corrected_value(-1.0, cal) is None
+
+
+def test_corrected_value_equation_with_impossible_unit_applies_equation_alone():
+    cal = Calibration(equation="x + 1", unit="°C")
+    assert corrected_value(3.0, cal, native_unit="pH") == 4.0
+
+
+def test_load_calibrations_skips_corrupt_coefficients(monkeypatch):
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(calib, "sensor_calibration_available", lambda _s: True)
+    monkeypatch.setattr(calib, "sensor_calibration_equation_available", lambda _s: True)
+    good = SimpleNamespace(
+        device_id=1,
+        sensor_key="k",
+        scale_a=1.0,
+        offset_b=0.0,
+        unit="",
+        is_active=True,
+        equation="x + c",
+        coefficients={"c": 2},
+    )
+    bad = SimpleNamespace(
+        device_id=2,
+        sensor_key="k",
+        scale_a=1.0,
+        offset_b=0.0,
+        unit="",
+        is_active=True,
+        equation="x + c",
+        coefficients="{not json",
+    )
+
+    class _Session:
+        def execute(self, stmt, params):
+            assert "equation" in str(stmt)
+            return SimpleNamespace(all=lambda: [good, bad])
+
+    loaded = load_calibrations(_Session(), [(1, "k"), (2, "k")])
+    assert set(loaded) == {(1, "k")}
+    assert loaded[(1, "k")].coefficients == {"c": 2.0}
+
+
+_EQ_CALIB_SQL = (
+    "INSERT INTO analytics_sensorcalibration "
+    "(device_id, sensor_key, scale_a, offset_b, unit, is_active, note, "
+    " equation, coefficients, created_at, updated_at) "
+    "VALUES (:device_id, :key, 1.0, 0.0, '', true, '', :equation, "
+    " CAST(:coefficients AS jsonb), now(), now())"
+)
+
+
+@_requires_pg
+def test_read_endpoint_applies_an_equation_calibration(client, _engine):
+    _seed(_engine, readings=[(4.0, _DEVICE_ID)])
+    with Session(_engine) as s:
+        s.execute(
+            text(_EQ_CALIB_SQL),
+            {
+                "device_id": _DEVICE_ID,
+                "key": _SENSOR_KEY,
+                "equation": "a*x**2 + b",
+                "coefficients": '{"a": 0.25, "b": 2.5}',
+            },
+        )
+        s.commit()
+    raw = client.get(f"/sensors/{_SLUG}?raw=true").json()
+    assert [r["value"] for r in raw] == [pytest.approx(6.5)]

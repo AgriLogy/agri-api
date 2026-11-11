@@ -192,6 +192,54 @@ def sensor_calibration_available(session: Any) -> bool:
 def reset_table_cache() -> None:
     """Forget every probed table. Tests only — production probes once."""
     _table_cache.clear()
+    _calibration_equation_cache.clear()
+
+
+# ---------------------------------------------------------------------------
+# #460 — equation-based calibration columns on analytics_sensorcalibration
+# ---------------------------------------------------------------------------
+# agri-db ``a7c3e9f1b2d4`` adds ``equation`` / ``coefficients`` /
+# ``reference_points`` / ``fit_metrics``. Until it is applied, reads keep the
+# affine columns only (every calibration behaves exactly as before) and an
+# equation write is refused with this message rather than silently dropped.
+SENSOR_CALIBRATION_EQUATION_COLUMNS = (
+    "equation",
+    "coefficients",
+    "reference_points",
+    "fit_metrics",
+)
+SENSOR_CALIBRATION_EQUATION_MIGRATION = "a7c3e9f1b2d4"
+SENSOR_CALIBRATION_EQUATION_UNAVAILABLE = (
+    "Equation calibration is not available on this deployment: "
+    f"{SENSOR_CALIBRATION_TABLE} has no equation column. Apply the agri-db "
+    f"migration that adds it ({SENSOR_CALIBRATION_EQUATION_MIGRATION}), then "
+    "retry. Linear (scale/offset) calibration keeps working in the meantime."
+)
+
+_calibration_equation_cache: WeakKeyDictionary[Any, bool] = WeakKeyDictionary()
+
+
+def sensor_calibration_equation_available(session: Any) -> bool:
+    """``True`` when the calibration table exists AND carries every #460
+    column. Probed once per engine per process, cached (read hot path)."""
+    engine = _engine_of(session)
+    cached = _calibration_equation_cache.get(engine)
+    if cached is None:
+        cached = False
+        if table_available(session, SENSOR_CALIBRATION_TABLE):
+            try:
+                names = {
+                    c["name"]
+                    for c in sa_inspect(engine).get_columns(SENSOR_CALIBRATION_TABLE)
+                }
+                cached = all(c in names for c in SENSOR_CALIBRATION_EQUATION_COLUMNS)
+            except Exception:  # pragma: no cover - inspection refused
+                log.warning(
+                    "could not inspect %s; assuming no equation columns",
+                    SENSOR_CALIBRATION_TABLE,
+                )
+        _calibration_equation_cache[engine] = cached
+    return cached
 
 
 # ---------------------------------------------------------------------------
@@ -360,6 +408,9 @@ __all__ = [
     "IRRIGATION_DECISION_TABLE",
     "SENSOR_CALIBRATION_TABLE",
     "SENSOR_CALIBRATION_UNAVAILABLE",
+    "SENSOR_CALIBRATION_EQUATION_COLUMNS",
+    "SENSOR_CALIBRATION_EQUATION_MIGRATION",
+    "SENSOR_CALIBRATION_EQUATION_UNAVAILABLE",
     "SENSOR_GROUPS_MIGRATION",
     "SENSOR_GROUPS_UNAVAILABLE",
     "SENSOR_GROUP_SENSOR_TABLE",
@@ -379,6 +430,7 @@ __all__ = [
     "sector_geometry_available",
     "sector_metadata_available",
     "sensor_calibration_available",
+    "sensor_calibration_equation_available",
     "sensor_groups_available",
     "table_available",
 ]

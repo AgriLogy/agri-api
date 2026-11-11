@@ -823,3 +823,203 @@ def test_calibration_rejects_a_zero_scale(groups_api):
 
     assert resp.status_code == 400, resp.text
     assert "scale_a" in resp.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
+# #460 — general calibration: equation + reference points
+# ---------------------------------------------------------------------------
+_QUAD_POINTS = [
+    {"captured": x, "real": 0.002 * x * x + 0.5 * x - 3.0} for x in (10, 20, 35, 50, 80)
+]
+
+
+def test_resolve_equation_fits_coefficients_from_points():
+    resolved = calib_router._resolve_equation(
+        calib_router.CalibrationIn(
+            equation="a*x^2 + b*x + c", reference_points=_QUAD_POINTS
+        )
+    )
+    assert not isinstance(resolved, str), resolved
+    assert resolved.equation == "a*x**2 + b*x + c"
+    assert resolved.coefficients["a"] == pytest.approx(0.002, rel=1e-6)
+    assert resolved.coefficients["c"] == pytest.approx(-3.0, rel=1e-6)
+    assert resolved.fit_metrics["n_points"] == 5
+    assert resolved.fit_metrics["r2"] == pytest.approx(1.0)
+
+
+def test_resolve_equation_needs_coefficients_or_points():
+    resolved = calib_router._resolve_equation(
+        calib_router.CalibrationIn(equation="a*x + b")
+    )
+    assert isinstance(resolved, str) and "a, b" in resolved
+
+
+def test_resolve_equation_accepts_explicit_coefficients():
+    resolved = calib_router._resolve_equation(
+        calib_router.CalibrationIn(
+            equation="a*x + b", coefficients={"a": 2, "b": 1, "z": 9}
+        )
+    )
+    assert resolved.coefficients == {"a": 2.0, "b": 1.0}
+
+
+@pytest.mark.parametrize("equation", ["__import__('os')", "x +", "foo(x)", "a*b"])
+def test_resolve_equation_rejects_bad_equations(equation):
+    resolved = calib_router._resolve_equation(
+        calib_router.CalibrationIn(equation=equation)
+    )
+    assert isinstance(resolved, str)
+
+
+def test_resolve_equation_verifies_an_affine_calibration_against_points():
+    resolved = calib_router._resolve_equation(
+        calib_router.CalibrationIn(
+            scale_a=2.0, offset_b=0.0, reference_points=[{"captured": 1, "real": 2.5}]
+        )
+    )
+    assert resolved.equation == ""
+    assert resolved.coefficients is None
+    assert resolved.fit_metrics["max_abs_error"] == pytest.approx(0.5)
+
+
+@pytest.fixture
+def fit_client():
+    _authenticate_as(_OWNER_ID, "fit-owner")
+    try:
+        with TestClient(app) as client:
+            yield client
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
+def test_fit_endpoint_returns_coefficients_metrics_and_preview(fit_client):
+    resp = fit_client.post(
+        "/sensor-calibrations/fit",
+        json={
+            "equation": "a*x^2 + b*x + c",
+            "reference_points": _QUAD_POINTS,
+            "preview_raw": [40, -1e308],
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["coefficient_names"] == ["a", "b", "c"]
+    assert body["coefficients"]["b"] == pytest.approx(0.5, rel=1e-6)
+    assert body["metrics"]["rmse"] == pytest.approx(0.0, abs=1e-6)
+    assert len(body["points"]) == 5
+    assert body["preview"][0]["real"] == pytest.approx(0.002 * 1600 + 20 - 3)
+    assert body["preview"][1]["real"] is None and "error" in body["preview"][1]
+
+
+def test_fit_endpoint_verifies_a_fixed_formula(fit_client):
+    resp = fit_client.post(
+        "/sensor-calibrations/fit",
+        json={
+            "equation": "(x - 4) / 16 * 100",
+            "reference_points": [{"captured": 12, "real": 51}],
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["coefficients"] == {}
+    assert resp.json()["metrics"]["max_abs_error"] == pytest.approx(1.0)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"equation": "x +"},
+        {
+            "equation": "a*x^2 + b*x + c",
+            "reference_points": [{"captured": 1, "real": 1}],
+        },
+        {"equation": "a*x + b"},
+    ],
+)
+def test_fit_endpoint_rejects_invalid_requests(fit_client, payload):
+    resp = fit_client.post("/sensor-calibrations/fit", json=payload)
+    assert resp.status_code == 400, resp.text
+    assert resp.json()["detail"]
+
+
+def test_fit_endpoint_requires_authentication():
+    app.dependency_overrides.pop(get_current_user, None)
+    with TestClient(app) as client:
+        resp = client.post("/sensor-calibrations/fit", json={"equation": "x"})
+    assert resp.status_code in (401, 403)
+
+
+@_requires_pg
+def test_equation_calibration_round_trips(groups_api):
+    client, has_tables, engine = groups_api
+    url = f"/sensor-calibrations/{_DEVICE_ID}/soil_moisture"
+    payload = {
+        "equation": "a*x^2 + b*x + c",
+        "reference_points": _QUAD_POINTS,
+        "unit": "%",
+        "note": "gravimetric VWC, 5 samples",
+    }
+
+    resp = client.put(url, json=payload)
+    if not has_tables:
+        _assert_write_refused(resp)
+        return
+
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["equation"] == "a*x**2 + b*x + c"
+    assert body["coefficients"]["a"] == pytest.approx(0.002, rel=1e-6)
+    assert body["reference_points"] == [
+        {"captured": float(p["captured"]), "real": pytest.approx(p["real"])}
+        for p in _QUAD_POINTS
+    ]
+    assert body["fit_metrics"]["n_points"] == 5
+    assert body["equation_available"] is True
+
+    read_back = client.get(url).json()
+    assert read_back["coefficients"] == body["coefficients"]
+    with Session(engine) as session:
+        kind = session.execute(
+            text("SELECT jsonb_typeof(coefficients) FROM analytics_sensorcalibration")
+        ).scalar_one()
+    assert kind == "object"  # stored as real JSONB, not a JSON-encoded string
+
+    # Back to affine: the equation is cleared, coefficients become SQL NULL.
+    resp = client.put(url, json={"scale_a": 1.1, "offset_b": 0.0})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["equation"] == ""
+    assert resp.json()["coefficients"] is None
+
+
+@_requires_pg
+def test_equation_write_is_refused_without_the_equation_columns(
+    groups_api, monkeypatch
+):
+    client, has_tables, _ = groups_api
+    if not has_tables:
+        pytest.skip("covered by the missing-table refusal")
+    monkeypatch.setattr(
+        calib_router, "sensor_calibration_equation_available", lambda _s: False
+    )
+
+    resp = client.put(
+        f"/sensor-calibrations/{_DEVICE_ID}/soil_moisture",
+        json={"equation": "x + c", "coefficients": {"c": 1}},
+    )
+    assert resp.status_code == 400, resp.text
+    assert "a7c3e9f1b2d4" in resp.json()["detail"]
+
+    # A plain affine write still works on such a deployment.
+    resp = client.put(
+        f"/sensor-calibrations/{_DEVICE_ID}/soil_moisture", json={"scale_a": 2}
+    )
+    assert resp.status_code == 201, resp.text
+
+
+@_requires_pg
+def test_equation_calibration_rejects_an_invalid_equation(groups_api):
+    client, _has_tables, _ = groups_api
+    resp = client.put(
+        f"/sensor-calibrations/{_DEVICE_ID}/soil_moisture",
+        json={"equation": "x.__class__"},
+    )
+    assert resp.status_code == 400, resp.text
