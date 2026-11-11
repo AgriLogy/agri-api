@@ -1,6 +1,32 @@
 # CHANGELOG
 
 
+## v1.136.0 (2026-11-11)
+
+### Features
+
+- **alerts**: Seasonal window for GET /alerts/suggest
+  ([#486](https://github.com/AgriLogy/agri-api/pull/486),
+  [`b1a98ff`](https://github.com/AgriLogy/agri-api/commit/b1a98ff6afaef0f42767fe87972b7009424f9140))
+
+Closes #485. Part of #37 (the AlertSuggest seasonality item).
+
+- `GET /alerts/suggest` accepts `?window=recent|seasonal`. The default is `recent`, so current
+  callers see no change. - The same parameter and validation are on the fastapp route (which nginx
+  serves in prod) and on the Django route, so the parity contract holds. An unknown window returns
+  the same 400 bytes from both, with a new parity test. - The payload gains `window` and
+  `seasonal_fallback` from agri-core. - `seasonal` uses readings within ±15 days of today's date in
+  each of the previous 3 years. With fewer than 10 such readings it answers from the latest 50 and
+  returns `window: "recent", seasonal_fallback: true`. - agri-core pin: 0.28.1 → **0.29.0**. agri-db
+  is unchanged (still 0.25.0), so there is no migration.
+
+Tests: - New: `AlertSuggestStrategyEndpointTests` checks the default window, the seasonal fallback
+  and the unknown-window 400. `test_suggest_unknown_window_400` covers parity. - Full suite against
+  Postgres 18: **1279 passed, 15 skipped**.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+
 ## v1.135.0 (2026-11-11)
 
 ### Features
