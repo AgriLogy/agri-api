@@ -74,7 +74,7 @@ dependencies = [
     # 0.27.1 resolves agri-db 0.23.1 (was 0.19.0): the ORM now maps sector
     # geometry + crop metadata, basin/forage zone columns, foragesensor,
     # activegraph.forage_level_status and the farm-map tables.
-    "agri-core @ git+https://github.com/AgriLogy/agri-core.git@0.27.1",
+    "agri-core @ git+https://github.com/AgriLogy/agri-core.git@5e164bdefc91990f5ebb52709a72a819460ab872",
     # FastAPI sidecar (back/src/fastapp) — the strangler target the Django
     # surface migrates into, served by uvicorn on :8001 (entrypoint `fast`
     # role). Same image/venv as Django so both stay in lockstep.
