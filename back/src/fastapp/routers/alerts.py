@@ -29,6 +29,7 @@ from sqlalchemy import select
 from agri.core.alerts import (
     SENSOR_KEY_REGISTRY,
     SUGGEST_STRATEGIES,
+    SUGGEST_WINDOWS,
     recent_triggers_for_user,
     suggest_alert_for,
 )
@@ -268,12 +269,13 @@ def alerts_for_graph(
 
 @router.get(
     "/alerts/suggest",
-    summary="Suggested alert payload (mean / percentile / sd prefill)",
+    summary="Suggested alert payload (mean / percentile / sd, recent or seasonal)",
 )
 def alerts_suggest(
     sensor_key: str | None = None,
     zone_id: int | None = None,
     strategy: str = "mean",
+    window: str = "recent",
     user: AuthedUser = Depends(get_current_user),
 ):
     if not sensor_key:
@@ -291,9 +293,20 @@ def alerts_suggest(
             },
             status_code=400,
         )
+    if window not in SUGGEST_WINDOWS:
+        return DjangoStyleJSONResponse(
+            {"detail": f"Unknown window '{window}'. Allowed: {list(SUGGEST_WINDOWS)}."},
+            status_code=400,
+        )
     with session_scope() as session:
         payload = suggest_alert_for(
-            session, user.id, sensor_key, zone_id=zone_id, limit=50, strategy=strategy
+            session,
+            user.id,
+            sensor_key,
+            zone_id=zone_id,
+            limit=50,
+            strategy=strategy,
+            window=window,
         )
     if payload is None:
         return DjangoStyleJSONResponse(

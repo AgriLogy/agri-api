@@ -986,3 +986,23 @@ class AlertSuggestStrategyEndpointTests(TestCase):
             "/alerts/suggest?sensor_key=temperature_weather&strategy=bogus"
         )
         self.assertEqual(r.status_code, 400, r.content)
+
+    def test_default_window_is_recent(self):
+        r = self.client.get("/alerts/suggest?sensor_key=temperature_weather")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["window"], "recent")
+        self.assertFalse(r.json()["seasonal_fallback"])
+
+    def test_seasonal_window_without_history_falls_back(self):
+        r = self.client.get(
+            "/alerts/suggest?sensor_key=temperature_weather&window=seasonal"
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["window"], "recent")
+        self.assertTrue(r.json()["seasonal_fallback"])
+
+    def test_unknown_window_is_400(self):
+        r = self.client.get(
+            "/alerts/suggest?sensor_key=temperature_weather&window=yearly"
+        )
+        self.assertEqual(r.status_code, 400, r.content)
