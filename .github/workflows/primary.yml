@@ -66,7 +66,11 @@ jobs:
   # merge. Postgres 16 (same as `test`) backs the dual-ORM e2e assertions.
   mqtt-e2e:
     needs: lint
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest moved to the 26.04 image (2026-11), whose apt
+    # mosquitto 2.0.22-5build1 does not come up in the broker fixture, so every
+    # broker/e2e test errored at setup. 24.04 is the image this gate last passed
+    # on (main, 2026-11-07). Unpin once the fixture is verified on 26.04.
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:16
