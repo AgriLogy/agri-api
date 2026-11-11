@@ -236,15 +236,16 @@ def alerts_for_graph(
 @router.get(
     "/suggest",
     auth=JwtAuth(),
-    summary="Suggested alert payload (mean / percentile / sd prefill)",
+    summary="Suggested alert payload (mean / percentile / sd, recent or seasonal)",
 )
 def alerts_suggest(
     request,
     sensor_key: str | None = None,
     zone_id: int | None = None,
     strategy: str = "mean",
+    window: str = "recent",
 ):
-    from agri.core.alerts import SUGGEST_STRATEGIES
+    from agri.core.alerts import SUGGEST_STRATEGIES, SUGGEST_WINDOWS
 
     if not sensor_key:
         return Response({"detail": "sensor_key is required."}, status=400)
@@ -260,8 +261,17 @@ def alerts_suggest(
             },
             status=400,
         )
+    if window not in SUGGEST_WINDOWS:
+        return Response(
+            {"detail": f"Unknown window '{window}'. Allowed: {list(SUGGEST_WINDOWS)}."},
+            status=400,
+        )
     payload = suggest_alert(
-        request.auth, sensor_key=sensor_key, zone_id=zone_id, strategy=strategy
+        request.auth,
+        sensor_key=sensor_key,
+        zone_id=zone_id,
+        strategy=strategy,
+        window=window,
     )
     if payload is None:
         return Response({"detail": "Unable to build suggestion."}, status=404)

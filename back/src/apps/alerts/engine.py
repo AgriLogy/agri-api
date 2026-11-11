@@ -301,14 +301,16 @@ def suggest_alert(
     zone_id: int | None = None,
     sample_size: int = 50,
     strategy: str = "mean",
+    window: str = "recent",
 ) -> dict[str, Any] | None:
     """Build a sensible default payload for the create-alert form.
 
     Fetches the most-recent ``sample_size`` readings for ``sensor_key``
     (scoped to ``user`` + optional ``zone_id``) and hands them off to
     ``agri.core.alerts.suggested_alert_payload``. ``strategy`` selects how
-    the threshold is derived (mean / percentile / sd). Returns ``None`` when
-    the sensor key is unknown.
+    the threshold is derived (mean / percentile / sd); ``window="seasonal"``
+    samples the same calendar period of previous years instead of the latest
+    readings. Returns ``None`` when the sensor key is unknown.
     """
     from agri.core.alerts import suggest_alert_for
     from agri.core.database import session_scope
@@ -321,6 +323,7 @@ def suggest_alert(
             zone_id=zone_id,
             limit=sample_size,
             strategy=strategy,
+            window=window,
         )
 
 

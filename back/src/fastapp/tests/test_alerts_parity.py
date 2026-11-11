@@ -273,6 +273,14 @@ def test_suggest_unknown_strategy_400(fast, django, owner):
     assert dj.content == fp.content
 
 
+def test_suggest_unknown_window_400(fast, django, owner):
+    dj, fp = _both(
+        fast, django, owner, f"{URL}/suggest?sensor_key=temperature_weather&window=x"
+    )
+    assert dj.status_code == fp.status_code == 400
+    assert dj.content == fp.content
+
+
 # --- update / delete -------------------------------------------------------
 
 
