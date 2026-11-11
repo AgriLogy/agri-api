@@ -1,6 +1,43 @@
 # CHANGELOG
 
 
+## v1.133.1 (2026-11-11)
+
+### Bug Fixes
+
+- **nginx**: Route /my-devices, /reports/* and /users/{username}/access-level to fastapp
+  ([#482](https://github.com/AgriLogy/agri-api/pull/482),
+  [`b0d5cc7`](https://github.com/AgriLogy/agri-api/commit/b0d5cc79a3b4c01933eb9584531aae845b3abe25))
+
+Closes #481.
+
+## Fix `deploy/nginx/back.conf` and `staging.conf`: - `location = /my-devices` → fastapp (same
+  commit as in #480; identical change, merges cleanly whichever lands first) - `location /reports/`
+  → fastapp - `location ~ ^/users/[^/]+/access-level$` → fastapp — only this suffix; the rest of
+  `/users/*` stays on Django (a regex location wins over the catch-all prefix) - staging only:
+  `/admin/assistant/` → fastapp (back.conf already had it)
+
+## Prevention — `test_nginx_routing.py` Parses both configs, applies nginx's location selection
+  (exact → `^~` prefix → regexes in order → longest prefix; comments ignored) to **every path in
+  fastapp's OpenAPI schema**, and fails for any path that would not reach the fastapp upstream —
+  unless listed in `NOT_ROUTED_TO_FASTAPP` with its reason (auth + `/users/*` still on Django,
+  `/admin/db` held for field metadata, internal `/healthz` / `/fast/whoami`). A stale allowlist
+  entry also fails. Pure: no nginx binary, network or DB.
+
+Before the fix the test reports exactly the production 404s: ``` back.conf: /reports/alert-events,
+  /reports/irrigation-decisions, /users/{username}/access-level staging.conf: the same +
+  /admin/assistant/config, /admin/assistant/test ``` After: green.
+
+## Verification - `test_nginx_routing` 4/4 (incl. a unit check of the selection rules); ruff check +
+  format ✓; full suite (sqlite) 682 passed — the one failure, `test_e2e_workflow`, needs Postgres
+  and fails identically on main locally; CI runs it on Postgres. - `nginx -t` not run locally (no
+  nginx/Docker here); blocks mirror the existing ones. **After deploy:** `curl -o /dev/null -w
+  '%{http_code}' https://back.agrogo-datafarm.com/reports/alert-events` should turn 404 → 401.
+
+## Deploy note nginx config on the droplet is not reloaded by CI — copy `deploy/nginx/back.conf` and
+  `sudo nginx -t && sudo systemctl reload nginx`.
+
+
 ## v1.133.0 (2026-11-07)
 
 ### Features
