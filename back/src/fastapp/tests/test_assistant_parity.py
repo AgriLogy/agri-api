@@ -30,6 +30,7 @@ from fastapi.testclient import TestClient
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import AccessToken
 
+from fastapp.json import DjangoStyleJSONResponse
 from fastapp.main import app
 from fastapp.settings import get_settings
 
@@ -134,10 +135,23 @@ def _make_alert(user, **over):
 # --- deterministic surface: byte-identical ---------------------------------
 
 
+# Tools added after the cutover that only fastapp serves (prod routes
+# /assistant to fastapp). Everything else must still match Django exactly.
+FASTAPP_ONLY_TOOLS = {"search_knowledge"}  # knowledge base, #461 phase 2
+
+
+def _without_fastapp_only(tools: list[dict]) -> list[dict]:
+    return [t for t in tools if t["name"] not in FASTAPP_ONLY_TOOLS]
+
+
 def test_tool_catalog_is_byte_identical(fast, django, owner):
     dj, fp = _both(fast, django, owner, TOOLS)
     assert dj.status_code == fp.status_code == 200
-    assert dj.content == fp.content  # full catalog, byte-for-byte
+    tools = fp.json()["tools"]
+    assert {t["name"] for t in tools} >= FASTAPP_ONLY_TOOLS
+    shared = {"tools": _without_fastapp_only(tools)}
+    # The shared catalog, byte-for-byte (same encoder as the live response).
+    assert dj.content == DjangoStyleJSONResponse(shared).body
 
 
 def test_unknown_tool_404_is_byte_identical(fast, django, owner):
@@ -334,7 +348,9 @@ def test_chat_smalltalk_byte_identical(fast, django, owner):
 def test_chat_commands_json_parity(fast, django, owner):
     dj, fp = _both(fast, django, owner, CHAT, method="post", data={"message": "/help"})
     assert dj.status_code == fp.status_code == 200
-    assert dj.json() == fp.json()
+    fast_body = fp.json()
+    fast_body["data"]["commands"] = _without_fastapp_only(fast_body["data"]["commands"])
+    assert dj.json() == fast_body
     assert fp.json()["intent"] == "commands" and fp.json()["tool"] is None
 
 

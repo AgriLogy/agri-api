@@ -76,7 +76,8 @@ dependencies = [
     # activegraph.forage_level_status and the farm-map tables.
     # 0.28.0 adds equation calibration (agri.core.calibration_equation, #77)
     # and resolves agri-db 0.24.0 (sensorcalibration equation columns).
-    "agri-core @ git+https://github.com/AgriLogy/agri-core.git@0.28.0",
+    # 0.28.1 resolves agri-db 0.25.0: assistant_knowledge_article (#461).
+    "agri-core @ git+https://github.com/AgriLogy/agri-core.git@0.28.1",
     # FastAPI sidecar (back/src/fastapp) — the strangler target the Django
     # surface migrates into, served by uvicorn on :8001 (entrypoint `fast`
     # role). Same image/venv as Django so both stay in lockstep.

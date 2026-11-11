@@ -59,6 +59,8 @@ def tool_specs() -> list[ToolSpec]:
                 "type": pinfo.get("type", "string"),
                 "description": pinfo.get("description", ""),
             }
+            if pinfo.get("enum"):
+                properties[pname]["enum"] = list(pinfo["enum"])
             if pinfo.get("required"):
                 required.append(pname)
         description = tool["description"]
@@ -106,7 +108,22 @@ def collect_sources(records: list[ToolCallRecord]) -> list[dict[str, Any]]:
             continue
         entry: dict[str, Any] = {"tool": rec.name}
         metrics = out.get("metrics")
-        if isinstance(metrics, list):
+        articles = out.get("articles")
+        if isinstance(articles, list):
+            # Knowledge-base hits: the app lists them as cited articles.
+            entry["articles"] = [
+                {
+                    "id": a.get("id"),
+                    "title": a.get("title"),
+                    "sources": a.get("sources") or [],
+                    "reviewed_at": a.get("reviewed_at"),
+                    "review_overdue": bool(a.get("review_overdue")),
+                }
+                for a in articles
+                if isinstance(a, dict)
+            ]
+            entry["as_of"] = None
+        elif isinstance(metrics, list):
             entry["items"] = [
                 {
                     "label": m.get("label"),

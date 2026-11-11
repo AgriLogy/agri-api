@@ -18,15 +18,16 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any, Callable
 
-from sqlalchemy import func, select
-
 from agri.core.database import session_scope
 from agri.db.analytics import (
     AnalyticsAlert,
     AnalyticsNotification,
     AnalyticsZone,
 )
+from agri.db.assistant import KNOWLEDGE_TOPICS
 from agri.db.users import CustomUserCustomuser
+from sqlalchemy import func, select
+
 from fastapp.auth import AuthedUser
 from fastapp.history import record_advice_decision
 
@@ -778,6 +779,67 @@ registry.register(
                 "required": False,
                 "description": "Max notifications to return (default 5, max 50).",
             }
+        },
+    )
+)
+
+
+# ── knowledge base (#461 phase 2, fastapp-only) ─────────────────────────────
+# Not part of the Django catalog: test_assistant_parity lists it in
+# FASTAPP_ONLY_TOOLS. General agronomy comes from articles staff approved in
+# agri-admin, so the model cites a reviewed source instead of its memory.
+
+
+def _search_knowledge(user: AuthedUser, params: dict) -> dict:
+    from .knowledge import knowledge_available, search_articles
+
+    query = str(params.get("query") or "").strip()[:300]
+    if not query:
+        return {"error": "A search query is required.", "articles": []}
+    topic = params.get("topic") or None
+    if topic is not None and topic not in KNOWLEDGE_TOPICS:
+        topic = None
+    crop = str(params.get("crop") or "").strip()[:80] or None
+    with session_scope() as session:
+        if not knowledge_available(session):
+            return {
+                "available": False,
+                "articles": [],
+                "error": "The knowledge base is not available yet.",
+            }
+        articles = search_articles(session, query, topic=topic, crop=crop)
+    return {"available": True, "query": query, "articles": articles}
+
+
+registry.register(
+    Tool(
+        name="search_knowledge",
+        description="Search the Agrogo knowledge base: agronomy articles "
+        "reviewed and approved by Agrogo agronomists (irrigation, crops, soil, "
+        "nutrition, weather, crop problems, equipment). Use it before giving "
+        "general farming advice. Returns the matching articles with their "
+        "sources and review date.",
+        handler=_search_knowledge,
+        params={
+            "query": {
+                "type": "string",
+                "required": True,
+                "description": "Key words of the question, not a sentence. "
+                "Include French technical terms and the farmer's own words, "
+                "e.g. 'irrigation goutte-à-goutte olivier été سقي زيتون'.",
+            },
+            "topic": {
+                "type": "string",
+                "required": False,
+                "enum": list(KNOWLEDGE_TOPICS),
+                "description": "Restrict to one subject.",
+            },
+            "crop": {
+                "type": "string",
+                "required": False,
+                "description": "Crop the question is about (keeps articles for "
+                "that crop and general ones).",
+            },
         },
     )
 )
