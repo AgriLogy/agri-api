@@ -59,6 +59,33 @@ def _create_assistant_history_table(django_db_setup, django_db_blocker):
 
 
 @pytest.fixture(scope="session", autouse=True)
+def _create_knowledge_table(django_db_setup, django_db_blocker):
+    """``assistant_knowledge_article`` (agri-db b8d4f0a2c3e5) has no Django
+    model. Create it from the agri.db table definition — generated
+    ``search_vector`` and GIN index included — so the knowledge-base tests run
+    against the real schema. Postgres only (tsvector)."""
+    from django.db import connection
+
+    if connection.vendor != "postgresql":
+        yield
+        return
+    from sqlalchemy.dialects import postgresql
+    from sqlalchemy.schema import CreateIndex, CreateTable
+
+    from agri.db.assistant import AssistantKnowledgeArticle
+
+    table = AssistantKnowledgeArticle.__table__
+    dialect = postgresql.dialect()
+    with django_db_blocker.unblock():
+        if table.name not in connection.introspection.table_names():
+            with connection.cursor() as cursor:
+                cursor.execute(str(CreateTable(table).compile(dialect=dialect)))
+                for index in table.indexes:
+                    cursor.execute(str(CreateIndex(index).compile(dialect=dialect)))
+    yield
+
+
+@pytest.fixture(scope="session", autouse=True)
 def _create_technician_tables(django_db_setup, django_db_blocker):
     """``analytics_techniciangrant`` + ``analytics_technicianzonegrant`` are
     unmanaged (self-deployed in prod via scripts/ensure_technician_tables.py).

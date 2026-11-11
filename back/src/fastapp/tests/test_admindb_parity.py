@@ -167,6 +167,8 @@ _FASTAPP_ONLY_KEYS = {
     # map preferences, served only by the fastapp farm-map router
     "analytics.sensorinstallation",
     "analytics.mappreference",
+    # assistant knowledge base (agri-db b8d4f0a2c3e5, agri-api#461 phase 2)
+    "assistant.knowledgearticle",
 }
 
 

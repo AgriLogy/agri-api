@@ -22,9 +22,17 @@ from __future__ import annotations
 import types
 
 import pytest
-from sqlalchemy import JSON, Integer, MetaData, create_engine, text
+from sqlalchemy import (
+    JSON,
+    CheckConstraint,
+    Integer,
+    MetaData,
+    Text,
+    create_engine,
+    text,
+)
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.orm import Session
 
 import agri.db.analytics  # noqa: F401  (registers every table on AgriBase)
@@ -155,7 +163,7 @@ def test_resolve_device_not_found_returns_all_none(monkeypatch):
 # post-migration one. Everything else is generated from the agri-db metadata,
 # retyped for sqlite (BigInteger identity PKs → INTEGER rowid so they
 # autoincrement; JSONB → JSON, which sqlite can render, minus its
-# Postgres-only server default).
+# Postgres-only server default; a generated TSVECTOR → plain TEXT).
 # ---------------------------------------------------------------------------
 _DEVICE_DDL_NO_COORDS = """
 CREATE TABLE analytics_device (
@@ -196,6 +204,12 @@ def _sqlite_engine(device_ddl: str):
     sources += list(ingest._IngestBase.metadata.sorted_tables)
     for table in sources:
         copy = table.to_metadata(meta)
+        # CHECKs written with Postgres casts ('x'::text) do not parse on sqlite.
+        for constraint in list(copy.constraints):
+            if isinstance(constraint, CheckConstraint) and "::" in str(
+                constraint.sqltext
+            ):
+                copy.constraints.discard(constraint)
         for column in copy.columns:
             column.identity = None
             if column.primary_key:
@@ -205,6 +219,13 @@ def _sqlite_engine(device_ddl: str):
                 column.type = JSON()
                 # Postgres-only defaults ('{}'::jsonb) do not parse on sqlite.
                 column.server_default = None
+            elif isinstance(column.type, TSVECTOR):
+                # Full-text search column (generated from a Postgres
+                # expression): a plain nullable TEXT on sqlite.
+                column.type = Text()
+                column.computed = None
+                column.server_default = None
+                column.server_onupdate = None
 
     engine = create_engine("sqlite://")
     meta.create_all(engine)

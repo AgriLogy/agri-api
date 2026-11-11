@@ -34,6 +34,7 @@ from fastapp.routers import (
     admin_backfill,
     admin_billing,
     admin_db,
+    admin_knowledge,
     admin_impersonation,
     admin_kc,
     admin_monitoring,
@@ -158,6 +159,7 @@ app.include_router(admin_billing.router)  # /admin/billing/*
 app.include_router(admin_audit.router)  # /admin/audit
 app.include_router(admin_settings.router)  # /admin/settings + /admin/settings/{key}
 app.include_router(admin_assistant.router)  # /admin/assistant/{config,test}
+app.include_router(admin_knowledge.router)  # /admin/assistant/knowledge (#461)
 app.include_router(admin_kc.router)  # /admin/kc + /admin/kc/{id}
 app.include_router(admin_monitoring.router)  # /admin/monitoring/*
 app.include_router(admin_records.router)  # /admin/{notifications,conversations,...}

@@ -210,7 +210,9 @@ def _describe_column(col) -> dict[str, Any]:
     is_fk = bool(col.foreign_keys)
     is_pk = bool(col.primary_key)
     has_default = col.default is not None or col.server_default is not None
-    editable = not is_pk
+    # A generated column (e.g. a tsvector search index) is computed by Postgres
+    # and refuses writes: shown, never editable.
+    editable = not is_pk and col.computed is None
     required = editable and not col.nullable and not has_default
     label_name = col.key[:-3] if (is_fk and col.key.endswith("_id")) else col.key
     info: dict[str, Any] = {
@@ -281,8 +283,12 @@ def _row_dict(obj, model) -> dict[str, Any]:
 
 
 def _writable_columns(model) -> dict[str, Any]:
-    """attname → column for every editable (non-PK) column."""
-    return {c.key: c for c in inspect(model).columns if not c.primary_key}
+    """attname → column for every editable (non-PK, non-generated) column."""
+    return {
+        c.key: c
+        for c in inspect(model).columns
+        if not c.primary_key and c.computed is None
+    }
 
 
 def _apply_values(obj, model, body: dict[str, Any]) -> None:
