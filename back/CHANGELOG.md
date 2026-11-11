@@ -1,6 +1,56 @@
 # CHANGELOG
 
 
+## v1.135.0 (2026-11-11)
+
+### Features
+
+- **assistant**: Knowledge base with review workflow and search tool
+  ([#484](https://github.com/AgriLogy/agri-api/pull/484),
+  [`e3ee771`](https://github.com/AgriLogy/agri-api/commit/e3ee7715fde56635d7f9c6a628fc087eafc6931d))
+
+Closes #483 · phase 2 of #461
+
+General farming advice from the Agrogo assistant now comes from articles staff **approved**, not
+  from what the model remembers.
+
+### Admin (`/admin/assistant/knowledge`, admin tier) - List (filters: status, topic, language, text)
+  with per-status counts; create (draft or review), get, edit, delete. - `POST /{id}/status`: draft
+  → review → approved → archived. Approval needs ≥ 1 source, stamps the reviewer, and sets a review
+  date a year out when none is given (a past date is refused). - Editing the **text** of an approved
+  article sends it back to **review**, so the assistant stops using it until it is re-approved;
+  changing only the review date keeps the approval. - Every write is audited (`knowledge.*`). Table
+  missing → list says so (`available: false`, names migration `b8d4f0a2c3e5`), writes return 400 —
+  never a 500.
+
+### Assistant - New read tool `search_knowledge(query, topic?, crop?)`: approved articles only, best
+  first (`ts_rank_cd`, title/keywords over body), up to 4, body capped at 2500 chars, with sources,
+  `reviewed_at`, `review_overdue`. - Query normalised exactly like the index (agri-db `fold_text`:
+  accents, Arabic letter variants, harakat, glued article/clitics), Darija/French/English filler
+  words dropped, OR of prefix terms (`زيتون:*`), so Darija, MSA, Arabizi and French questions match.
+  - Prompt: search before general advice, name the article used, say when advice is *not* from the
+  knowledge base and suggest an agronomist, flag overdue articles, never present articles as farm
+  readings. - Chat `sources` carry the cited articles (`articles: [{id, title, sources, reviewed_at,
+  review_overdue}]`). Tool specs now pass `enum` to the model.
+
+### Other - `/admin/db`: generated columns (the tsvector) are shown but not editable/writable. -
+  Parity tests: `search_knowledge` is listed as fastapp-only (prod serves `/assistant` from
+  fastapp); the rest of the catalog and `/help` still match Django byte-for-byte. Admin-db parity
+  lists the new fastapp-only table. - sqlite schema mirror: TSVECTOR → TEXT, Postgres-cast CHECKs
+  dropped. - Pins agri-core 0.28.1 (agri-db 0.25.0).
+
+### Tests - 19 Postgres tests (lifecycle, re-review on edit, approval rules, validation, admin-only,
+  missing table, approved-only search, Darija via keywords/clitics/hamza, ranking, topic/crop
+  filters, overdue flag, chat sources + prompt + tool spec, /admin/db read-only column) + 8 pure
+  query-term tests. - Full suite on Postgres 17 against the released packages: **1275 passed**, 15
+  skipped.
+
+### Deploy Needs agri-db migration `b8d4f0a2c3e5` (the `migrate` role does it). Until then
+  everything keeps working; the knowledge base reports itself unavailable.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+
 ## v1.134.0 (2026-11-11)
 
 ### Features
