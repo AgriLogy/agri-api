@@ -1,6 +1,51 @@
 # CHANGELOG
 
 
+## v1.134.0 (2026-11-11)
+
+### Features
+
+- **calibration**: General equation calibration fitted from reference points
+  ([#480](https://github.com/AgriLogy/agri-api/pull/480),
+  [`72acddd`](https://github.com/AgriLogy/agri-api/commit/72acdddc8815de0bedb2e7e3d74f0448047e6db1))
+
+Closes #460.
+
+**Depends on** AgriLogy/agri-core#78 (not merged yet) and AgriLogy/agri-db#82 (merged, 0.24.0). ⚠️
+  `back/pyproject.toml` temporarily pins agri-core to the #78 head commit `5e164bd` so CI tests the
+  real code — **replace with the agri-core release tag before merging**.
+
+## What A sensor can be calibrated with any equation in `x` (the captured value) — `a*x^2 + b*x +
+  c`, `a*exp(b*x)`, `(x-4)/16*100`, `(x + a) % 360` … Every other name is a coefficient the
+  **server** fits from reference points `[{captured, real}]` (agri-core `fit_equation`, least
+  squares), storing R² / RMSE / MAE / max error / residuals with the calibration.
+
+- `PUT /sensor-calibrations/{device}/{key}` accepts `equation`, `coefficients`, `reference_points`;
+  validates (whitelisted parser, never `eval`), fits, stores
+  `equation/coefficients/reference_points/fit_metrics`. Affine rows unchanged; points on an affine
+  row are scored. - `POST /sensor-calibrations/fit` — stateless fit + raw→real preview for the
+  editor. - Read path (charts, alerts, reports) applies the equation through the same single choke
+  point (`fastapp.calibration`); a raw value outside the equation's domain reads as **missing**,
+  never as an uncorrected number. - Schema shim: without agri-db `a7c3e9f1b2d4`, reads stay affine
+  and equation writes get a 400 naming the migration. - **fix(nginx):** `/my-devices` was not routed
+  to fastapp — prod returns Django's 404 today, so the calibration and sensor-group editors offered
+  **no sensor**. Added to `back.conf` and `staging.conf`.
+
+## Verification - `ruff check` + `ruff format --check` ✓ - Full suite on Postgres (CI env, frozen
+  lock with git-installed agri-core/agri-db): **1244 passed, 15 skipped** — incl. new tests for the
+  router (fit, round-trip, JSONB storage, refusal without columns, bad equation) and read path
+  (equation applied, out-of-domain → missing, corrupt coefficients skipped). - **API e2e** (branch
+  Django + fastapp behind a gateway reproducing the nginx routing, migrated DB): 20/20 — fit, save,
+  raw + hourly chart values = f(raw), inactive → raw, out-of-domain → null, `__import__` refused,
+  too few points refused, foreign device 404, fit requires auth, back to linear. - **Browser e2e**
+  (Playwright, agri-web branch): 20/20 — preset, 5 points with decimal comma, fit (a=0.01, c=−2,
+  R²=1, "excellent"), preview, save with correction off/on, dashboard data corrected, reload in
+  equation mode, server error surfaced, no horizontal scroll at 390 px, no page errors.
+
+## Also seen (not fixed here) `/reports/alert-events` and `/reports/irrigation-decisions` have the
+  same nginx gap — prod returns 404.
+
+
 ## v1.133.1 (2026-11-11)
 
 ### Bug Fixes
