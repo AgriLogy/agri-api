@@ -35,7 +35,11 @@ Edge behaviour (all inherited from :mod:`agri.core.calibration`, made explicit):
 * ``is_active = False`` → raw (the factor is disabled, not deleted);
 * ``raw is None`` → ``None`` (a missing reading stays missing);
 * a misconfigured unit (unknown / cross-dimension) → the affine correction
-  alone, never a 500 on the dashboard nor a silently-dropped alert.
+  alone, never a 500 on the dashboard nor a silently-dropped alert;
+* an equation calibration (#460) that cannot be evaluated at this raw value
+  (outside its domain: ``log`` of a negative, division by zero, …) → ``None``.
+  The reading is reported missing rather than as an uncorrected number that
+  would look calibrated, and the alert path skips it.
 
 The store predates the pinned agri-db in production, so — like every other
 consumer of this table — the batch load asks :mod:`fastapp.schema_compat`
@@ -44,6 +48,7 @@ first and treats an absent table as "nothing is calibrated" (identity).
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable
 from typing import Any
 
@@ -58,7 +63,10 @@ from agri.core.calibration import (
 from fastapp.schema_compat import (
     SENSOR_CALIBRATION_TABLE,
     sensor_calibration_available,
+    sensor_calibration_equation_available,
 )
+
+log = logging.getLogger(__name__)
 
 # The map key: a device id + the sensor_key its stream is calibrated under.
 CalibrationKey = tuple[int, str]
@@ -68,9 +76,11 @@ CalibrationKey = tuple[int, str]
 # the SQL portable across dialects (the sqlite ingest mirror renders row-value
 # IN differently from Postgres). A request keys one sensor_key over a handful of
 # devices, so the over-fetch is negligible.
-_LOAD_SQL = (
-    "SELECT device_id, sensor_key, scale_a, offset_b, unit, is_active "
-    f"FROM {SENSOR_CALIBRATION_TABLE} "
+_AFFINE_COLUMNS = "device_id, sensor_key, scale_a, offset_b, unit, is_active"
+# #460 — only selected when agri-db a7c3e9f1b2d4 is applied (schema shim).
+_EQUATION_COLUMNS = ", equation, coefficients"
+_LOAD_WHERE = (
+    f" FROM {SENSOR_CALIBRATION_TABLE} "
     "WHERE device_id IN :devices AND sensor_key IN :keys"
 )
 
@@ -98,7 +108,10 @@ def load_calibrations(
         return {}
     if not sensor_calibration_available(session):
         return {}
-    stmt = text(_LOAD_SQL).bindparams(
+    columns = _AFFINE_COLUMNS
+    if sensor_calibration_equation_available(session):
+        columns += _EQUATION_COLUMNS
+    stmt = text(f"SELECT {columns}{_LOAD_WHERE}").bindparams(
         bindparam("devices", expanding=True),
         bindparam("keys", expanding=True),
     )
@@ -109,11 +122,18 @@ def load_calibrations(
             "keys": sorted({sensor_key for _, sensor_key in wanted}),
         },
     ).all()
-    return {
-        (row.device_id, row.sensor_key): Calibration.from_row(row)
-        for row in rows
-        if (row.device_id, row.sensor_key) in wanted
-    }
+    loaded: dict[CalibrationKey, Calibration] = {}
+    for row in rows:
+        key = (row.device_id, row.sensor_key)
+        if key not in wanted:
+            continue
+        try:
+            loaded[key] = Calibration.from_row(row)
+        except CalibrationError:
+            # Corrupt stored coefficients must not 500 every chart of the
+            # farm; the stream reads uncorrected and the operator is told.
+            log.warning("unreadable calibration for %s; ignoring it", key)
+    return loaded
 
 
 def corrected_value(
@@ -149,7 +169,12 @@ def corrected_value(
             target_unit=native_unit or None,
         )
     except CalibrationError:
-        return apply_calibration(raw, calibration)
+        try:
+            return apply_calibration(raw, calibration)
+        except CalibrationError:
+            # Equation outside its domain at this raw value: missing, never
+            # a fabricated or silently-uncorrected number.
+            return None
 
 
 __all__ = [
