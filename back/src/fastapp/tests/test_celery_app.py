@@ -13,6 +13,7 @@ _EXPECTED_TASKS = {
     "agriapi.tasks.send_alert_digest_email": tasks_comms.send_alert_digest_email,
     "agriapi.tasks.send_alert_whatsapp": tasks_comms.send_alert_whatsapp,
     "agriapi.tasks.send_alert_sms": tasks_comms.send_alert_sms,
+    "agriapi.tasks.send_alert_push": tasks_comms.send_alert_push,
     "agriapi.tasks.send_zone_outbound_email": tasks_comms.send_zone_outbound_email,
     "agriapi.tasks.send_zone_outbound_sms": tasks_comms.send_zone_outbound_sms,
     "agriapi.tasks.send_zone_outbound_whatsapp": tasks_comms.send_zone_outbound_whatsapp,

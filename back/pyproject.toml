@@ -78,7 +78,8 @@ dependencies = [
     # and resolves agri-db 0.24.0 (sensorcalibration equation columns).
     # 0.28.1 resolves agri-db 0.25.0: assistant_knowledge_article (#461).
     # 0.29.0 adds the seasonal sampling window to suggest_alert_for (#37).
-    "agri-core @ git+https://github.com/AgriLogy/agri-core.git@0.29.0",
+    # 0.29.1 resolves agri-db 0.26.0: notification_push_token (push, #37).
+    "agri-core @ git+https://github.com/AgriLogy/agri-core.git@0.29.1",
     # FastAPI sidecar (back/src/fastapp) — the strangler target the Django
     # surface migrates into, served by uvicorn on :8001 (entrypoint `fast`
     # role). Same image/venv as Django so both stay in lockstep.
