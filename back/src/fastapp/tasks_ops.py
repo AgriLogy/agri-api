@@ -127,6 +127,67 @@ def _fmt(ts: datetime.datetime) -> str:
     return _aware(ts).strftime("%Y-%m-%d %H:%M UTC")
 
 
+def _recent_count(session, feed: IngestFeed, since: datetime.datetime) -> int:
+    return int(
+        session.execute(
+            text(
+                f'SELECT count(*) FROM "{feed.table}" WHERE "{feed.column}" >= :since'
+            ),
+            {"since": since},
+        ).scalar()
+        or 0
+    )
+
+
+def alert_active(feed_key: str) -> bool | None:
+    """Whether an "ingest silent" alert is currently armed for the feed (its
+    Redis slot is held). ``None`` when Redis can't be asked."""
+    try:
+        return bool(_redis().exists(_SLOT_PREFIX + feed_key))
+    except Exception:  # pragma: no cover - Redis unreachable
+        return None
+
+
+def feed_status(session, *, now: datetime.datetime | None = None) -> dict:
+    """Per-feed freshness for the admin monitoring page, using the same rule
+    as the beat job: ``ok`` / ``stale`` (silent past ``INGEST_STALE_HOURS``) /
+    ``no_data`` (table missing or empty), plus the rows received in the last
+    hour so a feed coming back is visible at once."""
+    s = get_settings()
+    now = now or _utcnow()
+    latest = _latest_timestamps(session)
+    stale = find_stale_feeds(latest, now=now, threshold_hours=s.ingest_stale_hours)
+    hour_ago = now - datetime.timedelta(hours=1)
+    feeds = []
+    for feed in INGEST_FEEDS:
+        ts = latest[feed.key]
+        if ts is None:
+            status, hours, last_hour = "no_data", None, 0
+        else:
+            hours = round((now - _aware(ts)).total_seconds() / 3600, 1)
+            status = "stale" if feed.key in stale else "ok"
+            last_hour = _recent_count(session, feed, hour_ago)
+        feeds.append(
+            {
+                "key": feed.key,
+                "label": feed.label,
+                "source": f"{feed.table}.{feed.column}",
+                "status": status,
+                "latest_at": _aware(ts).isoformat() if ts is not None else None,
+                "hours_silent": hours,
+                "last_hour_count": last_hour,
+                "alert_active": alert_active(feed.key),
+            }
+        )
+    return {
+        "checked_at": now.isoformat(),
+        "threshold_hours": s.ingest_stale_hours,
+        "renotify_hours": s.ingest_stale_renotify_hours,
+        "recipients": len(s.ops_alert_emails_list),
+        "feeds": feeds,
+    }
+
+
 def check_ingest_staleness() -> dict:
     """Beat job: email ops when an ingest feed has gone quiet (see module doc)."""
     s = get_settings()

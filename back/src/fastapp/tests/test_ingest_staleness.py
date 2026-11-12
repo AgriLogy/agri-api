@@ -173,3 +173,61 @@ class TestCheckIngestStaleness:
         result = tasks_ops.check_ingest_staleness()
         assert result["stale"] == {}
         assert ops["sent"] == []
+
+
+# --- admin endpoint -------------------------------------------------------------
+
+
+@_requires_pg
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.usefixtures("_clean_uplinks")
+class TestAdminIngestStatus:
+    URL = "/admin/monitoring/ingest"
+
+    @pytest.fixture
+    def client(self, monkeypatch):
+        from fastapi.testclient import TestClient
+
+        from fastapp.main import app
+
+        monkeypatch.setattr(get_settings(), "secret_key", dj_settings.SECRET_KEY)
+        monkeypatch.setattr(tasks_ops, "_utcnow", lambda: NOW)
+        monkeypatch.setattr(tasks_ops, "alert_active", lambda key: key == "lora")
+        return TestClient(app)
+
+    @staticmethod
+    def _auth(user):
+        from rest_framework_simplejwt.tokens import AccessToken
+
+        return {"Authorization": f"Bearer {AccessToken.for_user(user)}"}
+
+    def test_reports_each_feed(self, client, django_user_model):
+        staff = django_user_model.objects.create_user(
+            username="ops", email="ops@x.com", password="x", is_staff=True
+        )
+        _uplink(_h(9))
+        _weather(django_user_model, _h(0.5))
+
+        body = client.get(self.URL, headers=self._auth(staff)).json()
+        feeds = {f["key"]: f for f in body["feeds"]}
+        assert feeds["lora"]["status"] == "stale"
+        assert feeds["lora"]["hours_silent"] == 9.0
+        assert feeds["lora"]["last_hour_count"] == 0
+        assert feeds["lora"]["alert_active"] is True
+        assert feeds["bivocom"]["status"] == "ok"
+        assert feeds["bivocom"]["last_hour_count"] == 1
+        assert feeds["bivocom"]["alert_active"] is False
+        assert body["threshold_hours"] == get_settings().ingest_stale_hours
+
+    def test_empty_feeds_are_no_data(self, client, django_user_model):
+        staff = django_user_model.objects.create_user(
+            username="ops", email="ops@x.com", password="x", is_staff=True
+        )
+        body = client.get(self.URL, headers=self._auth(staff)).json()
+        assert {f["status"] for f in body["feeds"]} == {"no_data"}
+
+    def test_staff_only(self, client, django_user_model):
+        farmer = django_user_model.objects.create_user(
+            username="farmer", email="f@x.com", password="x"
+        )
+        assert client.get(self.URL, headers=self._auth(farmer)).status_code == 403

@@ -425,6 +425,16 @@ def _beat_schedule(session) -> list[dict[str, Any]]:
 
 
 # --- task runs + schedule --------------------------------------------------
+@router.get("/admin/monitoring/ingest", summary="Admin: ingest feed freshness")
+def ingest_status(user: AuthedUser = Depends(get_current_staff_user)):
+    """When each sensor feed last received data (agri-api #429). fastapp-only:
+    no Django counterpart, so it lives outside the parity-checked overview."""
+    from fastapp.tasks_ops import feed_status
+
+    with session_scope() as session:
+        return feed_status(session)
+
+
 @router.get("/admin/monitoring/tasks", summary="Admin: task-run history + schedule")
 def tasks(
     task_name: str | None = None,
