@@ -113,6 +113,15 @@ class AppSettings(BaseSettings):
         alias="INTERNAL_FEEDBACK_EMAILS",
     )
 
+    # -- Ingest staleness alert (agri-api #429) ------------------------------
+    # Ops recipients for "no sensor data for N hours". Empty → fall back to
+    # INTERNAL_FEEDBACK_EMAILS (the internal team list).
+    ops_alert_emails: str = Field(default="", alias="OPS_ALERT_EMAILS")
+    ingest_stale_hours: float = Field(default=2.0, alias="INGEST_STALE_HOURS")
+    ingest_stale_renotify_hours: int = Field(
+        default=24, alias="INGEST_STALE_RENOTIFY_HOURS"
+    )
+
     # -- Assistant LLM orchestrator (OpenAI-compatible chat-completions) ------
     # Same env vars agriapi.settings.base reads. When AI_API_KEY is empty the
     # assistant falls back to the deterministic rule-based orchestrator (so the
@@ -200,6 +209,13 @@ class AppSettings(BaseSettings):
         return [
             e.strip() for e in self.internal_feedback_emails.split(",") if e.strip()
         ]
+
+    @property
+    def ops_alert_emails_list(self) -> list[str]:
+        """OPS_ALERT_EMAILS split like the other CSV settings; falls back to
+        the internal feedback recipients when unset."""
+        own = [e.strip() for e in self.ops_alert_emails.split(",") if e.strip()]
+        return own or self.internal_feedback_emails_list
 
     @property
     def database_url(self) -> str:

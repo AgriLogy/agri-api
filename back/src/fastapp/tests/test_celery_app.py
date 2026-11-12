@@ -5,7 +5,7 @@ after the worker is switched, and its beat schedule must match the prod set.
 
 from __future__ import annotations
 
-from fastapp import tasks_comms, tasks_compute, tasks_scan
+from fastapp import tasks_comms, tasks_compute, tasks_ops, tasks_scan
 from fastapp.celery_app import app
 
 _EXPECTED_TASKS = {
@@ -22,6 +22,7 @@ _EXPECTED_TASKS = {
     "agriapi.tasks.scan_device_health": tasks_scan.scan_device_health,
     "agriapi.tasks.scan_proactive_insights": tasks_scan.scan_proactive_insights,
     "agriapi.tasks.run_due_irrigation_programs": tasks_scan.run_due_irrigation_programs,
+    "agriapi.tasks.check_ingest_staleness": tasks_ops.check_ingest_staleness,
 }
 
 
@@ -50,6 +51,7 @@ def test_beat_schedule_matches_prod_set():
         "scan_proactive_insights",
         "run_due_irrigation_programs",
         "flag_idle_zones",
+        "check_ingest_staleness",
     }
     # every beat entry points at a registered task
     for entry in beat.values():
