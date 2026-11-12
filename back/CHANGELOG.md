@@ -1,6 +1,47 @@
 # CHANGELOG
 
 
+## v1.137.0 (2026-11-12)
+
+### Features
+
+- **ops**: Email ops when an ingest feed goes quiet
+  ([#487](https://github.com/AgriLogy/agri-api/pull/487),
+  [`91c56c7`](https://github.com/AgriLogy/agri-api/commit/91c56c7b71a09b624894cf26b8c2081027d48339))
+
+Part of #429 (item 1, ingest staleness). This does it inside the app instead of in Grafana, because
+  the new 512 MB droplet runs no Grafana/Loki stack.
+
+**What it does** - New `fastapp/tasks_ops.py` → `check_ingest_staleness`. It is registered as
+  `agriapi.tasks.check_ingest_staleness` on the fastapp Celery app, and fastapp beat runs it every
+  30 min. - It reads `max(lora_uplink.received_at)` and
+  `max(analytics_temperatureweather.timestamp)`, the two feeds the issue names. A feed silent for
+  longer than `INGEST_STALE_HOURS` (default **2 h**) gets an email to `OPS_ALERT_EMAILS`. When that
+  is empty, the email goes to `INTERNAL_FEEDBACK_EMAILS`. - **Deduplication:** a Redis `SET NX EX`
+  slot per feed allows one email per `INGEST_STALE_RENOTIFY_HOURS` (default **24 h**), so concurrent
+  runs can't double-send. A Redis error skips the email rather than risking spam. - **Recovery:**
+  when an alerted feed has data again, the slot is released and a one-off "data resumed" email goes
+  out, so the next outage alerts straight away. - A missing table (`to_regclass`) or a table with no
+  rows is skipped, so an empty dev database never sends anything. - No schema change. The new
+  settings are documented in `env-example`.
+
+**Heads-up for deploy:** prod currently has no device data since June (the routers still point at
+  the old droplet IP). Once this is deployed it will email the ops list straight away, then every 24
+  h until data flows again. That is the intended behaviour.
+
+**Not covered here (left on #429):** gateway heartbeat (ChirpStack `gateway.last_seen_at`, and no
+  ChirpStack runs on the new droplet) and MQTT-subscriber liveness from Loki. Discord delivery would
+  be one more transport behind the same check, once there's a webhook.
+
+**Tests** - 7 new tests in `test_ingest_staleness.py`: - pure staleness rule: past the threshold, no
+  data, naive timestamps treated as UTC; - recipient fallback; - against Postgres: one alert per
+  window, recovery email then nothing further, empty feeds never alert. - `test_celery_app` now
+  expects the new task and beat entry. - Full suite against Postgres 18: **1286 passed, 15
+  skipped**.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+
 ## v1.136.0 (2026-11-11)
 
 ### Features
