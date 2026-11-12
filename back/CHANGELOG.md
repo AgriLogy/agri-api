@@ -1,6 +1,39 @@
 # CHANGELOG
 
 
+## v1.139.0 (2026-11-12)
+
+### Features
+
+- **monitoring**: Admin endpoint for ingest feed freshness
+  ([#491](https://github.com/AgriLogy/agri-api/pull/491),
+  [`8bc3159`](https://github.com/AgriLogy/agri-api/commit/8bc31598cca62514a49e7a4b32921de53f268ac8))
+
+Closes #490. Follow-up to #429 / #487.
+
+`GET /admin/monitoring/ingest` (staff only) returns the following.
+
+**Top level** - `checked_at` - `threshold_hours` - `renotify_hours` - `recipients`: count only, no
+  addresses
+
+**`feeds[]`**, one per feed - `key`, `label`, `source` (table.column) - `status`: `ok` | `stale` |
+  `no_data` - `latest_at`, `hours_silent` - `last_hour_count`: rows received in the last hour, so a
+  feed coming back is visible straight away - `alert_active`: the Redis slot is held, or `null` if
+  Redis can't be reached
+
+- Uses the new `tasks_ops.feed_status()`, which shares `_latest_timestamps` / `find_stale_feeds`
+  with the `check_ingest_staleness` beat job, so the page and the email can't disagree. - It's a
+  separate endpoint, not a field on `/admin/monitoring/overview`, because the overview has a Django
+  parity contract. nginx already sends `/admin/monitoring/` to fastapp.
+
+Tests: - 3 new Postgres tests: stale/ok with counts and the alert flag, no_data, and staff-only (403
+  for a farmer). - Full suite: **1311 passed, 15 skipped**.
+
+The agri-admin card that consumes it follows.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+
 ## v1.138.0 (2026-11-12)
 
 ### Features
