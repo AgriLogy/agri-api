@@ -28,7 +28,7 @@ from celery.signals import (
     task_prerun,
 )
 
-from fastapp import tasks_comms, tasks_compute, tasks_scan
+from fastapp import tasks_comms, tasks_compute, tasks_ops, tasks_scan
 from fastapp.logging_config import configure_logging
 from fastapp.settings import get_settings
 
@@ -75,6 +75,8 @@ _TASK_BODIES = {
     "agriapi.tasks.scan_device_health": tasks_scan.scan_device_health,
     "agriapi.tasks.scan_proactive_insights": tasks_scan.scan_proactive_insights,
     "agriapi.tasks.run_due_irrigation_programs": tasks_scan.run_due_irrigation_programs,
+    # ops (#429): alert when an ingest feed goes quiet
+    "agriapi.tasks.check_ingest_staleness": tasks_ops.check_ingest_staleness,
 }
 
 for _name, _fn in _TASK_BODIES.items():
@@ -112,6 +114,11 @@ app.conf.beat_schedule = {
     "flag_idle_zones": {
         "task": "agriapi.tasks.flag_idle_zones",
         "schedule": crontab(minute="*/10"),
+    },
+    # #429 — not in the legacy Django schedule; fastapp-beat only.
+    "check_ingest_staleness": {
+        "task": "agriapi.tasks.check_ingest_staleness",
+        "schedule": crontab(minute="*/30"),
     },
 }
 

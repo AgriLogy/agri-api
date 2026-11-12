@@ -47,6 +47,15 @@ EMAIL_HOST_USER=
 EMAIL_HOST_PASSWORD=
 EMAIL_USE_TLS=False
 EMAIL_USE_SSL=False
+
+# Ingest staleness alert (#429, fastapp beat `check_ingest_staleness`, every
+# 30 min). Emails these addresses when lora_uplink or the Bivocom weather feed
+# has been silent longer than INGEST_STALE_HOURS; reminds every
+# INGEST_STALE_RENOTIFY_HOURS and once more when data resumes. Empty
+# OPS_ALERT_EMAILS falls back to INTERNAL_FEEDBACK_EMAILS.
+# OPS_ALERT_EMAILS=
+# INGEST_STALE_HOURS=2
+# INGEST_STALE_RENOTIFY_HOURS=24
 DJANGO_ENV=dev
 
 # ----- MQTT ingest (agri-api-mqtt subscriber) ---------------------------------
