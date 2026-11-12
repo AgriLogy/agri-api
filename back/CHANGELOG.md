@@ -1,6 +1,69 @@
 # CHANGELOG
 
 
+## v1.138.0 (2026-11-12)
+
+### Features
+
+- **push**: Fcm push notifications when an alert triggers
+  ([#489](https://github.com/AgriLogy/agri-api/pull/489),
+  [`b865f9e`](https://github.com/AgriLogy/agri-api/commit/b865f9e3b160e5e73831894b73d2e79db155dbd1))
+
+Closes #488. Part of #37 (push via FCM). Needs agri-db 0.26.0 via agri-core 0.29.1 (both released).
+
+**Registration (`fastapp/routers/push_tokens.py`)** Any signed-in user can call these, and they only
+  ever touch the caller's rows: - `POST /devices/push-tokens` `{token, platform: android|ios|web,
+  app_version?}` upserts with `ON CONFLICT (token)`. It returns 201 when new and 200 when refreshed.
+  A token already registered under another account moves to the caller, so the last signed-in user
+  owns the device. - `DELETE /devices/push-tokens` `{token}` removes the token only if it belongs to
+  the caller, and always returns 204. The apps call it on sign-out. - `GET /devices/push-tokens`
+  returns `{push_configured, devices[]}` with token tails only (`…12345678`). - The router is
+  registered before `devices.router`, so this path is never parsed as `/devices/{pk}`. The existing
+  nginx `/devices/` location already routes it to fastapp.
+
+**Sender (`fastapp/push.py`)** - FCM HTTP v1 with no Firebase SDK: an RS256 service-account JWT
+  (PyJWT, already a dependency) is exchanged for an OAuth token, cached in-process until 60 s before
+  expiry, then `POST messages:send`. - Each message has a visible notification, a string-only data
+  payload (`type=alert`, `alert_ids`, `sensor_key`, `zone_id`, `timestamp`), Android high priority
+  and the default iOS sound. - `send()` never raises. - `UNREGISTERED`, `SENDER_ID_MISMATCH` and 404
+  mark the token dead. - `INVALID_ARGUMENT` deliberately does not, because FCM also returns it for a
+  malformed payload, and pruning on it could wipe every device. - A 401 resets the cached token. -
+  `FCM_CREDENTIALS` holds the service-account JSON or a path to it. When it's empty, push is off:
+  tokens are still accepted and nothing is sent.
+
+**Alert dispatch (`fastapp/ingest.py`)** - Registering a device is the push opt-in, so there's no
+  new column on `analytics_alert`. When an owner with ≥1 device has alerts fire on a reading, one
+  `send_alert_push` is enqueued for all of them. The task sends one notification per install: the
+  alert name and reading for a single alert, a count and names for several. - `push` is added to the
+  alert event's recorded channels. - Fix found by the tests: an alert with email/SMS/WhatsApp all
+  off is no longer skipped when the owner has push. - The token lookup is guarded by `to_regclass`
+  until the table has been seen once, so a database that hasn't run the migration keeps ingesting
+  (the lesson from #448).
+
+**Task (`tasks_comms.send_alert_push`)** - Skips when push isn't configured, when the owner has no
+  devices, or when the owner is inactive. - Deletes dead tokens and writes a `channel=push`
+  delivery-log row per install.
+
+**Deactivation:** admin soft-delete (`DELETE /users/{username}`) also drops that user's push tokens.
+
+**Tests:** `test_push.py` has 22 tests: - FCM client against `httpx.MockTransport`: JWT verified
+  with the public key, token caching, error classification, network errors, unconfigured state; -
+  credential parsing and wording; - endpoints: register, refresh, move, validation, delete
+  isolation, tails-only list, no route collision; - task: dead-token pruning plus delivery log,
+  skips, inactive owner; - dispatch: one push for several alerts, a push-only alert fires, no push
+  without a device; - soft-delete drops tokens.
+
+`test_celery_app` and the admin-db parity allowlist are updated. The full suite against Postgres 18
+  gives **1308 passed, 15 skipped**.
+
+**To turn it on in prod** 1. Deploy, which applies migration `c9e5a1b3d7f2`. 2. Create a Firebase
+  project and a service account with *Firebase Cloud Messaging API Admin*. 3. Mount the key and set
+  `FCM_CREDENTIALS`. 4. Ship the app side (agri-mobile / agri-ios), which needs the same Firebase
+  project.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+
 ## v1.137.0 (2026-11-12)
 
 ### Features
