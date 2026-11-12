@@ -21,10 +21,12 @@ import logging
 
 from agri.core.alerts import SENSOR_KEY_REGISTRY
 from agri.core.database import session_scope
+from sqlalchemy import delete, select
 from agri.db.analytics import AnalyticsAlert
 from agri.db.audit import AnalyticsNotificationdeliverylog
+from agri.db.notifications import NotificationPushToken
 from agri.db.users import CustomUserCustomuser
-from fastapp import email, sms
+from fastapp import email, push, sms
 from fastapp.settings import get_settings
 
 logger = logging.getLogger(__name__)
@@ -181,6 +183,92 @@ def send_alert_digest_email(
             error="" if ok else "send_error",
         )
         return {"sent": 1 if ok else 0, "alert_ids": [a.id for a in alerts]}
+
+
+def _num(x) -> str:
+    return f"{x:g}" if isinstance(x, (int, float)) else str(x)
+
+
+def push_alert_content(
+    alerts: list, *, value: float, labels: dict[int, tuple[str, str, str]]
+) -> tuple[str, str]:
+    """(title, body) for the push. ``labels[alert.id]`` = (sensor label, unit,
+    zone label). One alert → its name and reading; several → a count and the
+    alert names (the email digest's wording, shortened for a lock screen)."""
+    if len(alerts) == 1:
+        a = alerts[0]
+        label, unit, zone = labels[a.id]
+        return (
+            f"Alerte — {a.name}",
+            f"{label} : {_num(value)} {unit} (seuil {a.condition} {_num(a.condition_nbr)})"
+            f" — {zone}",
+        )
+    names = ", ".join(f"« {a.name} »" for a in alerts)
+    return f"Alertes déclenchées ({len(alerts)})", names
+
+
+def send_alert_push(*, alert_ids: list[int], value: float, timestamp_iso: str) -> dict:
+    """Push the firing alert(s) of one reading to every app install of the
+    owner (agri-api #37). One notification per install per reading, however
+    many alerts fired. Tokens FCM reports as dead are deleted. Never raises."""
+    if not push.is_configured():
+        return {"sent": 0, "reason": "push_not_configured"}
+    with session_scope(commit=True) as session:
+        alerts = [
+            a
+            for a in (session.get(AnalyticsAlert, aid) for aid in alert_ids)
+            if a is not None and a.is_active
+        ]
+        if not alerts:
+            return {"sent": 0, "reason": "no_active_alerts"}
+        user_id = alerts[0].user_id
+        owner = session.get(CustomUserCustomuser, user_id) if user_id else None
+        if owner is None or not owner.is_active:
+            return {"sent": 0, "reason": "owner_inactive"}
+        tokens = session.scalars(
+            select(NotificationPushToken).where(
+                NotificationPushToken.user_id == user_id
+            )
+        ).all()
+        if not tokens:
+            return {"sent": 0, "reason": "no_devices"}
+
+        labels: dict[int, tuple[str, str, str]] = {}
+        for a in alerts:
+            label, unit = _spec(a.sensor_key)
+            zone = _zone_name(session, a.zone_id) if a.zone_id else None
+            labels[a.id] = (label, unit, zone or "votre compte")
+        title, body = push_alert_content(alerts, value=value, labels=labels)
+        data = {
+            "type": "alert",
+            "alert_ids": ",".join(str(a.id) for a in alerts),
+            "sensor_key": alerts[0].sensor_key,
+            "zone_id": alerts[0].zone_id,
+            "timestamp": timestamp_iso,
+        }
+
+        sent = removed = 0
+        for t in tokens:
+            result = push.send(t.token, title=title, body=body, data=data)
+            if result.ok:
+                sent += 1
+            elif result.unregistered:
+                session.execute(
+                    delete(NotificationPushToken).where(
+                        NotificationPushToken.id == t.id
+                    )
+                )
+                removed += 1
+            _record_delivery(
+                session,
+                channel="push",
+                kind="alert",
+                recipient=f"{t.platform} …{t.token[-8:]}",
+                user_id=user_id,
+                status="sent" if result.ok else "failed",
+                error=result.error,
+            )
+        return {"sent": sent, "failed": len(tokens) - sent, "removed": removed}
 
 
 def send_alert_whatsapp(*, alert_id: int, value: float, timestamp_iso: str) -> dict:

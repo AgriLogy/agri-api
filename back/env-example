@@ -56,6 +56,12 @@ EMAIL_USE_SSL=False
 # OPS_ALERT_EMAILS=
 # INGEST_STALE_HOURS=2
 # INGEST_STALE_RENOTIFY_HOURS=24
+
+# Mobile push (FCM HTTP v1, #37): the Firebase service-account key JSON — the
+# JSON itself or a path to the file mounted in the container. Empty = push off
+# (apps can still register tokens; nothing is sent). The key needs the
+# "Firebase Cloud Messaging API Admin" role on the Firebase project.
+# FCM_CREDENTIALS=/run/secrets/fcm-service-account.json
 DJANGO_ENV=dev
 
 # ----- MQTT ingest (agri-api-mqtt subscriber) ---------------------------------

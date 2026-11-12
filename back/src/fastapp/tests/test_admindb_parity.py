@@ -169,6 +169,8 @@ _FASTAPP_ONLY_KEYS = {
     "analytics.mappreference",
     # assistant knowledge base (agri-db b8d4f0a2c3e5, agri-api#461 phase 2)
     "assistant.knowledgearticle",
+    # mobile push registrations (agri-db c9e5a1b3d7f2, agri-api#37)
+    "notification.pushtoken",
 }
 
 

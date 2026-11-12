@@ -122,6 +122,12 @@ class AppSettings(BaseSettings):
         default=24, alias="INGEST_STALE_RENOTIFY_HOURS"
     )
 
+    # -- Mobile push (FCM HTTP v1, agri-api #37) -----------------------------
+    # The Firebase service-account key: either the JSON itself or a path to the
+    # JSON file. Empty = push disabled (tokens are still registered, nothing is
+    # sent).
+    fcm_credentials: str = Field(default="", alias="FCM_CREDENTIALS")
+
     # -- Assistant LLM orchestrator (OpenAI-compatible chat-completions) ------
     # Same env vars agriapi.settings.base reads. When AI_API_KEY is empty the
     # assistant falls back to the deterministic rule-based orchestrator (so the

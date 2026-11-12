@@ -54,6 +54,7 @@ from fastapp.routers import (
     manager_affirmations,
     notification_zones,
     notifications,
+    push_tokens,
     reports,
     sectors,
     selfreads,
@@ -149,6 +150,9 @@ app.include_router(
 # DRF token + token/refresh endpoints. Django keeps serving /auth until the
 # nginx cutover; this is the login path, flipped LAST with careful live A/B.
 app.include_router(auth_issuance.router)  # /auth/* (signup, sessions, token)
+app.include_router(
+    push_tokens.router
+)  # #37: /devices/push-tokens (before /devices/{pk})
 app.include_router(devices.router)  # F5b: /devices + /devices/*
 app.include_router(technicians.router)  # F5b: /technicians + /technicians/*
 app.include_router(irrigation.router)  # F5b: /irrigation + /irrigation/*

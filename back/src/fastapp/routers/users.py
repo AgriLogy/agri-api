@@ -490,6 +490,18 @@ def patch_user(
         return _serialize_detail(row, _zones_count(session, row.id))
 
 
+def _drop_push_tokens(session, user_id: int) -> None:
+    """Remove the user's push registrations (no-op before the agri-db
+    migration that creates the table)."""
+    from sqlalchemy import text
+
+    if session.scalar(text("SELECT to_regclass('notification_push_token')")) is None:
+        return
+    session.execute(
+        text("DELETE FROM notification_push_token WHERE user_id = :u"), {"u": user_id}
+    )
+
+
 @router.delete("/users/{username}", summary="Admin: soft-delete (deactivate) one user")
 def delete_user(username: str, user: AuthedUser = Depends(get_current_user)):
     guard = _admin_guard(user)
@@ -506,9 +518,11 @@ def delete_user(username: str, user: AuthedUser = Depends(get_current_user)):
                 {"detail": "You cannot delete your own admin account."},
                 status_code=400,
             )
-        # Disabling an account also force-logs-out any live sessions.
+        # Disabling an account also force-logs-out any live sessions and stops
+        # push to its devices (#37).
         row.is_active = False
         row.sessions_revoked_at = _utcnow()
+        _drop_push_tokens(session, row.id)
         session.flush()
         return DjangoStyleJSONResponse(None, status_code=204)
 

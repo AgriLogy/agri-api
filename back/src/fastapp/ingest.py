@@ -21,7 +21,16 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import BigInteger, DateTime, Double, Integer, String, select, update
+from sqlalchemy import (
+    BigInteger,
+    DateTime,
+    Double,
+    Integer,
+    String,
+    select,
+    text,
+    update,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
@@ -39,6 +48,7 @@ from agri.db.analytics import (
     AnalyticsZone,
 )
 from agri.db.devices import AnalyticsDevice
+from agri.db.notifications import NotificationPushToken
 from agri.db.users import CustomUserCustomuser
 from fastapp import celery
 from fastapp.calibration import corrected_value, load_calibrations
@@ -426,6 +436,35 @@ def store_lora_uplink(
 # ``apps.alerts.engine.dispatch_alerts_for_reading``. Same matching, same
 # atomic grace claim, same per-channel/digest Celery enqueue (by task name).
 # ---------------------------------------------------------------------------
+_push_table_ready = False
+
+
+def user_has_push_devices(session: Session, user_id: int) -> bool:
+    """True when ``user_id`` has at least one app install registered for push
+    (agri-api #37). Registering a device is the push opt-in, so this decides
+    whether a firing alert also goes out as a push.
+
+    Guarded by ``to_regclass`` until the table is seen once: alert dispatch
+    sits on the ingest path and must keep working on a database that hasn't
+    run the agri-db migration yet (#448)."""
+    global _push_table_ready
+    if not _push_table_ready:
+        if (
+            session.scalar(text("SELECT to_regclass('notification_push_token')"))
+            is None
+        ):
+            return False
+        _push_table_ready = True
+    return (
+        session.scalar(
+            select(NotificationPushToken.id)
+            .where(NotificationPushToken.user_id == user_id)
+            .limit(1)
+        )
+        is not None
+    )
+
+
 def dispatch_alerts_for_reading(
     session: Session,
     *,
@@ -511,6 +550,8 @@ def dispatch_alerts_for_reading(
     default_grace = grace_period_seconds_for(sensor_key)
     enqueued = 0
     email_alert_ids: list[int] = []
+    push_alert_ids: list[int] = []
+    has_push = user_has_push_devices(session, user_id)
     value_f = float(value)
     ts_iso = timestamp.isoformat()
 
@@ -527,6 +568,7 @@ def dispatch_alerts_for_reading(
             bool(alert.notify_email)
             or bool(alert.notify_whatsapp)
             or bool(alert.notify_sms)
+            or has_push
         ):
             continue
 
@@ -559,6 +601,7 @@ def dispatch_alerts_for_reading(
                 ("email", alert.notify_email),
                 ("whatsapp", alert.notify_whatsapp),
                 ("sms", alert.notify_sms),
+                ("push", has_push),
             )
             if bool(on)
         ]
@@ -579,6 +622,8 @@ def dispatch_alerts_for_reading(
 
         if bool(alert.notify_email):
             email_alert_ids.append(alert.id)
+        if has_push:
+            push_alert_ids.append(alert.id)
         if bool(alert.notify_whatsapp):
             celery.send_task(
                 "agriapi.tasks.send_alert_whatsapp",
@@ -594,6 +639,16 @@ def dispatch_alerts_for_reading(
                 timestamp_iso=ts_iso,
             )
         enqueued += 1
+
+    # Push (#37): one notification per install for this reading, however many
+    # alerts fired (the task builds a digest when there are several).
+    if push_alert_ids:
+        celery.send_task(
+            "agriapi.tasks.send_alert_push",
+            alert_ids=push_alert_ids,
+            value=value_f,
+            timestamp_iso=ts_iso,
+        )
 
     # Aggregation digest (#37): >1 email alert on this reading → ONE combined
     # email; a single alert keeps the original per-alert email.
