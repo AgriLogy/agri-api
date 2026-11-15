@@ -63,6 +63,7 @@ from fastapp.routers import (
     sensors,
     technicians,
     users,
+    water_level,
     weather,
 )
 
@@ -143,6 +144,7 @@ app.include_router(
 )  # /sensor-installations, /map-preferences, /farm-map/status
 app.include_router(sensor_groups.router)  # /sensor-groups — sensor grouping
 app.include_router(reports.router)  # /reports/* — alert + irrigation history
+app.include_router(water_level.router)  # /water-sources/*, /water-level/* (#261)
 app.include_router(
     sensor_calibration.router
 )  # /sensor-calibrations/{device_id}/{sensor_key}
