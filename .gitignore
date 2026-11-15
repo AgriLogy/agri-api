@@ -112,3 +112,6 @@ node_modules
 # Claude Code session state (CONTINUE.md and friends)
 .claude/
 celerybeat-schedule
+
+# assistant eval reports (python -m fastapp.assistant.eval)
+evals-out/
