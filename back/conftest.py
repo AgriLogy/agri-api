@@ -113,6 +113,46 @@ def _create_push_token_table(django_db_setup, django_db_blocker):
 
 
 @pytest.fixture(scope="session", autouse=True)
+def _create_water_level_tables(django_db_setup, django_db_blocker):
+    """``water_source`` / ``water_level_device`` / ``water_level_reading`` /
+    ``water_level_alert`` (agri-db d1f3a5b7c9e2, agrilogy-front#261) have no
+    Django model. Create them from the agri.db definitions (CHECKs, partial
+    unique index included). Postgres only (ARRAY / JSONB)."""
+    from django.db import connection
+
+    if connection.vendor != "postgresql":
+        yield
+        return
+    from sqlalchemy.dialects import postgresql
+    from sqlalchemy.schema import CreateIndex, CreateTable
+
+    from agri.db.water import (
+        WaterLevelAlert,
+        WaterLevelDevice,
+        WaterLevelReading,
+        WaterSource,
+    )
+
+    dialect = postgresql.dialect()
+    with django_db_blocker.unblock():
+        existing = set(connection.introspection.table_names())
+        with connection.cursor() as cursor:
+            for model in (
+                WaterSource,
+                WaterLevelDevice,
+                WaterLevelReading,
+                WaterLevelAlert,
+            ):
+                table = model.__table__
+                if table.name in existing:
+                    continue
+                cursor.execute(str(CreateTable(table).compile(dialect=dialect)))
+                for index in table.indexes:
+                    cursor.execute(str(CreateIndex(index).compile(dialect=dialect)))
+    yield
+
+
+@pytest.fixture(scope="session", autouse=True)
 def _create_technician_tables(django_db_setup, django_db_blocker):
     """``analytics_techniciangrant`` + ``analytics_technicianzonegrant`` are
     unmanaged (self-deployed in prod via scripts/ensure_technician_tables.py).

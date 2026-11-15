@@ -171,6 +171,11 @@ _FASTAPP_ONLY_KEYS = {
     "assistant.knowledgearticle",
     # mobile push registrations (agri-db c9e5a1b3d7f2, agri-api#37)
     "notification.pushtoken",
+    # water level monitoring (agri-db d1f3a5b7c9e2, agrilogy-front#261)
+    "water.source",
+    "water.leveldevice",
+    "water.levelreading",
+    "water.levelalert",
 }
 
 
