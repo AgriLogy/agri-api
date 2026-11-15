@@ -1,6 +1,62 @@
 # CHANGELOG
 
 
+## v1.140.0 (2026-11-15)
+
+### Features
+
+- **water**: Water level monitoring API, simulator and alerts
+  ([#493](https://github.com/AgriLogy/agri-api/pull/493),
+  [`3a247fb`](https://github.com/AgriLogy/agri-api/commit/3a247fba1e2a8d020cf99a179ccc3c213a071ad6))
+
+Closes #492. Backend for AgriLogy/agrilogy-front#261 (water level monitoring, simulator first,
+  developer brief v2).
+
+Depends on agri-db 0.27.1 (AgriLogy/agri-db#88, #90) via agri-core 0.30.1 (AgriLogy/agri-core#87,
+  #89), all released. **Apply agri-db migrations `d1f3a5b7c9e2` and `e2a4c6b8d0f1` before
+  deploying.**
+
+## Endpoints (`fastapp/routers/water_level.py`) All scoped to the owner; technician logins get a 403
+  on writes.
+
+| | | |---|---| | `GET/POST /water-sources` | list (each with its status) / create (a simulator
+  device is created with it) | | `GET/PATCH/DELETE /water-sources/{id}` | patch accepts
+  `live_device` (DevEUI, Modbus slave/register/type, scale/offset, baud/parity/byte order); delete
+  also removes devices, readings and alerts | | `GET /water-sources/{id}/status` | metrics (level,
+  fill %, volume, capacity, free capacity, usable after reserve, well depth-to-water), data status,
+  last reading, 24 h trend, open alerts | | `GET /water-sources/{id}/history?range=24h\|7d\|30d` |
+  bucket-averaged to ≤ 300 points, INVALID readings excluded | | `GET /water-sources/{id}/alerts` |
+  alert event history | | `POST /water-sources/{id}/simulate` `{level_m}` | SIMULATED sources only
+  (409 otherwise) | | `POST /water-level/readings` | standard WaterLevelReading; resolves the device
+  by `device_id`, or by `water_source_id` plus the source mode; the device's agri-core adapter
+  normalises it (scale/offset, clamp, INVALID flag) |
+
+Validation and formulas come from `agri.core.water_level`; the router never computes.
+
+## Alerts - `sync_alerts` runs after every reading, after a PATCH (new thresholds re-evaluate the
+  last level) and on the new beat job `check_water_level_offline` (every 10 min). - OFFLINE follows
+  the data status. LOW/CRITICAL/HIGH are re-evaluated only from a usable level, so an offline or
+  invalid source keeps its last level alert. A partial unique index keeps one open alert per
+  (source, kind). - Each newly opened alert enqueues `send_water_level_alert_email` (French, like
+  the other alert emails), logged in the delivery log; it is skipped if the alert was already
+  resolved.
+
+## Also - nginx `back.conf` and `staging.conf`: `/water-sources`, `/water-sources/`, `/water-level/`
+  → fastapp. - conftest creates the 4 tables from the agri.db definitions (Postgres only); admin-db
+  parity knows the new keys.
+
+## Verification - `ruff check` + `ruff format --check` ✓ - Full suite on Postgres 17: **1335
+  passed**, 15 skipped. 29 new tests in `test_water_level.py`: the brief's worked example (86.88 m³,
+  28.32 m³ free, 76.88 m³ usable, 75.4 %), owner scoping, technician read-only, irregular and well
+  sources, the live device scale, LOW→CRITICAL→HIGH→resolved with one email each, threshold
+  re-evaluation, offline sweep and recovery, history ranges and downsampling. - Local stack end to
+  end, with the agri-web branch: created the basin from the form and moved the simulator. Values
+  matched the brief; dropping to 10 % opened the CRITICAL alert and the worker ran the email task
+  (not sent locally, since there's no Resend key).
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+
 ## v1.139.0 (2026-11-12)
 
 ### Features
