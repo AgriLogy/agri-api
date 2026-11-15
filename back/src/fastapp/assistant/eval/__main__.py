@@ -1,0 +1,152 @@
+"""Run the assistant eval set against a real provider (#461).
+
+    cd back/src && uv run --project .. python -m fastapp.assistant.eval --provider groq \\
+        --model openai/gpt-oss-120b --api-key-env GROQ_API_KEY [--only irrigate_now] \\
+        [--repeat 2] [--out evals-out] --yes
+
+Without ``--yes`` it only prints the plan: how many calls, the estimated
+tokens, and (with ``--price-in``/``--price-out``, USD per million tokens) the
+estimated cost. Nothing is sent to the provider until ``--yes`` is given.
+The API key is read from an environment variable, never from the database
+and never from the command line.
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime
+import json
+import os
+import sys
+from pathlib import Path
+
+from ..llm import tool_specs
+from ..prompt import SYSTEM_PROMPT
+from ..providers import PROVIDER_CATALOG, ProviderConfig, build_provider
+from .harness import (
+    load_cases,
+    result_dict,
+    run_case,
+    summarize,
+    to_markdown,
+)
+
+# Rough per-call token budget: the stable prompt + tool specs go up on every
+# model round; a farm question takes ~2 rounds (lookup, answer).
+ROUNDS_PER_CASE = 2
+OUTPUT_TOKENS_PER_CASE = 450
+
+
+def _estimate(n_calls: int) -> tuple[int, int]:
+    prompt_chars = len(SYSTEM_PROMPT) + len(
+        json.dumps([s.__dict__ for s in tool_specs()], ensure_ascii=False)
+    )
+    # ~4 chars/token for this mixed prose; tool results add ~1.5k chars a round.
+    per_round_in = (prompt_chars + 1500) // 4
+    return (
+        n_calls * ROUNDS_PER_CASE * per_round_in,
+        n_calls * OUTPUT_TOKENS_PER_CASE,
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(prog="python -m fastapp.assistant.eval")
+    ap.add_argument("--provider", required=True, choices=sorted(PROVIDER_CATALOG))
+    ap.add_argument("--model", default="")
+    ap.add_argument("--base-url", default="")
+    ap.add_argument(
+        "--api-key-env", default="", help="name of the env var holding the key"
+    )
+    ap.add_argument("--only", nargs="*", help="group ids or case ids to run")
+    ap.add_argument("--lang", nargs="*", help="language variants to run")
+    ap.add_argument("--repeat", type=int, default=1)
+    ap.add_argument("--price-in", type=float, help="USD per 1M input tokens")
+    ap.add_argument("--price-out", type=float, help="USD per 1M output tokens")
+    ap.add_argument("--out", default="evals-out")
+    ap.add_argument("--yes", action="store_true", help="actually call the provider")
+    args = ap.parse_args(argv)
+
+    preset = PROVIDER_CATALOG[args.provider]
+    model = args.model or preset["default_model"]
+    if not model:
+        ap.error("--model is required for this provider")
+    api_key = os.environ.get(args.api_key_env, "") if args.api_key_env else ""
+    if preset["requires_api_key"] and not api_key:
+        ap.error(
+            f"set the key in an env var and pass --api-key-env (provider {args.provider})"
+        )
+
+    cases = load_cases()
+    if args.only:
+        cases = [c for c in cases if c["group"] in args.only or c["id"] in args.only]
+    if args.lang:
+        cases = [c for c in cases if c["lang"] in args.lang]
+    if not cases:
+        ap.error("no case matches --only/--lang")
+
+    n_calls = len(cases) * args.repeat
+    tok_in, tok_out = _estimate(n_calls)
+    print(f"Plan: {len(cases)} cases x {args.repeat} = {n_calls} conversations")
+    print(f"      {args.provider} / {model}")
+    print(f"      ~{tok_in:,} input + ~{tok_out:,} output tokens (rough estimate)")
+    if args.price_in is not None and args.price_out is not None:
+        cost = tok_in / 1e6 * args.price_in + tok_out / 1e6 * args.price_out
+        print(f"      ~${cost:.2f} at ${args.price_in}/M in, ${args.price_out}/M out")
+    if not args.yes:
+        print("Dry run: nothing sent. Re-run with --yes to call the provider.")
+        return 0
+
+    provider = build_provider(
+        ProviderConfig(
+            provider=args.provider,
+            model=model,
+            api_key=api_key,
+            base_url=args.base_url or preset["default_base_url"],
+            timeout=60.0,
+        )
+    )
+    started = datetime.datetime.now(datetime.timezone.utc)
+    results = []
+    for i in range(args.repeat):
+        for case in cases:
+            r = run_case(case, provider)
+            if args.repeat > 1:
+                r.id = f"{r.id}#{i + 1}"
+            results.append(r)
+            print(
+                f"{'PASS' if r.passed else 'FAIL'}  {r.id}  ({r.seconds} s)", flush=True
+            )
+
+    summary = summarize(results)
+    meta = {
+        "provider": args.provider,
+        "model": model,
+        "started_at": started.isoformat(timespec="seconds"),
+        "repeat": args.repeat,
+    }
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    stamp = started.strftime("%Y%m%dT%H%M%SZ")
+    (out / f"assistant-eval-{stamp}.json").write_text(
+        json.dumps(
+            {
+                "meta": meta,
+                "summary": summary,
+                "results": [result_dict(r) for r in results],
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    (out / f"assistant-eval-{stamp}.md").write_text(
+        to_markdown(results, summary, meta), encoding="utf-8"
+    )
+    o = summary["overall"]
+    print(f"\n{o['passed']}/{o['total']} pass · usage {summary['usage']}")
+    print(f"Report: {out / f'assistant-eval-{stamp}.md'}")
+    return 0 if o["passed"] == o["total"] else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

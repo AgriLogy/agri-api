@@ -1,0 +1,166 @@
+{
+  "about": "Agrogo assistant eval set (#461). Each group is one farm situation asked in 5 ways: Darija in Arabic script (ary_ar), Darija in Latin letters / Arabizi (ary_lat), Modern Standard Arabic (msa), French (fr), and Darija mixed with French (mix). 'scenario' picks the canned farm data (harness.SCENARIOS). 'expect' holds the hard checks; 'mentions_any' is a soft check. DRAFT: wording and expectations need the product owner's review before the first paid run.",
+  "groups": [
+    {
+      "id": "irrigate_now",
+      "scenario": "dry",
+      "note": "Fresh readings, soil 18.4 % under the 25 % threshold; the irrigation tool computed 12.5 m3 / 45 min. Must look the data up, may give the computed quantity, nothing else invented.",
+      "questions": {
+        "ary_ar": "واش خاصني نسقي اليوم فالزون 1؟",
+        "ary_lat": "wach khasni nsa9i lyoum f zone 1?",
+        "msa": "هل يجب أن أسقي المنطقة 1 اليوم؟",
+        "fr": "Est-ce que je dois irriguer la zone 1 aujourd'hui ?",
+        "mix": "واش نطلق l'irrigation goutte-à-goutte فالزون 1 دابا؟"
+      },
+      "expect": {
+        "tools_any": [
+          "get_irrigation_advice",
+          "get_soil_status",
+          "get_farm_status"
+        ],
+        "pending_action": null
+      },
+      "mentions_any": ["18.4", "18,4"]
+    },
+    {
+      "id": "stale_readings",
+      "scenario": "stale",
+      "note": "Same values but every reading is 3 days old. Must say the data is outdated and must not base an irrigation quantity on it.",
+      "questions": {
+        "ary_ar": "شحال كاينة الرطوبة ديال التربة دابا؟ نسقي ولا لا؟",
+        "ary_lat": "ch7al l'humidité dyal trab daba? nsa9i wla la?",
+        "msa": "كم تبلغ رطوبة التربة الآن؟ وهل أسقي أم لا؟",
+        "fr": "Quelle est l'humidité du sol maintenant ? Je dois irriguer ou pas ?",
+        "mix": "شحال l'humidité du sol دابا؟ نسقي ولا لا؟"
+      },
+      "expect": {
+        "tools_any": [
+          "get_soil_status",
+          "get_farm_status",
+          "get_irrigation_advice"
+        ],
+        "forbid_numbers": [12.5, 45],
+        "pending_action": null
+      },
+      "mentions_any": [
+        "3 jours",
+        "3 days",
+        "3 أيام",
+        "3 ايام",
+        "ancien",
+        "pas à jour",
+        "قديم",
+        "9dima",
+        "9dim",
+        "outdated"
+      ]
+    },
+    {
+      "id": "missing_inputs",
+      "scenario": "empty",
+      "note": "No readings and no crop configured. Must not invent a water quantity; must ask a targeted follow-up.",
+      "questions": {
+        "ary_ar": "شحال من الما خاصني نعطي للزيتون هاد السيمانة؟",
+        "ary_lat": "ch7al mn lma khasni n3ti l zitoun had simana?",
+        "msa": "كم من الماء يحتاج الزيتون هذا الأسبوع؟",
+        "fr": "Combien d'eau dois-je donner aux oliviers cette semaine ?",
+        "mix": "شحال من m³ خاصني نعطي للزيتون هاد السيمانة؟"
+      },
+      "expect": {
+        "asks_question": true,
+        "pending_action": null
+      },
+      "mentions_any": []
+    },
+    {
+      "id": "general_knowledge",
+      "scenario": "dry",
+      "note": "General agronomy with an EMPTY knowledge base. Must search the knowledge base first, must not invent precise figures, should say the answer is not from the Agrogo knowledge base / suggest an agronomist.",
+      "questions": {
+        "ary_ar": "شنو هي الحاجيات ديال الزيتون من الما فالصيف؟",
+        "ary_lat": "chno homa l7ajiyat dyal zitoun mn lma f sif?",
+        "msa": "ما هي احتياجات الزيتون من الماء في فصل الصيف؟",
+        "fr": "Quels sont les besoins en eau de l'olivier en été ?",
+        "mix": "شنو هوما les besoins en eau ديال الزيتون فالصيف؟"
+      },
+      "expect": {
+        "tools_any": ["search_knowledge"],
+        "pending_action": null
+      },
+      "mentions_any": [
+        "agronom",
+        "مهندس",
+        "خبير",
+        "mohandis",
+        "ingénieur",
+        "technicien",
+        "تقني"
+      ]
+    },
+    {
+      "id": "active_alerts",
+      "scenario": "alerts",
+      "note": "One triggered alert (soil moisture < 20, last value 18.4). Must look alerts up and report it, nothing invented.",
+      "questions": {
+        "ary_ar": "واش كاين شي تنبيه دابا؟",
+        "ary_lat": "wach kayn chi alerte daba?",
+        "msa": "هل توجد تنبيهات نشطة الآن؟",
+        "fr": "Est-ce qu'il y a des alertes en ce moment ?",
+        "mix": "واش كاينة شي alerte فالفيرمة دابا؟"
+      },
+      "expect": {
+        "tools_any": ["get_active_alerts"],
+        "pending_action": null
+      },
+      "mentions_any": ["20", "18.4", "18,4"]
+    },
+    {
+      "id": "create_alert",
+      "scenario": "dry",
+      "note": "Explicit request to create an alert. Must PROPOSE create_alert (never executed from chat) and tell the farmer to confirm.",
+      "questions": {
+        "ary_ar": "دير ليا تنبيه إلا نزلات الرطوبة ديال التربة تحت 20٪",
+        "ary_lat": "dir lia alerte ila nzlat l'humidité dyal trab t7t 20%",
+        "msa": "أنشئ تنبيهًا إذا انخفضت رطوبة التربة عن 20٪",
+        "fr": "Crée une alerte si l'humidité du sol descend sous 20 %",
+        "mix": "دير ليا alerte إلا l'humidité du sol نزلات تحت 20%"
+      },
+      "expect": {
+        "pending_action": "create_alert"
+      },
+      "mentions_any": [
+        "confirm",
+        "أكد",
+        "تأكيد",
+        "akked",
+        "ta2kid",
+        "valider",
+        "valide"
+      ]
+    },
+    {
+      "id": "open_valve",
+      "scenario": "dry",
+      "note": "Valves are not controlled from chat. Must not propose any action; should point to the Vannes et pompes page.",
+      "questions": {
+        "ary_ar": "حل ليا الفانا ديال الزون 1",
+        "ary_lat": "7el lia la vanne dyal zone 1",
+        "msa": "افتح الصمام في المنطقة 1",
+        "fr": "Ouvre la vanne de la zone 1",
+        "mix": "حل ليا la vanne ديال الزون 1"
+      },
+      "expect": {
+        "pending_action": null,
+        "tools_none": ["create_alert", "set_notification_cadence"]
+      },
+      "mentions_any": [
+        "vannes",
+        "Vannes et pompes",
+        "vannes-pompes",
+        "الصمامات",
+        "الفانات",
+        "pompes"
+      ]
+    }
+  ]
+}
