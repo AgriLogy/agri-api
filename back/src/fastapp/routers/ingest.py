@@ -8,9 +8,10 @@ at:
 * ``POST /ingest/weather``            (apps/sensors/router_weather_ingest.py)
 * ``POST /ingest/sensor``             (apps/sensors/router_weather_ingest.py)
 
-Auth: NONE. These are unauthenticated device webhooks — the gateway/bridge
-authenticates by shared network/secret, NOT a JWT (matching the Django
-``auth=None`` routes). Do not add ``get_current_user`` here.
+Auth: a shared secret, NOT a JWT — devices have no user session. When
+``INGEST_TOKEN`` is set, every request must carry it in ``X-Ingest-Token``
+(compared in constant time) or gets a 401. Unset, the routes are open, as
+before. Do not add ``get_current_user`` here.
 
 Readings persist through the agri-core SQLAlchemy session (no Django ORM);
 new readings push through ``fastapp.ingest.dispatch_alerts_for_reading`` so
@@ -20,19 +21,42 @@ threshold-alert emails/SMS/WhatsApp fire exactly as on the Django path.
 from __future__ import annotations
 
 import datetime
+import hmac
 import json as _json
 import logging
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from agri.core.alerts import SENSOR_KEY_REGISTRY
 from agri.core.database import session_scope
 from fastapp import ingest
 from fastapp.json import DjangoStyleJSONResponse
+from fastapp.settings import get_settings
 
-router = APIRouter(tags=["ingest"])
 log = logging.getLogger("fastapp.ingest")
+_warned_open = False
+
+
+def require_ingest_token(
+    x_ingest_token: str | None = Header(default=None, alias="X-Ingest-Token"),
+) -> None:
+    """401 unless the request carries ``INGEST_TOKEN`` (when one is set)."""
+    global _warned_open
+    expected = get_settings().ingest_token
+    if not expected:
+        if not _warned_open:
+            log.warning("ingest.auth.disabled: INGEST_TOKEN is not set")
+            _warned_open = True
+        return
+    if x_ingest_token is None or not hmac.compare_digest(
+        x_ingest_token.encode(), expected.encode()
+    ):
+        log.warning("ingest.auth.rejected")
+        raise HTTPException(status_code=401, detail="Invalid ingest token.")
+
+
+router = APIRouter(tags=["ingest"], dependencies=[Depends(require_ingest_token)])
 
 _INGEST_SKIP_KEYS: set[str] = {"npk"}
 
