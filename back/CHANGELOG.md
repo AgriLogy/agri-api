@@ -1,6 +1,32 @@
 # CHANGELOG
 
 
+## v1.142.0 (2026-11-17)
+
+### Features
+
+- **ingest**: Optional shared-secret header on /ingest/* webhooks
+  ([#501](https://github.com/AgriLogy/agri-api/pull/501),
+  [`adbb32b`](https://github.com/AgriLogy/agri-api/commit/adbb32b8f654f1b57a6731e4156edfd6f069a4c8))
+
+Closes #500.
+
+- New setting `INGEST_TOKEN` (`back/.env`). When set, `/ingest/bivocom`,
+  `/ingest/lorawan/chirpstack`, `/ingest/weather` and `/ingest/sensor` require `X-Ingest-Token:
+  <token>`; anything else gets 401 `{"detail": "Invalid ingest token."}` before the body is parsed.
+  Compared with `hmac.compare_digest`. - Unset: unchanged behaviour (existing parity tests run this
+  way), with a one-time warning in the logs. - Rollout: set the same value in agri-bridge's env
+  (companion PR) and in the ChirpStack HTTP integration headers, then set it here.
+
+Tests: new `test_ingest_auth.py` (24 cases: missing/empty/wrong/wrong-header-name → 401; right token
+  reaches validation; unset → open); `test_ingest_parity.py` and `test_ingest_device_columns.py`
+  unchanged and green.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+
+
 ## v1.141.0 (2026-11-16)
 
 ### Features
