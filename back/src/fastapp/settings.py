@@ -122,6 +122,13 @@ class AppSettings(BaseSettings):
         default=24, alias="INGEST_STALE_RENOTIFY_HOURS"
     )
 
+    # -- Ingest webhook auth --------------------------------------------------
+    # Shared secret for the /ingest/* device webhooks (agri-bridge, ChirpStack
+    # HTTP integration, weather posters). When set, every request must send it
+    # in the ``X-Ingest-Token`` header or gets a 401. Empty → the routes stay
+    # open (dev / pre-rollout); a warning is logged once per process.
+    ingest_token: str = Field(default="", alias="INGEST_TOKEN")
+
     # -- Mobile push (FCM HTTP v1, agri-api #37) -----------------------------
     # The Firebase service-account key: either the JSON itself or a path to the
     # JSON file. Empty = push disabled (tokens are still registered, nothing is
