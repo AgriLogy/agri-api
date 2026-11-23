@@ -1,6 +1,67 @@
 # CHANGELOG
 
 
+## v1.145.0 (2026-11-23)
+
+### Features
+
+- **farm-map**: Insights in French, Arabic and English (?lang=)
+  ([#513](https://github.com/AgriLogy/agri-api/pull/513),
+  [`8cddc67`](https://github.com/AgriLogy/agri-api/commit/8cddc6712100e70d54f4c85166e749a876fdddca))
+
+Closes #512
+
+## What - `GET /farm-map/sectors/{id}/insights?lang=fr|ar|en` — `lang` optional. - No `lang` (or
+  empty) → caller's `preferred_language` (`AuthedUser.preferred_language`), else `fr`. - Unknown
+  `lang` → `fr` (200, not 422). Case-insensitive (`EN` → `en`). - Translated:
+  `recommendation.message`, `vegetation.label`, `vegetation.message` (from agri-core 0.32.0) and
+  `water_balance.assumption` (worded in `fastapp/sector_insights.py`). Codes (`status`, `action`,
+  `reason`) and numbers unchanged. - New top-level `"lang"` field with the language actually used. -
+  agri-core pin 0.31.1 → 0.32.0 (AgriLogy/agri-core#94, #95). `uv.lock`: only the agri-core lines.
+
+French output is unchanged (agri-core checked it byte-identical against 0.31.1).
+
+## Sample (same sector) - fr: Irriguer 105,9 m³ (≈ 353 min) — le déficit du sol (45 mm) dépasse la
+  réserve facilement utilisable (40,5 mm). - en: Irrigate 105.9 m³ (≈ 353 min) — the soil water
+  deficit (45 mm) exceeds the readily available water (40.5 mm). - ar: يُنصح بالري: 105.9 m³ (≈ 353
+  دقيقة) — عجز التربة (45 mm) يتجاوز الماء الميسّر (40.5 mm).
+
+## Tests (`back/src/fastapp/tests/test_farm_map_phase3.py`) - `test_resolve_lang` — 11 cases of
+  param / preference / fallback. - `test_insights_lang_param` — default fr, `?lang=en` English,
+  `?lang=ar` Arabic for all four strings; codes identical across languages; `?lang=de` → fr with
+  200. - `test_insights_lang_defaults_to_preferred_language` — no param with
+  `preferred_language='ar'` → Arabic; `?lang=en` overrides; `?lang=xx` → fr.
+
+Local: ruff check + format clean; full suite on Postgres 16: 1426 passed, 15 skipped.
+
+Not deployed; to be merged into the release.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+### Testing
+
+- **e2e**: Demo farm gets alert rules, firings and irrigation decisions
+  ([#511](https://github.com/AgriLogy/agri-api/pull/511),
+  [`1999d66`](https://github.com/AgriLogy/agri-api/commit/1999d661184d7a3b19dcbfe0fbe0102b3912a9f2))
+
+Closes #510
+
+`e2e_seed.py --demo` now also seeds: - 3 alert rules: dry soil < 28 %, frost < 3 °C, wind > 10 m/s;
+  - 6 firings over two weeks; - 14 daily irrigation decisions for zone A1, with the deficit
+  refilling every 4 days.
+
+Rows are written through `fastapp.history` (`build_alert_event_row`,
+  `build_decision_row_from_advice`, `record_irrigation_decision`), the same builders the live alert
+  and advice paths use. This step runs after the seed's Django transaction commits, because the
+  events reference the rules through a separate SQLAlchemy connection.
+
+**Verified on the local stack:** `GET /alerts` returns 3 rules, `/reports/alert-events` returns 6
+  and `/reports/irrigation-decisions` returns 14. `--cleanup` removes them along with the tenants.
+  Seed-only change; no app code.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+
 ## v1.144.1 (2026-11-23)
 
 ### Bug Fixes
