@@ -81,7 +81,9 @@ dependencies = [
     # 0.29.1 resolves agri-db 0.26.0: notification_push_token (push, #37).
     # 0.30.1 adds agri.core.water_level and resolves agri-db 0.27.1 (water
     # level tables, agrilogy-front#261).
-    "agri-core @ git+https://github.com/AgriLogy/agri-core.git@0.30.1",
+    # 0.31.x adds agri.core.sector_insights + forecast rain and resolves
+    # agri-db 0.28.0 (satellite history tables, #459 phase 3).
+    "agri-core @ git+https://github.com/AgriLogy/agri-core.git@0.31.1",
     # FastAPI sidecar (back/src/fastapp) — the strangler target the Django
     # surface migrates into, served by uvicorn on :8001 (entrypoint `fast`
     # role). Same image/venv as Django so both stay in lockstep.
@@ -96,6 +98,7 @@ dependencies = [
     "anthropic>=1.0",
     "cryptography>=44",
     "httpx>=0.28.1",
+    "python-multipart>=0.0.20",
 ]
 
 [dependency-groups]

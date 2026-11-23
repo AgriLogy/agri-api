@@ -2,12 +2,18 @@
 
     python scripts/e2e_seed.py            # create, print JSON on stdout
     python scripts/e2e_seed.py --cleanup  # delete every e2e-* tenant and its data
+    python scripts/e2e_seed.py --demo     # + a realistic farm for the screenshot tour
 
 Creates, for one test run (suffix = timestamp):
 
 * farmer A — two zones, the first with a week of sensor history;
 * farmer B — one zone (the "other tenant" for isolation checks);
 * a technician with an active read grant on farmer A, scoped to zone A1.
+
+``--demo`` (the screenshot tour, agri-web ``e2e/tour``) also gives farmer A a
+farm worth looking at: two drawn sectors (one with both zones, soil water
+parameters and a Kc table, one empty), metered irrigation, two months of
+stored NDVI, a shape revision history and a water basin with a week of levels.
 
 Each user gets JWT access/refresh tokens minted here, so the browser suite
 never needs a password. Usernames all start with ``e2e-`` and ``--cleanup``
@@ -92,7 +98,7 @@ def cleanup() -> dict[str, int]:
     return removed
 
 
-def seed() -> dict:
+def seed(demo: bool = False) -> dict:
     from analytics.models import TechnicianGrant, TechnicianZoneGrant, Zone
 
     seed_dev = _load_seed_dev_data()
@@ -135,10 +141,15 @@ def seed() -> dict:
         )
 
     readings = seed_dev._seed_zone(zones_a[0]) if seed_dev else 0
+    demo_data = None
+    if demo:
+        with transaction.atomic():
+            demo_data = _seed_demo(a, zones_a)
 
     return {
         "run": run,
         "readings_seeded": readings,
+        "demo": demo_data,
         "users": {
             "a": {
                 "id": a.id,
@@ -160,6 +171,207 @@ def seed() -> dict:
                 **_tokens(tech),
             },
         },
+    }
+
+
+# Around Berrechid (Chaouia), a typical irrigated plain.
+_DEMO_NORTH = [
+    [-7.5875, 33.2650],
+    [-7.5835, 33.2652],
+    [-7.5832, 33.2622],
+    [-7.5870, 33.2619],
+    [-7.5875, 33.2650],
+]
+_DEMO_NORTH_OLD = [
+    [-7.5875, 33.2650],
+    [-7.5845, 33.2651],
+    [-7.5843, 33.2622],
+    [-7.5870, 33.2619],
+    [-7.5875, 33.2650],
+]
+_DEMO_SOUTH = [
+    [-7.5872, 33.2614],
+    [-7.5830, 33.2616],
+    [-7.5828, 33.2590],
+    [-7.5868, 33.2588],
+    [-7.5872, 33.2614],
+]
+
+
+def _seed_demo(a, zones_a) -> dict:
+    """A realistic farm for farmer A (see module docstring)."""
+    import datetime as dt
+    import math
+
+    from agri.core.geometry import area_hectares, perimeter_m
+    from apps.irrigation.models import Kc, KcPeriod, KcPeriodAssignment
+    from apps.sensors.models import WaterFlowSensor
+
+    tables = _existing_tables()
+    now = dt.datetime.now(dt.UTC).replace(minute=0, second=0, microsecond=0)
+    today = now.date()
+
+    def poly(ring):
+        return {"type": "Polygon", "coordinates": [ring]}
+
+    def sector(name, ring, crop, color):
+        geom = poly(ring)
+        with connection.cursor() as cur:
+            cur.execute(
+                "INSERT INTO analytics_sector (name, user_id, geometry, area_ha, perimeter_m,"
+                " color, geometry_updated_at, crop, irrigation_type, is_active)"
+                " VALUES (%s, %s, %s::jsonb, %s, %s, %s, now(), %s, 'drip', true) RETURNING id",
+                [
+                    name,
+                    a.id,
+                    json.dumps(geom),
+                    area_hectares(geom),
+                    perimeter_m(geom),
+                    color,
+                    crop,
+                ],
+            )
+            return cur.fetchone()[0], geom
+
+    north_id, north_geom = sector("Parcelle Nord", _DEMO_NORTH, "Tomate", "#2E7D32")
+    south_id, _ = sector("Parcelle Sud", _DEMO_SOUTH, "Pomme de terre", "#F9A825")
+
+    for zone in zones_a:
+        zone.sector_id = north_id
+        zone.soil_param_TAW = 81.0
+        zone.soil_param_RAW = 40.5
+        zone.pomp_flow_rate = 4.0
+        zone.irrigation_water_quantity = 150_000.0
+        zone.humidity_weather_latitude = 33.2636
+        zone.humidity_weather_longitude = -7.5853
+        zone.save()
+
+    kc = Kc.objects.create(
+        name="Tomate plein champ",
+        plant_name="Tomate",
+        user=a,
+        zone=zones_a[0],
+        number_of_periods=3,
+    )
+    for name, start, end, value in (
+        ("Initial", -70, -41, 0.6),
+        ("Développement", -40, -11, 0.9),
+        ("Mi-saison", -10, 50, 1.15),
+    ):
+        period = KcPeriod.objects.create(
+            period_name=name,
+            start_date=today + dt.timedelta(days=start),
+            end_date=today + dt.timedelta(days=end),
+            kc_value=value,
+        )
+        KcPeriodAssignment.objects.create(kc=kc, period=period)
+
+    # Two irrigations of ~3 h at 14 m³/h, five and two days ago (06:00 UTC).
+    flow = []
+    for days_ago in (5, 2):
+        start = (now - dt.timedelta(days=days_ago)).replace(hour=6)
+        for minute in range(0, 180, 15):
+            flow.append(
+                WaterFlowSensor(
+                    zone=zones_a[0],
+                    user=a,
+                    value=14.0,
+                    timestamp=start + dt.timedelta(minutes=minute),
+                )
+            )
+    WaterFlowSensor.objects.bulk_create(flow)
+
+    if "sector_geometry_revision" in tables:
+        with connection.cursor() as cur:
+            for ring, source, age in (
+                (_DEMO_NORTH_OLD, "kml", 30),
+                (_DEMO_NORTH, "draw", 6),
+            ):
+                geom = poly(ring)
+                cur.execute(
+                    "INSERT INTO sector_geometry_revision (sector_id, user_id, geometry,"
+                    " area_ha, perimeter_m, source, created_at)"
+                    " VALUES (%s, %s, %s::jsonb, %s, %s, %s, now() - %s * interval '1 day')",
+                    [
+                        north_id,
+                        a.id,
+                        json.dumps(geom),
+                        area_hectares(geom),
+                        perimeter_m(geom),
+                        source,
+                        age,
+                    ],
+                )
+
+    ndvi_points = 0
+    if "sector_satellite_stat" in tables:
+        from fastapp.satellite.store import geometry_hash
+
+        ghash = geometry_hash(north_geom)
+        with connection.cursor() as cur:
+            for i, days_ago in enumerate(range(58, 0, -5)):
+                # Green-up, then a slight dip over the last two weeks.
+                mean = (
+                    0.38
+                    + 0.32 * math.sin(min(i, 8) / 8 * math.pi / 2)
+                    - (0.015 * max(0, i - 8))
+                )
+                for kind, value in (
+                    ("ndvi", mean),
+                    ("ndmi", mean - 0.25),
+                    ("ndre", mean - 0.2),
+                ):
+                    cur.execute(
+                        "INSERT INTO sector_satellite_stat (sector_id, geometry_hash,"
+                        " index_kind, acquired_on, mean, min, max, std, valid_fraction,"
+                        " classes) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)"
+                        " ON CONFLICT DO NOTHING",
+                        [
+                            north_id,
+                            ghash,
+                            kind,
+                            today - dt.timedelta(days=days_ago),
+                            round(value, 3),
+                            round(value - 0.2, 3),
+                            round(value + 0.15, 3),
+                            0.07,
+                            0.96,
+                            json.dumps({"low": 0.1, "medium": 0.5, "high": 0.4}),
+                        ],
+                    )
+                ndvi_points += 1
+
+    water_source_id = None
+    if "water_source" in tables:
+        with connection.cursor() as cur:
+            cur.execute(
+                "INSERT INTO water_source (user_id, name, source_type, geometry, zone_ids,"
+                " max_height_m, length_m, width_m, minimum_reserve_m3, mode,"
+                " created_at, updated_at)"
+                " VALUES (%s, 'Bassin principal', 'BASIN', 'RECTANGULAR', %s::jsonb,"
+                " 4.0, 12.0, 8.0, 20.0, 'SIMULATED', now(), now()) RETURNING id",
+                [a.id, json.dumps([z.id for z in zones_a])],
+            )
+            water_source_id = cur.fetchone()[0]
+            if "water_level_reading" in tables:
+                for h in range(7 * 24, -1, -3):
+                    level = 2.6 + 0.9 * math.cos(h / 24 * math.pi) * 0.5 - h * 0.002
+                    cur.execute(
+                        "INSERT INTO water_level_reading (water_source_id, device_id, level_m, mode,"
+                        " quality, measured_at, received_at)"
+                        " VALUES (%s, 'simulator', %s, 'SIMULATED', 'GOOD', now() - %s * interval '1 hour',"
+                        " now() - %s * interval '1 hour')",
+                        [water_source_id, round(level, 2), h, h],
+                    )
+
+    return {
+        "sectors": [
+            {"id": north_id, "name": "Parcelle Nord"},
+            {"id": south_id, "name": "Parcelle Sud"},
+        ],
+        "kc_id": kc.id,
+        "ndvi_points": ndvi_points,
+        "water_source_id": water_source_id,
     }
 
 
@@ -197,7 +409,7 @@ def main(argv: list[str]) -> int:
     import io
 
     with contextlib.redirect_stdout(io.StringIO()):
-        data = seed()
+        data = seed(demo="--demo" in argv)
     print(json.dumps(data))
     return 0
 

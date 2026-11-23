@@ -506,3 +506,49 @@ def user_bearer(normal_user) -> APIClient:
 def other_bearer(other_user) -> APIClient:
     """APIClient carrying a Bearer token for a second normal user."""
     return _bearer_client(other_user)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _create_satellite_history_tables(
+    django_db_setup, django_db_blocker, _create_sector_schema
+):
+    """``sector_geometry_revision`` / ``satellite_acquisition`` /
+    ``sector_satellite_stat`` (agri-db f6b8d0e2a4c7, #459 phase 3). Created
+    from the agri.db definitions; the ``ON DELETE CASCADE`` FK to
+    ``analytics_sector`` is dropped here only, because Django's flush
+    TRUNCATEs ``analytics_sector`` between transactional tests without
+    CASCADE. Postgres only (JSONB)."""
+    from django.db import connection
+
+    if connection.vendor != "postgresql":
+        yield
+        return
+    from sqlalchemy.dialects import postgresql
+    from sqlalchemy.schema import CreateIndex, CreateTable
+
+    from agri.db.farm_map import (
+        SatelliteAcquisition,
+        SectorGeometryRevision,
+        SectorSatelliteStat,
+    )
+
+    dialect = postgresql.dialect()
+    with django_db_blocker.unblock():
+        existing = set(connection.introspection.table_names())
+        with connection.cursor() as cursor:
+            for model in (
+                SectorGeometryRevision,
+                SatelliteAcquisition,
+                SectorSatelliteStat,
+            ):
+                table = model.__table__
+                if table.name in existing:
+                    continue
+                cursor.execute(str(CreateTable(table).compile(dialect=dialect)))
+                cursor.execute(
+                    f"ALTER TABLE {table.name} DROP CONSTRAINT IF EXISTS "
+                    f"{table.name}_sector_id_fk"
+                )
+                for index in table.indexes:
+                    cursor.execute(str(CreateIndex(index).compile(dialect=dialect)))
+    yield

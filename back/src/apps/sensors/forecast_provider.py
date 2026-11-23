@@ -49,6 +49,8 @@ _OPENMETEO_HOURLY = (
     "shortwave_radiation",
     "surface_pressure",
 )
+# Optional series: a payload without it still yields a forecast (rain = 0).
+_OPENMETEO_HOURLY_OPTIONAL = ("precipitation",)
 # agri-core's diurnal model spreads ``rs_wm2`` as a half-sine over a fixed
 # 06:00–18:00 day, so its daily energy is peak × 12 h × 2/π. We invert that so
 # the synthesised day carries the same shortwave energy Open-Meteo forecasts.
@@ -84,6 +86,8 @@ def _seasonal_mock_day(day: date, latitude: float | None) -> DailyWeatherForecas
     rh_pct = max(20.0, min(90.0, 55.0 - 12.0 * season - 4.0 * wiggle))
     wind_ms = 2.0 + 0.6 * abs(wiggle)
     pressure_hpa = 1013.0
+    # Deterministic showers, wetter in the cool season (Mediterranean winter).
+    rain_mm = max(0.0, 6.0 * wiggle - 3.0) * (1.0 if season < 0.3 else 0.3)
 
     return DailyWeatherForecast(
         day=day,
@@ -92,6 +96,7 @@ def _seasonal_mock_day(day: date, latitude: float | None) -> DailyWeatherForecas
         wind_ms=round(wind_ms, 1),
         rs_wm2=round(rs_peak_wm2, 1),
         pressure_hpa=pressure_hpa,
+        precipitation_mm=round(rain_mm, 1),
     )
 
 
@@ -146,7 +151,7 @@ def _openmeteo_forecast(
         {
             "latitude": lat,
             "longitude": lon,
-            "hourly": ",".join(_OPENMETEO_HOURLY),
+            "hourly": ",".join(_OPENMETEO_HOURLY + _OPENMETEO_HOURLY_OPTIONAL),
             "wind_speed_unit": "ms",
             "timezone": "UTC",
             "start_date": start.isoformat(),
@@ -163,6 +168,7 @@ def _openmeteo_forecast(
         hourly = payload["hourly"]
         times: list[str] = hourly["time"]
         series = {name: hourly[name] for name in _OPENMETEO_HOURLY}
+        rain_series = hourly.get("precipitation") or []
     except (urllib.error.URLError, TimeoutError, ValueError, OSError) as exc:
         raise ProviderUnavailable(f"fetch failed: {exc}") from exc
     except (KeyError, TypeError) as exc:
@@ -187,6 +193,11 @@ def _openmeteo_forecast(
         wind10 = _mean(col["wind_speed_10m"])
         rs_mean = _mean(col["shortwave_radiation"])
         pressure = _mean(col["surface_pressure"])
+        rain = sum(
+            float(rain_series[i])
+            for i in idx
+            if i < len(rain_series) and rain_series[i] is not None
+        )
         if None in (temp_c, rh_pct, wind10, rs_mean):
             raise ProviderUnavailable(f"incomplete hourly data for {day}")
         # Mean W/m² over 24 h → daily Wh/m² → half-sine peak over the daylight.
@@ -199,6 +210,7 @@ def _openmeteo_forecast(
                 wind_ms=round(wind_speed_at_2m(wind10, 10.0), 2),
                 rs_wm2=round(rs_peak, 1),
                 pressure_hpa=round(pressure, 1) if pressure is not None else 1013.0,
+                precipitation_mm=round(rain, 1),
             )
         )
 
@@ -259,6 +271,71 @@ def get_daily_forecast(
         start=start, days=days, latitude=latitude, longitude=longitude
     )
     return daily
+
+
+_WATER_CACHE: dict[tuple, tuple[float, dict[str, dict[str, float | None]]]] = {}
+
+
+def fetch_openmeteo_daily_water(
+    *,
+    start: date,
+    end: date,
+    latitude: float | None,
+    longitude: float | None,
+) -> dict[str, dict[str, float | None]]:
+    """``{iso_date: {"et0_mm": …, "rain_mm": …}}`` from Open-Meteo, past or future.
+
+    Open-Meteo's forecast endpoint serves roughly the last three months as
+    well as the coming days, which covers the sector water balance (two weeks
+    back) and the forecast layer (one week ahead). Best-effort like
+    :func:`fetch_openmeteo_et0`: ``{}`` when disabled, without coordinates or on
+    any network / parse error. Cached per (coords, window) for the forecast TTL.
+    """
+    if _openmeteo_disabled() or latitude is None or longitude is None:
+        return {}
+    lat, lon = round(float(latitude), 3), round(float(longitude), 3)
+    key = (lat, lon, start.isoformat(), end.isoformat())
+    hit = _WATER_CACHE.get(key)
+    if hit is not None and monotonic() - hit[0] < _FORECAST_TTL_S:
+        return dict(hit[1])
+    query = urllib.parse.urlencode(
+        {
+            "latitude": lat,
+            "longitude": lon,
+            "daily": "et0_fao_evapotranspiration,precipitation_sum",
+            "timezone": "UTC",
+            "start_date": start.isoformat(),
+            "end_date": end.isoformat(),
+        }
+    )
+    try:
+        req = urllib.request.Request(
+            f"{_OPENMETEO_URL}?{query}",
+            headers={"User-Agent": "agri-api/sector-water"},
+        )
+        with urllib.request.urlopen(req, timeout=_OPENMETEO_TIMEOUT_S) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+        daily = payload.get("daily") or {}
+        dates = daily.get("time") or []
+        et0 = daily.get("et0_fao_evapotranspiration") or []
+        rain = daily.get("precipitation_sum") or []
+    except (urllib.error.URLError, TimeoutError, ValueError, OSError) as exc:
+        logger.warning("Open-Meteo daily water fetch failed (%s)", exc)
+        return {}
+
+    def at(values: list, i: int) -> float | None:
+        if i < len(values) and values[i] is not None:
+            return round(float(values[i]), 2)
+        return None
+
+    out = {
+        iso: {"et0_mm": at(et0, i), "rain_mm": at(rain, i)}
+        for i, iso in enumerate(dates)
+    }
+    if len(_WATER_CACHE) >= _FORECAST_CACHE_MAX:
+        _WATER_CACHE.clear()
+    _WATER_CACHE[key] = (monotonic(), out)
+    return dict(out)
 
 
 def fetch_openmeteo_et0(

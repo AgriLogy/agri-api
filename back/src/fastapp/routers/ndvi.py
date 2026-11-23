@@ -6,6 +6,8 @@ All under ``/farm-map/`` (already routed to fastapp by nginx):
 - ``GET /farm-map/ndvi/sectors/{pk}/dates``        → acquisition dates
 - ``GET /farm-map/ndvi/sectors/{pk}/image?date=``  → PNG clipped to the sector
 - ``GET /farm-map/ndvi/sectors/{pk}/stats``        → mean/min/max per date
+- ``GET /farm-map/ndvi/sectors/{pk}/history``      → the stored series (no
+  Copernicus call; phase 3). ``/stats`` and ``/dates`` store what they fetch.
 
 Only the sector's owner can read it. NDVI is vegetation vigour from 10 m
 pixels: it is not a crop-density measurement and does not show where
@@ -15,6 +17,7 @@ irrigation water went; the front says so next to every number.
 from __future__ import annotations
 
 import datetime as dt
+import logging
 from typing import Any
 
 from agri.core.database import session_scope
@@ -25,6 +28,7 @@ from sqlalchemy import select
 from fastapp.auth import AuthedUser, get_current_user
 from fastapp.farm_map_tables import sector_meta
 from fastapp.json import DjangoStyleJSONResponse
+from fastapp.satellite import store as satellite_store
 from fastapp.satellite.cdse import (
     IMAGE_KINDS,
     INDEXES,
@@ -37,6 +41,7 @@ from fastapp.schema_compat import sector_geometry_available
 from fastapp.settings import get_settings
 
 router = APIRouter(tags=["farm-map"])
+logger = logging.getLogger(__name__)
 
 _STATUS = {
     "not_configured": 503,
@@ -76,6 +81,15 @@ def _sector_geometry(pk: int, user_id: int) -> dict[str, Any] | None:
             )
         ).first()
     return row[0] if row is not None and isinstance(row[0], dict) else None
+
+
+def _store(fn, *args) -> None:
+    """Persist a fetched result; storage problems never fail the request."""
+    try:
+        with session_scope(commit=True) as session:
+            fn(session, *args)
+    except Exception:  # noqa: BLE001 — history is best-effort
+        logger.exception("satellite history write failed")
 
 
 def _range(days: int) -> tuple[dt.date, dt.date]:
@@ -126,6 +140,7 @@ def ndvi_dates(
         dates = get_client().acquisitions(geometry, start, end, max_cloud)
     except SatelliteError as exc:
         return _err(exc)
+    _store(satellite_store.save_acquisitions, pk, geometry, dates)
     return {
         "sector_id": pk,
         "from": start.isoformat(),
@@ -170,6 +185,33 @@ def ndvi_stats(
         series = get_client().ndvi_stats(geometry, start, end, index)
     except SatelliteError as exc:
         return _err(exc)
+    _store(satellite_store.save_stats, pk, geometry, index, series)
+    return {
+        "sector_id": pk,
+        "index": index,
+        "from": start.isoformat(),
+        "to": end.isoformat(),
+        "series": series,
+    }
+
+
+@router.get(
+    "/farm-map/ndvi/sectors/{pk}/history",
+    summary="Stored index statistics for the sector's current shape",
+)
+def ndvi_history(
+    pk: int,
+    days: int = Query(365, ge=7, le=1825),
+    index: str = Query("ndvi", pattern="^(ndvi|ndmi|ndre)$"),
+    user: AuthedUser = Depends(get_current_user),
+):
+    """What ``/stats`` has fetched so far — no Copernicus call, no quota."""
+    geometry = _sector_geometry(pk, user.id)
+    if geometry is None:
+        return _NO_SECTOR
+    start, end = _range(days)
+    with session_scope() as session:
+        series = satellite_store.stored_series(session, pk, geometry, index, start, end)
     return {
         "sector_id": pk,
         "index": index,
