@@ -1,6 +1,62 @@
 # CHANGELOG
 
 
+## v1.144.0 (2026-11-23)
+
+### Features
+
+- **farm-map**: Ndvi phase 3 API (insights, forecast layer, satellite history, KML import)
+  ([#507](https://github.com/AgriLogy/agri-api/pull/507),
+  [`5294f8e`](https://github.com/AgriLogy/agri-api/commit/5294f8e8735e680373b27d5072d5a63be7cdff85))
+
+Closes #506 · part of #459 phase 3 · web: AgriLogy/agri-web#180
+
+Depends on **agri-db 0.28.0** (migration `f6b8d0e2a4c7`, three new tables) and **agri-core 0.31.1**
+  (`sector_insights`, forecast rain). Both are released and pinned here.
+
+## Endpoints | | | |---|---| | `GET /farm-map/sectors/{id}/insights` | 14-day water balance (Dr
+  clamped to [0, TAW]) from the sector's zones, the Kc-table period for each day, Open-Meteo ET₀ and
+  rain, and metered irrigation (hourly mean m³/h, integrated per day) → status, irrigate / wait /
+  none with volume and duration, and an NDVI × soil reading. If the balance can't be computed, the
+  response says why: `no_zone`, `no_soil_params`, `no_location` or `no_weather` | | `GET
+  /farm-map/forecast?days=1..7` | rain + ET₀ + balance per drawn sector, sharing one forecast call
+  per ~1 km cell | | `GET /farm-map/ndvi/sectors/{id}/history` | stored series for the sector's
+  **current** shape (no CDSE call). `/stats` and `/dates` now store what they fetch, as a
+  best-effort upsert | | `GET /sectors/{id}/geometry-history` · `POST …/{rev}/restore` | every shape
+  write is kept (unchanged shapes are deduplicated); restoring adds a `restore` revision | | `POST
+  /farm-map/sectors/import-kml` | multipart `file` + `dry_run`. Polygons and MultiGeometry are
+  imported; skipped items are reported as `not_a_polygon` / `invalid_geometry` / `duplicate_name`.
+  Files with a DTD are refused, the cap is 2 MB, and the nginx location for this endpoint allows 3
+  MB |
+
+Writes need the editor level and are refused to technician logins.
+
+## Other changes - **Forecast provider:** Open-Meteo hourly `precipitation` is now read as an
+  optional field, and the mock provider has deterministic showers. Also adds
+  `fetch_openmeteo_daily_water` (past and future daily ET₀ + rain, cached). - **`scripts/e2e_seed.py
+  --demo`:** seeds two drawn sectors near Berrechid (one with both zones, soil parameters and a Kc
+  table), two metered irrigations, 12 NDVI dates, 2 shape revisions and a basin with a week of
+  levels. This is for the agri-web screenshot tour. - **Tests:** the conftest creates the 3 tables
+  from agri.db, without the sector FK (Django's flush TRUNCATEs `analytics_sector` without CASCADE).
+  Adds the admin DB allowlist entries. - **Dependency:** `python-multipart` (required by FastAPI for
+  `UploadFile`/`Form`).
+
+## Verification - **New tests:** `test_farm_map_phase3.py` has 13 tests covering KML parsing and
+  KMZ, refusing a DTD / broken / oversized file, shape history plus restore plus cross-tenant 404,
+  NDVI stored per shape (and emptied after a redraw), the KML dry run then create, insights (no
+  zone, 70 mm deficit → irrigate, Kc table → 35 mm → irrigate soon, rain → wait, metered irrigation
+  lowering Dr, stored NDVI read) and the forecast layer. - **Full suite on Postgres 16:** 1382
+  passed, 15 skipped, 0 failed. ruff is clean. - **Live on the local stack** (gateway :8080, real
+  Open-Meteo): the demo farm returns Kc *Mi-saison* 1.15 from the farmer's table, Dr 29.7 mm (36.6
+  %), *« Pas d'irrigation nécessaire »*, forecast `open-meteo` per sector, 12 stored NDVI points and
+  2 revisions. The KML dry run goes through nginx multipart.
+
+## Deploy notes Apply agri-db `f6b8d0e2a4c7` (the image's `migrate` role does it), deploy the image,
+  then copy `deploy/nginx/back.conf` (new import-kml location) and reload nginx.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+
 ## v1.143.0 (2026-11-23)
 
 ### Build System
