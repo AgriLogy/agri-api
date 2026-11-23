@@ -48,7 +48,14 @@ from rest_framework_simplejwt.tokens import RefreshToken  # noqa: E402
 
 PREFIX = "e2e-"
 # Tables keyed by a bare user_id / water_source_id (no FK, so no cascade).
-_LOOSE_USER_TABLES = ("water_source", "notification_push_token")
+_LOOSE_USER_TABLES = (
+    "water_source",
+    "notification_push_token",
+    # Not Django-modelled, but FK'd to the user (and to analytics_alert): they
+    # must go before Django's user delete, or that delete is refused.
+    "analytics_alertevent",
+    "analytics_irrigationdecision",
+)
 _WATER_CHILD_TABLES = ("water_level_device", "water_level_reading", "water_level_alert")
 
 
