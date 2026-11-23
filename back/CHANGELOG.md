@@ -1,6 +1,43 @@
 # CHANGELOG
 
 
+## v1.144.1 (2026-11-23)
+
+### Bug Fixes
+
+- **fastapp**: Technician read access to sectors, farm-map sector reads and water sources
+  ([#509](https://github.com/AgriLogy/agri-api/pull/509),
+  [`90f7f02`](https://github.com/AgriLogy/agri-api/commit/90f7f0202d4fd138eaf7c585f66a55a0b1b8e2b8))
+
+Closes #508
+
+## What Technician read access for the sector, farm-map and water-source reads, through the scope
+  the other routers already use (`routers/selfreads._resolve_read_scope`, exposed by a small
+  `read_scope_for(session, user_id)` wrapper). No new access model.
+
+- **Sectors** (`routers/sectors.py`): new `sector_visibility(scope)` / `readable_sector()` /
+  `visible_sector_ids()`. A technician with an active grant sees the owner's sectors that contain at
+  least one granted zone. `GET /sectors` keeps the owner's shape (geometry included); `zone_count`
+  counts the granted zones. `GET /sectors/overview` lists only granted zones. - **Farm map**
+  (`routers/farm_map_insights.py`, `sector_insights.py`): `GET /farm-map/sectors/{id}/insights`
+  (balance computed on the granted zones), `GET /farm-map/forecast` (readable sectors only) and `GET
+  /sectors/{id}/geometry-history` go through `readable_sector`. - **NDVI** (`routers/ndvi.py`):
+  `dates`, `stats`, `history`, `image` resolve the sector through `readable_sector`. - **Water
+  sources** (`routers/water_level.py`): `GET /water-sources`, `/{id}`, `/{id}/status`,
+  `/{id}/history`, `/{id}/alerts` return the owner's sources whose `zone_ids` intersect the granted
+  zones.
+
+Unchanged: every write (sector create/edit/delete/zones, restore, KML import, water source
+  create/edit/delete, simulator, readings) still answers 403 for a technician. Another farmer's
+  data, an inactive grant, or a sector/source outside the grant stays 404 or empty.
+
+## Tests `src/fastapp/tests/test_technician_read_access.py` (16 tests, Postgres): granted vs
+  ungranted zone, sector without zones, inactive grant, another farmer, and refused writes, for both
+  sectors and water sources. Five of them fail on `main`.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+
 ## v1.144.0 (2026-11-23)
 
 ### Features
