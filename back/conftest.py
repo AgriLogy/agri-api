@@ -10,28 +10,40 @@ provided by the per-app conftests) and attach it to every request.
 
 from __future__ import annotations
 
-import faulthandler
 import os
-import sys
+import threading
 
 import pytest
 from rest_framework.test import APIClient
 
-# A test stuck longer than this dumps every thread's stack and exits, so a CI
-# hang fails fast with a traceback instead of holding the runner for hours.
-_TEST_WATCHDOG_S = int(os.environ.get("PYTEST_WATCHDOG_S", "300"))
+# Hang guard. pytest's own ``faulthandler_timeout`` (pyproject) dumps every
+# thread's stack to the real stderr when one test runs too long; it does not
+# stop the run, so this timer then exits the process. A CI hang thus fails in
+# minutes with a traceback instead of holding the runner for hours (GitHub
+# only publishes the logs of finished jobs). 0 disables the exit.
+_TEST_WATCHDOG_S = int(os.environ.get("PYTEST_WATCHDOG_S", "360"))
+
+
+def _watchdog_exit(nodeid: str) -> None:
+    os.write(
+        2,
+        f"\npytest watchdog: {nodeid} exceeded {_TEST_WATCHDOG_S}s, exiting\n".encode(),
+    )
+    os._exit(3)
 
 
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_protocol(item, nextitem):
+    timer = None
     if _TEST_WATCHDOG_S > 0:
-        sys.stderr.write("")  # make sure stderr is open for the dump
-        faulthandler.dump_traceback_later(_TEST_WATCHDOG_S, exit=True)
+        timer = threading.Timer(_TEST_WATCHDOG_S, _watchdog_exit, args=(item.nodeid,))
+        timer.daemon = True
+        timer.start()
     try:
         yield
     finally:
-        if _TEST_WATCHDOG_S > 0:
-            faulthandler.cancel_dump_traceback_later()
+        if timer is not None:
+            timer.cancel()
 
 
 @pytest.fixture(scope="session", autouse=True)

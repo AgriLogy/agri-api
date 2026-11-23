@@ -150,6 +150,8 @@ indent-style = "space"
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "agriapi.settings"
+# Dump all thread stacks when one test runs this long (see conftest watchdog).
+faulthandler_timeout = 300
 python_files = ["test_*.py", "*_test.py", "tests.py"]
 # src/ layout: put back/src on sys.path so agriapi/apps/analytics import during
 # collection (rootdir is back/, so this resolves to back/src).
