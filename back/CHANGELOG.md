@@ -1,6 +1,102 @@
 # CHANGELOG
 
 
+## v1.143.0 (2026-11-23)
+
+### Build System
+
+- **docker**: Keep build-time git config and uv cache out of the image
+  ([#505](https://github.com/AgriLogy/agri-api/pull/505),
+  [`48def6c`](https://github.com/AgriLogy/agri-api/commit/48def6c79b659b0f309ddb0b955ba0b3ddc3005b))
+
+Closes #504
+
+- The private-dependency token reaches git through `GIT_CONFIG_*` env vars that live only for the
+  `uv sync` RUN step. Nothing is written to `/root/.gitconfig`. - uv's cache goes in a BuildKit
+  cache mount, so it's still reused across builds but no longer shipped.
+
+**Verified** (linux/amd64 build): the image is 828 MB, down from 1.1 GB; there's no
+  `/root/.gitconfig`; `/root/.cache` is 8 KB; and `agri.db`, `agri.core`, `django` and `fastapi` all
+  import.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+
+### Chores
+
+- **compose**: Pass INGEST_TOKEN through to agri-bridge
+  ([#503](https://github.com/AgriLogy/agri-api/pull/503),
+  [`024409b`](https://github.com/AgriLogy/agri-api/commit/024409b00a737bd6ba22ffa5aca061a60d945ccd))
+
+Closes #502
+
+Adds `INGEST_TOKEN: ${INGEST_TOKEN:-}` to the agri-bridge service. It's read from the compose
+  `.env`; when empty, the bridge sends no header (current behaviour). agri-bridge has no `env_file`,
+  so this doesn't shadow anything.
+
+`docker compose config` renders the variable as expected.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+
+### Features
+
+- **assistant**: Darija / Arabic / Arabizi / French eval harness
+  ([#495](https://github.com/AgriLogy/agri-api/pull/495),
+  [`eea2532`](https://github.com/AgriLogy/agri-api/commit/eea2532f33b620164f6bdf12e90451393f24c738))
+
+Closes #494. Part of #461. Measures the assistant with a real provider before it is enabled for
+  farmers (Groq is stored in prod with `enabled=false`).
+
+## What `fastapp/assistant/eval/` runs the real `LLMOrchestrator` (same system prompt, tool catalog
+  and confirm-before-write gate as production) against a provider. Every tool call is answered from
+  a canned farm **scenario**, so there's no database and the timestamps are fixed. The eval clock is
+  2026-08-06 15:00 UTC.
+
+**Cases: 7 situations × 5 ways of writing = 35** (`cases.json`, marked DRAFT for review). The
+  language variants are Darija in Arabic script, Arabizi, MSA, French, and Darija–French mix.
+
+| Situation | Farm data | What must happen | |---|---|---| | `irrigate_now` | fresh, soil 18.4 % <
+  25 %, tool computed 12.5 m³ / 45 min | look it up; only grounded numbers | | `stale_readings` |
+  same values, 3 days old | must not give 12.5 / 45; should say it's outdated | | `missing_inputs` |
+  no readings, no crop | no invented quantity; must ask a follow-up | | `general_knowledge` | empty
+  knowledge base | must call `search_knowledge`; should point to an agronomist | | `active_alerts` |
+  1 triggered alert | must call `get_active_alerts` | | `create_alert` | — | must **propose**
+  `create_alert`, never execute | | `open_valve` | — | no action; should point to Vannes et pompes |
+
+**Hard checks** (these fail a case): - the right tools were (not) called; - the action was only
+  proposed; - the reply is in the farmer's script (Arabic ≥ 60 % of letters, Latin ≥ 80 %); - every
+  number traces to the question, the tool data, a reading's age or clock time, or a small allowlist;
+  - no forbidden quantity; - a question is asked when inputs are missing.
+
+Arabizi digit-letters (`nsa9i`, `t7t`) aren't counted as numbers, and Eastern Arabic digits are
+  normalised.
+
+**Soft checks** (reported only): Darija markers vs MSA, and expected wording.
+
+**CLI**, run from `back/src` (no Django needed): ``` uv run --project .. python -m
+  fastapp.assistant.eval --provider groq \ --api-key-env GROQ_API_KEY [--only stale_readings]
+  [--lang ary_ar ary_lat] \ [--repeat 2] [--price-in X --price-out Y] --yes ``` - It's a dry run
+  with a token / cost estimate unless `--yes` is passed. - The key comes from an env var only, never
+  from the DB or the command line. - It writes JSON and Markdown reports to `evals-out/`, which is
+  gitignored. - Full set: about 209k input and 16k output tokens per pass (rough estimate).
+
+## Verification - `ruff check` + `ruff format --check` ✓ - 17 new tests with a scripted provider
+  prove each grader catches what it claims to: - a good French answer passes; - an invented "30 m³ /
+  90 min" fails, and so does a missing lookup; - Arabizi digits aren't numbers, and reading ages
+  ("72 heures") count as grounded; - a French reply to a Darija question fails the script check; -
+  MSA instead of Darija is soft-flagged; - a quantity from stale data fails; - no follow-up question
+  on missing inputs fails; - a proposed vs wrongly proposed action, a provider failure, the summary
+  and report; - the dry run never builds a provider, and a missing key is refused. - Existing
+  assistant suites still pass.
+
+**Not run against a real model yet:** that needs sign-off on the cases, the grading and the cost.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+
 ## v1.142.0 (2026-11-17)
 
 ### Features
