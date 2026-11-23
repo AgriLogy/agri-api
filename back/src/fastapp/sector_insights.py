@@ -13,6 +13,9 @@ what it needs for one sector and calls it:
 
 Everything is owner-scoped by the caller. Dates are UTC days, matching the
 Open-Meteo request.
+
+Human strings come in French, Arabic or English (``lang``); agri-core owns the
+advice and vegetation wording, the water-balance assumption is worded here.
 """
 
 from __future__ import annotations
@@ -30,6 +33,7 @@ from agri.core.sector_insights import (
     interpret_vegetation,
     irrigation_depth_mm,
     kc_for_day,
+    normalize_lang,
     recommend,
     run_water_balance,
 )
@@ -59,6 +63,45 @@ BALANCE_DAYS = 14
 
 NDVI_LOOKBACK_DAYS = 60
 SOIL_MOISTURE_KEY = "soil_moisture_medium"
+
+
+INSIGHT_LANGS = ("fr", "ar", "en")
+DEFAULT_LANG = "fr"
+
+_EN_MONTHS = (
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+)  # fmt: skip
+
+_ASSUMPTION = {
+    "fr": "Sol supposé à la capacité au champ le {date} (début du bilan sur {days} jours).",
+    "en": "Soil assumed at field capacity on {date} (start of the {days}-day balance).",
+    "ar": "يُفترض أن التربة عند السعة الحقلية بتاريخ {date} (بداية الميزان المائي لمدة {days} يومًا).",
+}
+
+
+def resolve_lang(requested: str | None, preferred: str | None) -> str:
+    """The language of the insight strings.
+
+    ``?lang=`` wins when given (an unknown value falls back to French, not to
+    the user's preference); without it, the caller's ``preferred_language``,
+    else French.
+    """
+    if requested is not None and requested.strip():
+        return normalize_lang(requested)
+    if preferred and preferred.strip().lower() in INSIGHT_LANGS:
+        return preferred.strip().lower()
+    return DEFAULT_LANG
+
+
+def _assumption(start: dt.date, lang: str) -> str:
+    if lang == "en":
+        day = f"{start.day} {_EN_MONTHS[start.month - 1]} {start.year}"
+    else:
+        day = start.strftime("%d/%m/%Y")
+    return _ASSUMPTION.get(lang, _ASSUMPTION[DEFAULT_LANG]).format(
+        date=day, days=BALANCE_DAYS
+    )
 
 
 def _today() -> dt.date:
@@ -212,12 +255,15 @@ def sector_insights(
     *,
     today: dt.date | None = None,
     zone_ids: set[int] | None = None,
+    lang: str = DEFAULT_LANG,
 ) -> dict[str, Any] | None:
     """The ``GET /farm-map/sectors/{id}/insights`` body, or None (not found).
 
     ``user_id`` is the data owner; ``zone_ids`` (a technician's granted zones)
     narrows the zones the balance is computed on, None meaning all of them.
+    ``lang`` (fr | ar | en) picks the language of the human strings only.
     """
+    lang = normalize_lang(lang)
     sector = load_sector(session, sector_id, user_id)
     if sector is None:
         return None
@@ -312,10 +358,7 @@ def sector_insights(
                 "depletion_pct": round(dr / taw * 100.0, 1) if taw else None,
                 "status": balance_status(dr, raw),
                 "start_date": start.isoformat(),
-                "assumption": (
-                    f"Sol supposé à la capacité au champ le {start.strftime('%d/%m/%Y')} "
-                    f"(début du bilan sur {BALANCE_DAYS} jours)."
-                ),
+                "assumption": _assumption(start, lang),
                 "days": [r.as_dict() for r in rows],
             }
         )
@@ -335,6 +378,7 @@ def sector_insights(
             pump_flow_l_per_s=pump_l_s,
             max_water_per_day_l=max_day_l,
             rain_next_48h_mm=rain_48h,
+            lang=lang,
         )
 
     ndvi_points: list[tuple[dt.date, float]] = []
@@ -356,12 +400,14 @@ def sector_insights(
         critical_moisture_pct=critical,
         depletion_ratio=depletion_ratio,
         today=today,
+        lang=lang,
     )
     vegetation["soil_moisture_pct"] = soil_pct
     vegetation["soil_moisture_at"] = soil_at
 
     return {
         "sector_id": sector_id,
+        "lang": lang,
         "sector_name": sector["name"],
         "date": today.isoformat(),
         "crop": sector.get("crop"),
