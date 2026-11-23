@@ -16,7 +16,10 @@ columns: reads omit the geometry keys and shape-carrying writes answer 503,
 while names and zone assignment keep working (see ``fastapp.schema_compat``).
 
 All endpoints are owner-scoped (JWT ``user.id``); technicians (read-only) are
-blocked from writes (403), matching the other user-owned routers. DB access is
+blocked from writes (403), matching the other user-owned routers. Reads go
+through the shared technician scope (``selfreads._resolve_read_scope``): a
+technician with an active grant reads the owner's sectors that hold at least
+one granted zone (see :func:`sector_visibility` / :func:`readable_sector`). DB access is
 SQLAlchemy via agri-core (AnalyticsSector / AnalyticsZone from agri-db 0.17.0).
 """
 
@@ -43,6 +46,7 @@ from sqlalchemy.orm import Session
 
 from fastapp.auth import AuthedUser, get_current_user, require_level
 from fastapp.json import DjangoStyleJSONResponse
+from fastapp.routers.selfreads import _ReadScope, read_scope_for
 from fastapp.satellite import store as satellite_store
 from fastapp.farm_map_tables import SECTOR_META_COLUMNS, sector_meta
 from fastapp.schema_compat import (
@@ -130,22 +134,66 @@ def _owned(session: Session, pk: int, user_id: int) -> AnalyticsSector | None:
     ).first()
 
 
-def _zone_count(session: Session, sector_id: int) -> int:
-    return int(
-        session.scalar(
-            select(func.count(AnalyticsZone.id)).where(
-                AnalyticsZone.sector_id == sector_id
+def sector_visibility(scope: _ReadScope) -> list[Any]:
+    """WHERE clauses for the sectors ``scope`` may read.
+
+    A regular user reads their own sectors. A technician reads the grant
+    owner's sectors that contain at least one granted zone (an inactive or
+    missing grant resolves to an empty zone set, so nothing matches).
+    """
+    clauses: list[Any] = [AnalyticsSector.user_id == scope.owner_id]
+    if scope.zone_ids is not None:
+        clauses.append(
+            AnalyticsSector.id.in_(
+                select(AnalyticsZone.sector_id).where(
+                    AnalyticsZone.id.in_(sorted(scope.zone_ids)),
+                    AnalyticsZone.user_id == scope.owner_id,
+                    AnalyticsZone.sector_id.is_not(None),
+                )
             )
         )
-        or 0
+    return clauses
+
+
+def readable_sector(
+    session: Session, pk: int, scope: _ReadScope
+) -> AnalyticsSector | None:
+    """The sector when ``scope`` may read it, else None (answer 404)."""
+    return session.scalars(
+        select(AnalyticsSector).where(
+            AnalyticsSector.id == pk, *sector_visibility(scope)
+        )
+    ).first()
+
+
+def visible_sector_ids(session: Session, scope: _ReadScope) -> list[int] | None:
+    """Ids a technician may read; None for a regular user (all their own)."""
+    if scope.zone_ids is None:
+        return None
+    return list(
+        session.scalars(select(AnalyticsSector.id).where(*sector_visibility(scope)))
     )
 
 
-def _serialize(session: Session, s: AnalyticsSector) -> dict[str, Any]:
+def _zone_count(
+    session: Session, sector_id: int, zone_ids: set[int] | None = None
+) -> int:
+    query = select(func.count(AnalyticsZone.id)).where(
+        AnalyticsZone.sector_id == sector_id
+    )
+    if zone_ids is not None:
+        query = query.where(AnalyticsZone.id.in_(sorted(zone_ids)))
+    return int(session.scalar(query) or 0)
+
+
+def _serialize(
+    session: Session, s: AnalyticsSector, zone_ids: set[int] | None = None
+) -> dict[str, Any]:
+    """``zone_ids`` narrows ``zone_count`` to a technician's granted zones."""
     out: dict[str, Any] = {
         "id": s.id,
         "name": s.name,
-        "zone_count": _zone_count(session, s.id),
+        "zone_count": _zone_count(session, s.id, zone_ids),
     }
     # Pre-migration deployments have no geometry columns. Omitting the keys
     # entirely (rather than sending nulls) lets the front tell "this server
@@ -297,12 +345,13 @@ def _apply_geometry(
 @router.get("/sectors", summary="Caller's sectors (id, name, zone_count)")
 def list_sectors(user: AuthedUser = Depends(get_current_user)):
     with session_scope() as session:
+        scope = read_scope_for(session, user.id)
         rows = session.scalars(
             select(AnalyticsSector)
-            .where(AnalyticsSector.user_id == user.id)
+            .where(*sector_visibility(scope))
             .order_by(AnalyticsSector.name)
         ).all()
-        return [_serialize(session, s) for s in rows]
+        return [_serialize(session, s, scope.zone_ids) for s in rows]
 
 
 def _captors_for_zone(
@@ -335,9 +384,13 @@ def farm_overview(user: AuthedUser = Depends(get_current_user)):
     reading; last_received is the newest reading's timestamp. Owner-scoped by
     zone ownership (not the reading rows' user_id, which is device-keyed)."""
     with session_scope() as session:
-        zones = session.scalars(
-            select(AnalyticsZone).where(AnalyticsZone.user_id == user.id)
-        ).all()
+        scope = read_scope_for(session, user.id)
+        zone_query = select(AnalyticsZone).where(
+            AnalyticsZone.user_id == scope.owner_id
+        )
+        if scope.zone_ids is not None:  # technician: granted zones only
+            zone_query = zone_query.where(AnalyticsZone.id.in_(sorted(scope.zone_ids)))
+        zones = session.scalars(zone_query).all()
         zone_ids = [z.id for z in zones]
 
         configured: dict[int, set[str]] = {}
@@ -401,7 +454,7 @@ def farm_overview(user: AuthedUser = Depends(get_current_user)):
 
         sectors = session.scalars(
             select(AnalyticsSector)
-            .where(AnalyticsSector.user_id == user.id)
+            .where(*sector_visibility(scope))
             .order_by(AnalyticsSector.name)
         ).all()
 

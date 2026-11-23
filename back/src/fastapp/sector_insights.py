@@ -118,16 +118,18 @@ def sector_coordinates(
     return None
 
 
-def _zones(session: Session, sector_id: int, user_id: int) -> list[AnalyticsZone]:
-    return list(
-        session.scalars(
-            select(AnalyticsZone)
-            .where(
-                AnalyticsZone.sector_id == sector_id, AnalyticsZone.user_id == user_id
-            )
-            .order_by(AnalyticsZone.id)
-        )
+def _zones(
+    session: Session,
+    sector_id: int,
+    user_id: int,
+    zone_ids: set[int] | None = None,
+) -> list[AnalyticsZone]:
+    query = select(AnalyticsZone).where(
+        AnalyticsZone.sector_id == sector_id, AnalyticsZone.user_id == user_id
     )
+    if zone_ids is not None:  # a technician: only the granted zones
+        query = query.where(AnalyticsZone.id.in_(sorted(zone_ids)))
+    return list(session.scalars(query.order_by(AnalyticsZone.id)))
 
 
 def _kc_periods(session: Session, zone_ids: list[int]) -> list[KcPeriod]:
@@ -204,14 +206,23 @@ def _soil_moisture(
 
 # ---------------------------------------------------------------- insights
 def sector_insights(
-    session: Session, sector_id: int, user_id: int, *, today: dt.date | None = None
+    session: Session,
+    sector_id: int,
+    user_id: int,
+    *,
+    today: dt.date | None = None,
+    zone_ids: set[int] | None = None,
 ) -> dict[str, Any] | None:
-    """The ``GET /farm-map/sectors/{id}/insights`` body, or None (not found)."""
+    """The ``GET /farm-map/sectors/{id}/insights`` body, or None (not found).
+
+    ``user_id`` is the data owner; ``zone_ids`` (a technician's granted zones)
+    narrows the zones the balance is computed on, None meaning all of them.
+    """
     sector = load_sector(session, sector_id, user_id)
     if sector is None:
         return None
     today = today or _today()
-    zones = _zones(session, sector_id, user_id)
+    zones = _zones(session, sector_id, user_id, zone_ids)
     zone_ids = [z.id for z in zones]
 
     periods = _kc_periods(session, zone_ids)
@@ -364,18 +375,28 @@ def sector_insights(
 
 # ---------------------------------------------------------------- forecast
 def sectors_forecast(
-    session: Session, user_id: int, *, days: int, today: dt.date | None = None
+    session: Session,
+    user_id: int,
+    *,
+    days: int,
+    today: dt.date | None = None,
+    sector_ids: list[int] | None = None,
 ) -> dict[str, Any]:
-    """The ``GET /farm-map/forecast`` body: rain + ET₀ per drawn sector."""
+    """The ``GET /farm-map/forecast`` body: rain + ET₀ per drawn sector.
+
+    ``user_id`` is the data owner; ``sector_ids`` (a technician's readable
+    sectors) narrows the list, None meaning all of the owner's sectors.
+    """
     today = today or _today()
     dates = [(today + dt.timedelta(days=i)).isoformat() for i in range(days)]
     if not sector_geometry_available(session):
         return {"provider": None, "days": dates, "sectors": []}
-    rows = session.execute(
-        select(sector_meta.c.id, sector_meta.c.geometry)
-        .where(sector_meta.c.user_id == user_id, sector_meta.c.geometry.is_not(None))
-        .order_by(sector_meta.c.id)
-    ).all()
+    query = select(sector_meta.c.id, sector_meta.c.geometry).where(
+        sector_meta.c.user_id == user_id, sector_meta.c.geometry.is_not(None)
+    )
+    if sector_ids is not None:
+        query = query.where(sector_meta.c.id.in_(sector_ids))
+    rows = session.execute(query.order_by(sector_meta.c.id)).all()
     # The Core mirror has no name column; read names through the ORM model.
     names = dict(
         session.execute(

@@ -9,7 +9,8 @@ All under ``/farm-map/`` (already routed to fastapp by nginx):
 - ``GET /farm-map/ndvi/sectors/{pk}/history``      → the stored series (no
   Copernicus call; phase 3). ``/stats`` and ``/dates`` store what they fetch.
 
-Only the sector's owner can read it. NDVI is vegetation vigour from 10 m
+Readable by the sector's owner and by a technician whose active grant covers
+a zone of the sector (``sectors.readable_sector``). NDVI is vegetation vigour from 10 m
 pixels: it is not a crop-density measurement and does not show where
 irrigation water went; the front says so next to every number.
 """
@@ -28,6 +29,8 @@ from sqlalchemy import select
 from fastapp.auth import AuthedUser, get_current_user
 from fastapp.farm_map_tables import sector_meta
 from fastapp.json import DjangoStyleJSONResponse
+from fastapp.routers.sectors import readable_sector
+from fastapp.routers.selfreads import read_scope_for
 from fastapp.satellite import store as satellite_store
 from fastapp.satellite.cdse import (
     IMAGE_KINDS,
@@ -75,10 +78,10 @@ def _sector_geometry(pk: int, user_id: int) -> dict[str, Any] | None:
     with session_scope() as session:
         if not sector_geometry_available(session):
             return None
+        if readable_sector(session, pk, read_scope_for(session, user_id)) is None:
+            return None
         row = session.execute(
-            select(sector_meta.c.geometry).where(
-                sector_meta.c.id == pk, sector_meta.c.user_id == user_id
-            )
+            select(sector_meta.c.geometry).where(sector_meta.c.id == pk)
         ).first()
     return row[0] if row is not None and isinstance(row[0], dict) else None
 

@@ -7,8 +7,9 @@ sector shape history and KML import.
 - ``POST /sectors/{pk}/geometry-history/{rev}/restore``       put an old shape back
 - ``POST /farm-map/sectors/import-kml``                       KML/KMZ → sectors (dry run first)
 
-Owner-scoped like the rest of the farm map; writes need the editor level and
-are refused to technician logins.
+Owner-scoped like the rest of the farm map; a technician with an active grant
+reads the owner's sectors that hold a granted zone (``sectors.readable_sector``).
+Writes need the editor level and are refused to technician logins.
 """
 
 from __future__ import annotations
@@ -37,7 +38,10 @@ from fastapp.routers.sectors import (
     _owned,
     _persist_geometry,
     _serialize,
+    readable_sector,
+    visible_sector_ids,
 )
+from fastapp.routers.selfreads import read_scope_for
 from fastapp.satellite import store as satellite_store
 from fastapp.schema_compat import sector_geometry_available
 from fastapp.sector_insights import sector_insights, sectors_forecast
@@ -53,7 +57,10 @@ _NOT_FOUND = {"detail": "Sector not found.", "code": "no_sector"}
 )
 def insights(pk: int, user: AuthedUser = Depends(get_current_user)):
     with session_scope() as session:
-        body = sector_insights(session, pk, user.id)
+        scope = read_scope_for(session, user.id)
+        body = None
+        if readable_sector(session, pk, scope) is not None:
+            body = sector_insights(session, pk, scope.owner_id, zone_ids=scope.zone_ids)
     if body is None:
         return DjangoStyleJSONResponse(_NOT_FOUND, status_code=404)
     return body
@@ -65,13 +72,19 @@ def forecast(
     user: AuthedUser = Depends(get_current_user),
 ):
     with session_scope() as session:
-        return sectors_forecast(session, user.id, days=days)
+        scope = read_scope_for(session, user.id)
+        return sectors_forecast(
+            session,
+            scope.owner_id,
+            days=days,
+            sector_ids=visible_sector_ids(session, scope),
+        )
 
 
 @router.get("/sectors/{pk}/geometry-history", summary="Shapes the sector has had")
 def geometry_history(pk: int, user: AuthedUser = Depends(get_current_user)):
     with session_scope() as session:
-        if _owned(session, pk, user.id) is None:
+        if readable_sector(session, pk, read_scope_for(session, user.id)) is None:
             return DjangoStyleJSONResponse(_NOT_FOUND, status_code=404)
         return {"sector_id": pk, "revisions": satellite_store.revisions(session, pk)}
 
