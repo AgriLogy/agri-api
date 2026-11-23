@@ -99,6 +99,9 @@ def test_parse_kmz():
         b"<gpx></gpx>",
         b"x" * (2 * 1024 * 1024 + 1),
     ],
+    # Explicit ids: pytest would otherwise turn the 2 MB payload into a 2 MB
+    # test id, and that single -v log line stalled the GitHub Actions job.
+    ids=["dtd", "broken-xml", "not-kml", "over-2mb"],
 )
 def test_parse_kml_refuses_bad_files(data):
     with pytest.raises(KmlError):
