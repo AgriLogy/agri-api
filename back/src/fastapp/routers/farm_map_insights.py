@@ -1,7 +1,7 @@
 """Farm map, phase 3 (agri-api#459): decision layer, forecast layer,
 sector shape history and KML import.
 
-- ``GET  /farm-map/sectors/{pk}/insights``                    water balance + advice + NDVI × soil
+- ``GET  /farm-map/sectors/{pk}/insights?lang=``             water balance + advice + NDVI × soil
 - ``GET  /farm-map/forecast?days=``                           rain / ET₀ per drawn sector
 - ``GET  /sectors/{pk}/geometry-history``                     every shape the sector had
 - ``POST /sectors/{pk}/geometry-history/{rev}/restore``       put an old shape back
@@ -44,7 +44,7 @@ from fastapp.routers.sectors import (
 from fastapp.routers.selfreads import read_scope_for
 from fastapp.satellite import store as satellite_store
 from fastapp.schema_compat import sector_geometry_available
-from fastapp.sector_insights import sector_insights, sectors_forecast
+from fastapp.sector_insights import resolve_lang, sector_insights, sectors_forecast
 
 router = APIRouter(tags=["farm-map"])
 
@@ -55,12 +55,23 @@ _NOT_FOUND = {"detail": "Sector not found.", "code": "no_sector"}
     "/farm-map/sectors/{pk}/insights",
     summary="Water balance, irrigation advice and NDVI × soil reading for a sector",
 )
-def insights(pk: int, user: AuthedUser = Depends(get_current_user)):
+def insights(
+    pk: int,
+    lang: str | None = Query(
+        None,
+        description="fr | ar | en. Defaults to the caller's preferred_language, "
+        "else fr; an unknown value falls back to fr.",
+    ),
+    user: AuthedUser = Depends(get_current_user),
+):
+    language = resolve_lang(lang, user.preferred_language)
     with session_scope() as session:
         scope = read_scope_for(session, user.id)
         body = None
         if readable_sector(session, pk, scope) is not None:
-            body = sector_insights(session, pk, scope.owner_id, zone_ids=scope.zone_ids)
+            body = sector_insights(
+                session, pk, scope.owner_id, zone_ids=scope.zone_ids, lang=language
+            )
     if body is None:
         return DjangoStyleJSONResponse(_NOT_FOUND, status_code=404)
     return body

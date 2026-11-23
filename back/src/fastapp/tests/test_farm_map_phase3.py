@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import datetime as dt
 import io
+import re
 import zipfile
 
 import pytest
@@ -443,3 +444,121 @@ def test_forecast_layer_lists_drawn_sectors(api, owner, monkeypatch):
         s["total_rain_mm"] - s["total_et0_mm"], abs=0.11
     )
     assert api.get("/farm-map/forecast?days=9", headers=_auth(owner)).status_code == 422
+
+
+# ------------------------------------------------------- insights language
+_ARABIC = re.compile(r"[؀-ۿ]")
+_FRENCH_ACCENTS = re.compile(r"[àâçéèêëîïôûùüÿœ]", re.IGNORECASE)
+
+
+def _strings(body):
+    """The four human strings the ``lang`` parameter translates."""
+    return [
+        body["recommendation"]["message"],
+        body["vegetation"]["label"],
+        body["vegetation"]["message"],
+        body["water_balance"]["assumption"],
+    ]
+
+
+def _codes(body):
+    rec = body["recommendation"]
+    return (
+        rec["action"],
+        rec["reason"],
+        rec["volume_m3"],
+        body["vegetation"]["status"],
+        body["water_balance"]["status"],
+        body["water_balance"]["dr_mm"],
+    )
+
+
+@pytest.mark.parametrize(
+    ("requested", "preferred", "expected"),
+    [
+        ("en", "fr", "en"),
+        ("ar", "fr", "ar"),
+        ("fr", "ar", "fr"),
+        ("EN", "fr", "en"),
+        (None, "ar", "ar"),
+        (None, "fr", "fr"),
+        (None, None, "fr"),
+        (None, "", "fr"),
+        (None, "de", "fr"),
+        ("", "ar", "ar"),
+        ("de", "ar", "fr"),  # unknown ?lang= → fr, not the preference
+    ],
+)
+def test_resolve_lang(requested, preferred, expected):
+    assert insights_mod.resolve_lang(requested, preferred) == expected
+
+
+@_requires_pg
+@pytest.mark.django_db(transaction=True)
+def test_insights_lang_param(api, owner, monkeypatch):
+    monkeypatch.setattr(insights_mod, "fetch_openmeteo_daily_water", _weather(et0=5.0))
+    sid = _sector(api, owner)
+    _zone(owner, sid)
+    url = f"/farm-map/sectors/{sid}/insights"
+
+    fr = api.get(url, headers=_auth(owner)).json()
+    assert fr["lang"] == "fr"
+    assert fr["recommendation"]["message"].startswith("Irriguer ")
+    assert fr["water_balance"]["assumption"].startswith(
+        "Sol supposé à la capacité au champ le "
+    )
+    assert fr["vegetation"]["label"] == "Stress hydrique probable"
+
+    en = api.get(f"{url}?lang=en", headers=_auth(owner)).json()
+    assert en["lang"] == "en"
+    assert en["recommendation"]["message"].startswith("Irrigate ")
+    assert "readily available water (40.5 mm)" in en["recommendation"]["message"]
+    assert en["vegetation"]["label"] == "Probable water stress"
+    assert en["vegetation"]["message"].startswith("No recent satellite image")
+    assert en["water_balance"]["assumption"].startswith(
+        "Soil assumed at field capacity on "
+    )
+    assert "14-day balance" in en["water_balance"]["assumption"]
+    for text in _strings(en):
+        assert not _FRENCH_ACCENTS.search(text), text
+
+    ar = api.get(f"{url}?lang=ar", headers=_auth(owner)).json()
+    assert ar["lang"] == "ar"
+    assert ar["recommendation"]["message"].startswith("يُنصح بالري: ")
+    assert "(40.5 mm)" in ar["recommendation"]["message"]
+    assert ar["vegetation"]["label"] == "إجهاد مائي محتمل"
+    assert ar["water_balance"]["assumption"].startswith("يُفترض أن التربة")
+    for text in _strings(ar):
+        assert _ARABIC.search(text), text
+        assert not _FRENCH_ACCENTS.search(text), text
+
+    # Only the human strings move; codes and numbers do not.
+    assert _codes(fr) == _codes(en) == _codes(ar)
+    assert set(fr) == set(en) == set(ar)
+
+    # An unknown language is French, not a 422.
+    res = api.get(f"{url}?lang=de", headers=_auth(owner))
+    assert res.status_code == 200
+    assert res.json()["lang"] == "fr" and _strings(res.json()) == _strings(fr)
+
+
+@_requires_pg
+@pytest.mark.django_db(transaction=True)
+def test_insights_lang_defaults_to_preferred_language(api, owner, monkeypatch):
+    monkeypatch.setattr(insights_mod, "fetch_openmeteo_daily_water", _weather(et0=5.0))
+    sid = _sector(api, owner)
+    _zone(owner, sid)
+    owner.preferred_language = "ar"
+    owner.save(update_fields=["preferred_language"])
+    url = f"/farm-map/sectors/{sid}/insights"
+
+    body = api.get(url, headers=_auth(owner)).json()
+    assert body["lang"] == "ar"
+    assert body["recommendation"]["message"].startswith("يُنصح بالري: ")
+    assert body["vegetation"]["label"] == "إجهاد مائي محتمل"
+
+    # ?lang= overrides the preference; an unknown one falls back to fr.
+    assert api.get(f"{url}?lang=en", headers=_auth(owner)).json()["lang"] == "en"
+    body = api.get(f"{url}?lang=xx", headers=_auth(owner)).json()
+    assert body["lang"] == "fr"
+    assert body["recommendation"]["message"].startswith("Irriguer ")
