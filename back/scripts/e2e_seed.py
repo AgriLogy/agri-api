@@ -174,27 +174,27 @@ def seed(demo: bool = False) -> dict:
     }
 
 
-# Around Berrechid (Chaouia), a typical irrigated plain.
+# Open farmland in the Chaouia plain, north-east of Berrechid.
 _DEMO_NORTH = [
-    [-7.5875, 33.2650],
-    [-7.5835, 33.2652],
-    [-7.5832, 33.2622],
-    [-7.5870, 33.2619],
-    [-7.5875, 33.2650],
+    [-7.5222, 33.3014],
+    [-7.5182, 33.3016],
+    [-7.5179, 33.2986],
+    [-7.5217, 33.2983],
+    [-7.5222, 33.3014],
 ]
 _DEMO_NORTH_OLD = [
-    [-7.5875, 33.2650],
-    [-7.5845, 33.2651],
-    [-7.5843, 33.2622],
-    [-7.5870, 33.2619],
-    [-7.5875, 33.2650],
+    [-7.5222, 33.3014],
+    [-7.5192, 33.3015],
+    [-7.5190, 33.2986],
+    [-7.5217, 33.2983],
+    [-7.5222, 33.3014],
 ]
 _DEMO_SOUTH = [
-    [-7.5872, 33.2614],
-    [-7.5830, 33.2616],
-    [-7.5828, 33.2590],
-    [-7.5868, 33.2588],
-    [-7.5872, 33.2614],
+    [-7.5219, 33.2978],
+    [-7.5177, 33.2980],
+    [-7.5175, 33.2954],
+    [-7.5215, 33.2952],
+    [-7.5219, 33.2978],
 ]
 
 
@@ -242,8 +242,8 @@ def _seed_demo(a, zones_a) -> dict:
         zone.soil_param_RAW = 40.5
         zone.pomp_flow_rate = 4.0
         zone.irrigation_water_quantity = 150_000.0
-        zone.humidity_weather_latitude = 33.2636
-        zone.humidity_weather_longitude = -7.5853
+        zone.humidity_weather_latitude = 33.3000
+        zone.humidity_weather_longitude = -7.5200
         zone.save()
 
     kc = Kc.objects.create(
