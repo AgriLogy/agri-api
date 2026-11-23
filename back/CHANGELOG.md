@@ -1,6 +1,93 @@
 # CHANGELOG
 
 
+## v1.142.0 (2026-11-17)
+
+### Features
+
+- **ingest**: Optional shared-secret header on /ingest/* webhooks
+  ([#501](https://github.com/AgriLogy/agri-api/pull/501),
+  [`adbb32b`](https://github.com/AgriLogy/agri-api/commit/adbb32b8f654f1b57a6731e4156edfd6f069a4c8))
+
+Closes #500.
+
+- New setting `INGEST_TOKEN` (`back/.env`). When set, `/ingest/bivocom`,
+  `/ingest/lorawan/chirpstack`, `/ingest/weather` and `/ingest/sensor` require `X-Ingest-Token:
+  <token>`; anything else gets 401 `{"detail": "Invalid ingest token."}` before the body is parsed.
+  Compared with `hmac.compare_digest`. - Unset: unchanged behaviour (existing parity tests run this
+  way), with a one-time warning in the logs. - Rollout: set the same value in agri-bridge's env
+  (companion PR) and in the ChirpStack HTTP integration headers, then set it here.
+
+Tests: new `test_ingest_auth.py` (24 cases: missing/empty/wrong/wrong-header-name → 401; right token
+  reaches validation; unset → open); `test_ingest_parity.py` and `test_ingest_device_columns.py`
+  unchanged and green.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+
+
+## v1.141.0 (2026-11-16)
+
+### Features
+
+- **zones**: Patch /zones/{id} so a farmer can rename their own zone
+  ([#499](https://github.com/AgriLogy/agri-api/pull/499),
+  [`e5debe6`](https://github.com/AgriLogy/agri-api/commit/e5debe6e4e63232efe8947af3b9f934412ae02bd))
+
+Closes #498. Backend for AgriLogy/agri-web#172. Found by the QA inventory for
+  AgriLogy/agrilogy-front#262: Settings → Farms has never worked, because farmers had no zone write
+  endpoint.
+
+## What New router `fastapp/routers/my_zones.py`: `PATCH /zones/{zone_id}` with `{name}` (trimmed,
+  1–100 chars, extra fields rejected). It returns `{id, name, sector_id}`. - **Who:** the zone
+  owner, at access level **editor** (the farmer default), like other user-owned writes. - Someone
+  else's zone → **404**, so ids don't leak. - Technician → **403**; monitor level → 403
+  (`require_level`). - **Audit:** an `analytics_auditevent` row `zone.rename` with `{name: [old,
+  new]}`, like staff zone edits. - **Routing:** nginx already sends `/zones/` to fastapp
+  (`back.conf`, `staging.conf`), so nothing changes there.
+
+Only the name is writable. Soil and irrigation parameters stay staff-only (`/users/{u}/zones/{pk}`),
+  which matches what the farmer tab offers.
+
+## Verification - `ruff check` + `ruff format` ✓ - Full suite on Postgres 17: **1343 passed**, 15
+  skipped. 8 new tests in `test_my_zones.py`: rename plus audit plus `/zones` listing; foreign zone
+  404; blank / whitespace / 101-char / missing names; monitor and technician 403; unauthenticated
+  401. - Local stack through the gateway: `PATCH /zones/{id}` → 200 with the new name. The agri-web
+  e2e spec "settings / farms: rename a zone" passes with agri-web#172's fix.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+### Testing
+
+- **e2e**: Seed script for the agri-web end-to-end suite
+  ([#497](https://github.com/AgriLogy/agri-api/pull/497),
+  [`f61f01b`](https://github.com/AgriLogy/agri-api/commit/f61f01b2339821764ae211b1e7bcf85fad5e7adb))
+
+Closes #496. Part of AgriLogy/agrilogy-front#262 (QA). The agri-web Playwright suite
+  (AgriLogy/agri-web, linked from #262) calls it from its global setup.
+
+`back/scripts/e2e_seed.py`, run in the local container (`docker exec agri-api-web python
+  scripts/e2e_seed.py`), creates one run's tenants: - **farmer A**: zones "E2E Zone A1" (with a week
+  of readings, reusing `seed_dev_data._seed_zone`) and "E2E Zone A2"; - **farmer B**: "E2E Zone B1";
+  - **technician**: active grant on A, zone-scoped to A1 only.
+
+It prints `{run, readings_seeded, users: {a, b, tech}}` with JWT access/refresh pairs, so the suite
+  never needs a password (passwords are unusable).
+
+`--cleanup` deletes every `e2e-*` user. Django cascades zones and readings; the script also deletes
+  the rows with no DB foreign key: `water_source` and its devices, readings and alerts,
+  `notification_push_token`, and technician grants and zone grants.
+
+The script refuses to run with `DEBUG` off.
+
+## Verification - `ruff check` + `ruff format` ✓ - Local stack: seed → 3 users, 3 zones, 22,848
+  readings; cleanup → 0 `e2e-*` users and no orphaned zone grants. - Used by 3 full runs of the
+  agri-web e2e suite (41/41 on the last one), each followed by teardown cleanup.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+
 ## v1.140.0 (2026-11-15)
 
 ### Features

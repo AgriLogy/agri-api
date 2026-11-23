@@ -92,6 +92,10 @@ services:
       BACKEND_URL: http://agri-api-fast:8001
       BACKEND_PATH: /ingest/bivocom
       LOG_LEVEL: info
+      # Sent as X-Ingest-Token (agri-bridge #16). Set INGEST_TOKEN in the
+      # compose .env to the same value as back/.env's INGEST_TOKEN; empty = no
+      # header. The bridge has no env_file, so this is not a shadowing override.
+      INGEST_TOKEN: ${INGEST_TOKEN:-}
     ports:
       - "9090:9090"
     depends_on:
