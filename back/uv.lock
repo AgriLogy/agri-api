@@ -4,7 +4,7 @@ requires-python = ">=3.12"
 
 [[package]]
 name = "agri-api"
-version = "1.139.0"
+version = "1.143.0"
 source = { virtual = "." }
 dependencies = [
     { name = "agri-core" },
@@ -57,6 +57,7 @@ dependencies = [
     { name = "python-crontab" },
     { name = "python-dateutil" },
     { name = "python-dotenv" },
+    { name = "python-multipart" },
     { name = "pytz" },
     { name = "pyyaml" },
     { name = "redis" },
@@ -82,7 +83,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agri-core", git = "https://github.com/AgriLogy/agri-core.git?rev=0.30.1" },
+    { name = "agri-core", git = "https://github.com/AgriLogy/agri-core.git?rev=0.31.1" },
     { name = "amqp", specifier = "==5.3.1" },
     { name = "anthropic", specifier = ">=1.0" },
     { name = "asgiref", specifier = "==3.8.1" },
@@ -132,6 +133,7 @@ requires-dist = [
     { name = "python-crontab", specifier = "==3.3.0" },
     { name = "python-dateutil", specifier = "==2.9.0.post0" },
     { name = "python-dotenv", specifier = "==1.0.1" },
+    { name = "python-multipart", specifier = ">=0.0.20" },
     { name = "pytz", specifier = "==2025.2" },
     { name = "pyyaml", specifier = "==6.0.2" },
     { name = "redis", specifier = "==6.4.0" },
@@ -157,8 +159,8 @@ dev = [
 
 [[package]]
 name = "agri-core"
-version = "0.30.1"
-source = { git = "https://github.com/AgriLogy/agri-core.git?rev=0.30.1#e717a46073ad4ea6fc3d4e35be62bbbfd5c9de62" }
+version = "0.31.1"
+source = { git = "https://github.com/AgriLogy/agri-core.git?rev=0.31.1#aa2398db01d0a65f408b72b397eaa2e9badf4e09" }
 dependencies = [
     { name = "agri-db" },
     { name = "pydantic" },
@@ -167,8 +169,8 @@ dependencies = [
 
 [[package]]
 name = "agri-db"
-version = "0.27.1"
-source = { git = "https://github.com/AgriLogy/agri-db.git?rev=0.27.1#e6cc3c142db0c1ac5df0559fcde5072465a642c0" }
+version = "0.28.0"
+source = { git = "https://github.com/AgriLogy/agri-db.git?rev=0.28.0#b419ebe16da1122f38cdbaa7e623c47d81cd1caf" }
 dependencies = [
     { name = "alembic" },
     { name = "psycopg", extra = ["binary"] },
@@ -1652,6 +1654,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/bc/57/e84d88dfe0aec03b7a2d4327012c1627ab5f03652216c63d49846d7a6c58/python-dotenv-1.0.1.tar.gz", hash = "sha256:e324ee90a023d808f1959c46bcbc04446a10ced277783dc6ee09987c37ec10ca", size = 39115, upload-time = "2024-01-23T06:33:00.505Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/6a/3e/b68c118422ec867fa7ab88444e1274aa40681c606d59ac27de5a5588f082/python_dotenv-1.0.1-py3-none-any.whl", hash = "sha256:f7b63ef50f1b690dddf550d03497b66d609393b40b564ed0d674909a68ebf16a", size = 19863, upload-time = "2024-01-23T06:32:58.246Z" },
+]
+
+[[package]]
+name = "python-multipart"
+version = "0.0.34"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/7e/c0/c753d487a83d873f6946cee6cbc26cea3fe59a476ad0de99a14938a2fbd8/python_multipart-0.0.34.tar.gz", hash = "sha256:b998ae90ca6e1e363261ce2e0e230281b8af53867b757970abd69ee9edcd843a", size = 52456, upload-time = "2026-11-16T10:40:38.261Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f5/0e/090c52b122d8ec5fa37942c1410fea9cf04ce98bca0c84dde7f0aa11594d/python_multipart-0.0.34-py3-none-any.whl", hash = "sha256:ebacd224bd686eee2f9aa1066a657affe07435a185834e05e5235e2e59173e91", size = 32585, upload-time = "2026-11-16T10:40:37.119Z" },
 ]
 
 [[package]]

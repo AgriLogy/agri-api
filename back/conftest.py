@@ -11,9 +11,39 @@ provided by the per-app conftests) and attach it to every request.
 from __future__ import annotations
 
 import os
+import threading
 
 import pytest
 from rest_framework.test import APIClient
+
+# Hang guard. pytest's own ``faulthandler_timeout`` (pyproject) dumps every
+# thread's stack to the real stderr when one test runs too long; it does not
+# stop the run, so this timer then exits the process. A CI hang thus fails in
+# minutes with a traceback instead of holding the runner for hours (GitHub
+# only publishes the logs of finished jobs). 0 disables the exit.
+_TEST_WATCHDOG_S = int(os.environ.get("PYTEST_WATCHDOG_S", "360"))
+
+
+def _watchdog_exit(nodeid: str) -> None:
+    os.write(
+        2,
+        f"\npytest watchdog: {nodeid} exceeded {_TEST_WATCHDOG_S}s, exiting\n".encode(),
+    )
+    os._exit(3)
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_protocol(item, nextitem):
+    timer = None
+    if _TEST_WATCHDOG_S > 0:
+        timer = threading.Timer(_TEST_WATCHDOG_S, _watchdog_exit, args=(item.nodeid,))
+        timer.daemon = True
+        timer.start()
+    try:
+        yield
+    finally:
+        if timer is not None:
+            timer.cancel()
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -506,3 +536,49 @@ def user_bearer(normal_user) -> APIClient:
 def other_bearer(other_user) -> APIClient:
     """APIClient carrying a Bearer token for a second normal user."""
     return _bearer_client(other_user)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _create_satellite_history_tables(
+    django_db_setup, django_db_blocker, _create_sector_schema
+):
+    """``sector_geometry_revision`` / ``satellite_acquisition`` /
+    ``sector_satellite_stat`` (agri-db f6b8d0e2a4c7, #459 phase 3). Created
+    from the agri.db definitions; the ``ON DELETE CASCADE`` FK to
+    ``analytics_sector`` is dropped here only, because Django's flush
+    TRUNCATEs ``analytics_sector`` between transactional tests without
+    CASCADE. Postgres only (JSONB)."""
+    from django.db import connection
+
+    if connection.vendor != "postgresql":
+        yield
+        return
+    from sqlalchemy.dialects import postgresql
+    from sqlalchemy.schema import CreateIndex, CreateTable
+
+    from agri.db.farm_map import (
+        SatelliteAcquisition,
+        SectorGeometryRevision,
+        SectorSatelliteStat,
+    )
+
+    dialect = postgresql.dialect()
+    with django_db_blocker.unblock():
+        existing = set(connection.introspection.table_names())
+        with connection.cursor() as cursor:
+            for model in (
+                SectorGeometryRevision,
+                SatelliteAcquisition,
+                SectorSatelliteStat,
+            ):
+                table = model.__table__
+                if table.name in existing:
+                    continue
+                cursor.execute(str(CreateTable(table).compile(dialect=dialect)))
+                cursor.execute(
+                    f"ALTER TABLE {table.name} DROP CONSTRAINT IF EXISTS "
+                    f"{table.name}_sector_id_fk"
+                )
+                for index in table.indexes:
+                    cursor.execute(str(CreateIndex(index).compile(dialect=dialect)))
+    yield

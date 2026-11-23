@@ -46,6 +46,7 @@ from fastapp.routers import (
     auth_issuance,
     devices,
     farm_map,
+    farm_map_insights,
     ndvi,
     feedback,
     ingest,
@@ -141,6 +142,9 @@ app.include_router(selfreads.router)  # F5: /users/me + /zones self-reads
 app.include_router(my_zones.router)  # PATCH /zones/{id}: owner renames (agri-web#172)
 app.include_router(sectors.router)  # /sectors — user-owned zone grouping
 app.include_router(ndvi.router)  # /farm-map/ndvi/* — Sentinel-2 NDVI per sector
+app.include_router(
+    farm_map_insights.router
+)  # insights, forecast, shape history, KML (#459 p3)
 app.include_router(
     farm_map.router
 )  # /sensor-installations, /map-preferences, /farm-map/status

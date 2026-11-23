@@ -43,6 +43,7 @@ from sqlalchemy.orm import Session
 
 from fastapp.auth import AuthedUser, get_current_user, require_level
 from fastapp.json import DjangoStyleJSONResponse
+from fastapp.satellite import store as satellite_store
 from fastapp.farm_map_tables import SECTOR_META_COLUMNS, sector_meta
 from fastapp.schema_compat import (
     SECTOR_GEOMETRY_UNAVAILABLE,
@@ -203,6 +204,26 @@ def _persist_geometry(session: Session, sector: Any, payload: SectorIn) -> None:
         session.execute(
             update(sector_meta).where(sector_meta.c.id == sector.id).values(**values)
         )
+
+
+def _record_revision(
+    session: Session, sector: Any, payload: SectorIn, source: str = "draw"
+) -> None:
+    """Keep the new shape in ``sector_geometry_revision`` (agri-db 0.28.0).
+
+    Only when the client sent a geometry; an erase (``null``) is not a shape.
+    """
+    if "geometry" not in payload.model_fields_set or payload.geometry is None:
+        return
+    satellite_store.record_revision(
+        session,
+        sector_id=sector.id,
+        user_id=sector.user_id,
+        geometry=getattr(sector, "geometry", None),
+        area_ha=getattr(sector, "area_ha", None),
+        perimeter_m=getattr(sector, "perimeter_m", None),
+        source=source,
+    )
 
 
 def _apply_metadata(session: Session, sector_id: int, payload: SectorIn):
@@ -421,6 +442,7 @@ def create_sector(
         session.add(sector)
         session.flush()
         _persist_geometry(session, sector, payload)
+        _record_revision(session, sector, payload)
         error = _apply_metadata(session, sector.id, payload)
         if error is not None:
             session.rollback()
@@ -450,6 +472,7 @@ def update_sector(
             return error
         session.flush()
         _persist_geometry(session, sector, payload)
+        _record_revision(session, sector, payload)
         error = _apply_metadata(session, sector.id, payload)
         if error is not None:
             session.rollback()

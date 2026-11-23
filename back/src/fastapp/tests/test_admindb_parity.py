@@ -176,6 +176,10 @@ _FASTAPP_ONLY_KEYS = {
     "water.leveldevice",
     "water.levelreading",
     "water.levelalert",
+    # satellite history (agri-db f6b8d0e2a4c7, agri-api#459 phase 3)
+    "sector.geometryrevision",
+    "sector.satellitestat",
+    "satellite.acquisition",
 }
 
 
