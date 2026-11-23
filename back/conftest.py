@@ -10,10 +10,28 @@ provided by the per-app conftests) and attach it to every request.
 
 from __future__ import annotations
 
+import faulthandler
 import os
+import sys
 
 import pytest
 from rest_framework.test import APIClient
+
+# A test stuck longer than this dumps every thread's stack and exits, so a CI
+# hang fails fast with a traceback instead of holding the runner for hours.
+_TEST_WATCHDOG_S = int(os.environ.get("PYTEST_WATCHDOG_S", "300"))
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_protocol(item, nextitem):
+    if _TEST_WATCHDOG_S > 0:
+        sys.stderr.write("")  # make sure stderr is open for the dump
+        faulthandler.dump_traceback_later(_TEST_WATCHDOG_S, exit=True)
+    try:
+        yield
+    finally:
+        if _TEST_WATCHDOG_S > 0:
+            faulthandler.cancel_dump_traceback_later()
 
 
 @pytest.fixture(scope="session", autouse=True)
