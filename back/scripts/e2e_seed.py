@@ -13,7 +13,9 @@ Creates, for one test run (suffix = timestamp):
 ``--demo`` (the screenshot tour, agri-web ``e2e/tour``) also gives farmer A a
 farm worth looking at: two drawn sectors (one with both zones, soil water
 parameters and a Kc table, one empty), metered irrigation, two months of
-stored NDVI, a shape revision history and a water basin with a week of levels.
+stored NDVI, a shape revision history, a water basin with a week of levels,
+three alert rules with two weeks of firings and two weeks of daily
+irrigation decisions (so Alerts and Reports are not empty).
 
 Each user gets JWT access/refresh tokens minted here, so the browser suite
 never needs a password. Usernames all start with ``e2e-`` and ``--cleanup``
@@ -145,6 +147,11 @@ def seed(demo: bool = False) -> dict:
     if demo:
         with transaction.atomic():
             demo_data = _seed_demo(a, zones_a)
+        # After the commit: the events reference the rules through a separate
+        # SQLAlchemy connection, which cannot see uncommitted Django rows.
+        demo_data["alerts"], demo_data["decisions"] = _seed_demo_alerts_and_decisions(
+            a, zones_a
+        )
 
     return {
         "run": run,
@@ -373,6 +380,123 @@ def _seed_demo(a, zones_a) -> dict:
         "ndvi_points": ndvi_points,
         "water_source_id": water_source_id,
     }
+
+
+def _seed_demo_alerts_and_decisions(a, zones_a) -> tuple[int, int]:
+    """Alert rules + two weeks of firings and of daily irrigation decisions,
+    written through the same history helpers the live alert and advice paths
+    use, so the Alerts list and both Reports tabs have real-looking content."""
+    import datetime as dt
+
+    from agri.core.database import session_scope
+    from apps.alerts.models import Alert
+    from fastapp.history import (
+        build_alert_event_row,
+        build_decision_row_from_advice,
+        record_irrigation_decision,
+    )
+    from fastapp.history import _INSERT_ALERT_EVENT  # noqa: PLC2701 — seed only
+
+    now = dt.datetime.now(dt.UTC).replace(minute=0, second=0, microsecond=0)
+    z1 = zones_a[0]
+    rules = [
+        Alert.objects.create(
+            user=a,
+            zone=z1,
+            name="Sol sec — Zone A1",
+            type="Humidity",
+            description="Humidité du sol (sonde moyenne) sous 28 %.",
+            condition="<",
+            condition_nbr=28,
+            sensor_key="soil_moisture_medium",
+            is_active=True,
+            notify_email=True,
+        ),
+        Alert.objects.create(
+            user=a,
+            zone=z1,
+            name="Risque de gel",
+            type="Weather Temperature",
+            description="Température de l'air sous 3 °C.",
+            condition="<",
+            condition_nbr=3,
+            sensor_key="temperature_weather",
+            is_active=True,
+            notify_email=True,
+            notify_sms=True,
+        ),
+        Alert.objects.create(
+            user=a,
+            zone=z1,
+            name="Vent fort",
+            type="Wind Speed",
+            description="Vent au-dessus de 10 m/s : suspendre l'aspersion.",
+            condition=">",
+            condition_nbr=10,
+            sensor_key="wind_speed",
+            is_active=True,
+            notify_email=True,
+        ),
+    ]
+    firings = [  # (rule index, days ago, hour UTC, observed, unit)
+        (0, 13, 14, 26.8, "%"),
+        (0, 10, 15, 25.9, "%"),
+        (0, 6, 13, 27.2, "%"),
+        (2, 9, 12, 11.4, "m/s"),
+        (2, 4, 16, 12.1, "m/s"),
+        (1, 3, 5, 2.4, "°C"),
+    ]
+    decisions = 0
+    with session_scope(commit=True) as session:
+        for idx, days_ago, hour, observed, unit in firings:
+            at = (now - dt.timedelta(days=days_ago)).replace(hour=hour, minute=10)
+            row = build_alert_event_row(
+                alert=rules[idx],
+                user_id=a.id,
+                sensor_key=rules[idx].sensor_key,
+                observed_value=observed,
+                reading_at=at,
+                unit=unit,
+                zone_id=z1.id,
+                channels=["email"],
+                triggered_at=at,
+            )
+            session.execute(_INSERT_ALERT_EVENT, row)
+        for days_ago in range(14, 0, -1):
+            at = (now - dt.timedelta(days=days_ago)).replace(hour=6, minute=0)
+            dr = 8.0 + (14 - days_ago) % 4 * 9.5  # refills every 4 days
+            irrigate = dr >= 36.5
+            advice = {
+                "recommendation": "irrigate" if irrigate else "no_irrigation",
+                "estimated_water_m3": 21.6 if irrigate else 0.0,
+                "estimated_duration_min": 90 if irrigate else 0,
+                "reason": (
+                    f"Irriguer 21,6 m³ (≈ 90 min) — déficit {dr:.1f} mm proche de la RFU."
+                    if irrigate
+                    else f"Pas d'irrigation nécessaire — déficit {dr:.1f} mm sous la RFU."
+                ).replace(".", ",", 1),
+                "dr_today_mm": dr,
+                "raw_mm": 40.5,
+                "et0_mm": 2.6,
+                "soil_moisture_pct": 36.0 - dr / 3,
+                "critical_moisture_threshold": 25,
+                "zone_area_m2": 12000,
+                "decision_source": "daily_advice",
+                "zone_name": z1.name,
+            }
+            record_irrigation_decision(
+                session,
+                build_decision_row_from_advice(
+                    user_id=a.id,
+                    zone_id=z1.id,
+                    source="daily_advice",
+                    advice=advice,
+                    decision_reason="stress" if irrigate else "no_stress",
+                    decided_at=at,
+                ),
+            )
+            decisions += 1
+    return len(rules), decisions
 
 
 def _has_field(model, name: str) -> bool:
