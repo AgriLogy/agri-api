@@ -186,6 +186,14 @@ def _resolve_read_scope(session: Session, user: CustomUserCustomuser) -> _ReadSc
     )
 
 
+def read_scope_for(session: Session, user_id: int) -> _ReadScope:
+    """``_resolve_read_scope`` from a JWT user id (loads the user row)."""
+    row = session.get(CustomUserCustomuser, user_id)
+    if row is None:  # pragma: no cover - a JWT for a deleted user
+        return _ReadScope(owner_id=user_id, zone_ids=None)
+    return _resolve_read_scope(session, row)
+
+
 # ---------------------------------------------------------------------------
 # /users/me
 # ---------------------------------------------------------------------------

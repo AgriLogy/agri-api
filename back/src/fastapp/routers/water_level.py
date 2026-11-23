@@ -2,7 +2,9 @@
 
 Endpoints from the developer brief, all owner-scoped (JWT ``user.id``);
 technician (read-only) logins are refused on writes, like the other
-user-owned routers.
+user-owned routers. Reads go through the shared technician scope
+(``selfreads._resolve_read_scope``): a technician with an active grant reads
+the owner's sources whose ``zone_ids`` intersect the granted zones.
 
 * ``GET    /water-sources``                  the caller's sources + status
 * ``POST   /water-sources``                  create (also creates its simulator)
@@ -38,6 +40,7 @@ from sqlalchemy import select
 from fastapp import water_level as svc
 from fastapp.auth import AuthedUser, get_current_user
 from fastapp.json import DjangoStyleJSONResponse
+from fastapp.routers.selfreads import _ReadScope, read_scope_for
 
 router = APIRouter(tags=["water-level"])
 
@@ -151,6 +154,22 @@ def _read_only(user: AuthedUser) -> DjangoStyleJSONResponse | None:
     return None
 
 
+def _source_visible(source: WaterSource, scope: _ReadScope) -> bool:
+    """A technician sees a source serving at least one granted zone."""
+    if scope.zone_ids is None:
+        return True
+    return any(int(z) in scope.zone_ids for z in (source.zone_ids or []))
+
+
+def _readable_source(session, source_id: int, user_id: int) -> WaterSource | None:
+    """The source when the caller may READ it (owner or granted technician)."""
+    scope = read_scope_for(session, user_id)
+    source = svc.owned_source(session, source_id, scope.owner_id)
+    if source is None or not _source_visible(source, scope):
+        return None
+    return source
+
+
 def _not_found() -> DjangoStyleJSONResponse:
     return _error("Water source not found.", 404)
 
@@ -185,11 +204,16 @@ def _validated(values: dict[str, Any]) -> str | None:
 def list_sources(user: AuthedUser = Depends(get_current_user)):
     now = svc.utcnow()
     with session_scope() as session:
-        sources = session.scalars(
-            select(WaterSource)
-            .where(WaterSource.user_id == user.id)
-            .order_by(WaterSource.name, WaterSource.id)
-        ).all()
+        scope = read_scope_for(session, user.id)
+        sources = [
+            s
+            for s in session.scalars(
+                select(WaterSource)
+                .where(WaterSource.user_id == scope.owner_id)
+                .order_by(WaterSource.name, WaterSource.id)
+            ).all()
+            if _source_visible(s, scope)
+        ]
         return [
             {
                 **svc.source_dict(s, svc.devices_of(session, s.id)),
@@ -229,7 +253,7 @@ def create_source(payload: WaterSourceIn, user: AuthedUser = Depends(get_current
 @router.get("/water-sources/{source_id}", summary="One water source")
 def get_source(source_id: int, user: AuthedUser = Depends(get_current_user)):
     with session_scope() as session:
-        source = svc.owned_source(session, source_id, user.id)
+        source = _readable_source(session, source_id, user.id)
         if source is None:
             return _not_found()
         return svc.source_dict(source, svc.devices_of(session, source.id))
@@ -306,7 +330,7 @@ def delete_source(source_id: int, user: AuthedUser = Depends(get_current_user)):
 @router.get("/water-sources/{source_id}/status", summary="Current level and status")
 def source_status(source_id: int, user: AuthedUser = Depends(get_current_user)):
     with session_scope() as session:
-        source = svc.owned_source(session, source_id, user.id)
+        source = _readable_source(session, source_id, user.id)
         if source is None:
             return _not_found()
         return svc.status_payload(session, source, svc.utcnow())
@@ -319,7 +343,7 @@ def source_history(
     user: AuthedUser = Depends(get_current_user),
 ):
     with session_scope() as session:
-        source = svc.owned_source(session, source_id, user.id)
+        source = _readable_source(session, source_id, user.id)
         if source is None:
             return _not_found()
         return svc.history_payload(session, source, range, svc.utcnow())
@@ -332,7 +356,7 @@ def source_alerts(
     user: AuthedUser = Depends(get_current_user),
 ):
     with session_scope() as session:
-        if svc.owned_source(session, source_id, user.id) is None:
+        if _readable_source(session, source_id, user.id) is None:
             return _not_found()
         rows = session.scalars(
             select(WaterLevelAlert)
