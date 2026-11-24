@@ -28,14 +28,16 @@ PROVIDER_CATALOG: dict[str, dict] = {
         ],
         "requires_api_key": True,
         "supports_effort": True,
+        "openai_compatible": False,
     },
     "openai": {
-        "label": "OpenAI-compatible (OpenAI, OpenRouter, Together…)",
+        "label": "OpenAI (GPT)",
         "default_base_url": "https://api.openai.com/v1",
         "default_model": "",
         "suggested_models": [],
         "requires_api_key": True,
         "supports_effort": False,
+        "openai_compatible": True,
     },
     # Groq speaks the OpenAI API; a preset so the admin only pastes a key.
     # Production models with tool use (console.groq.com/docs/models, 2026-11).
@@ -51,6 +53,46 @@ PROVIDER_CATALOG: dict[str, dict] = {
         ],
         "requires_api_key": True,
         "supports_effort": False,
+        "openai_compatible": True,
+    },
+    # The presets below all speak the OpenAI chat-completions API. Model lists
+    # change often: the back-office loads them live (POST /admin/assistant/models)
+    # instead of trusting a hard-coded list; only long-lived aliases are suggested.
+    "mistral": {
+        "label": "Mistral AI",
+        "default_base_url": "https://api.mistral.ai/v1",
+        "default_model": "mistral-large-latest",
+        "suggested_models": ["mistral-large-latest", "mistral-small-latest"],
+        "requires_api_key": True,
+        "supports_effort": False,
+        "openai_compatible": True,
+    },
+    "gemini": {
+        "label": "Google Gemini",
+        "default_base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "default_model": "",
+        "suggested_models": [],
+        "requires_api_key": True,
+        "supports_effort": False,
+        "openai_compatible": True,
+    },
+    "openrouter": {
+        "label": "OpenRouter",
+        "default_base_url": "https://openrouter.ai/api/v1",
+        "default_model": "",
+        "suggested_models": [],
+        "requires_api_key": True,
+        "supports_effort": False,
+        "openai_compatible": True,
+    },
+    "deepseek": {
+        "label": "DeepSeek",
+        "default_base_url": "https://api.deepseek.com/v1",
+        "default_model": "deepseek-chat",
+        "suggested_models": ["deepseek-chat"],
+        "requires_api_key": True,
+        "supports_effort": False,
+        "openai_compatible": True,
     },
     "ollama": {
         "label": "Ollama (self-hosted)",
@@ -59,6 +101,17 @@ PROVIDER_CATALOG: dict[str, dict] = {
         "suggested_models": [],
         "requires_api_key": False,
         "supports_effort": False,
+        "openai_compatible": True,
+    },
+    # Any other server speaking the OpenAI API (Together, vLLM, LM Studio…).
+    "custom": {
+        "label": "Other (OpenAI-compatible)",
+        "default_base_url": "",
+        "default_model": "",
+        "suggested_models": [],
+        "requires_api_key": False,
+        "supports_effort": False,
+        "openai_compatible": True,
     },
 }
 
@@ -70,7 +123,7 @@ def build_provider(config: ProviderConfig) -> LLMProvider:
         from .anthropic_provider import AnthropicProvider
 
         return AnthropicProvider(config)
-    if config.provider in ("openai", "groq", "ollama"):
+    if PROVIDER_CATALOG.get(config.provider, {}).get("openai_compatible"):
         from .openai_compat import OpenAICompatProvider
 
         return OpenAICompatProvider(config)

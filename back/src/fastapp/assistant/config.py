@@ -2,9 +2,13 @@
 
 An admin sets provider / model / base URL / API key / effort in the
 back-office (``/admin/assistant/config``). They are stored in
-``analytics_systemsetting`` under one reserved key, :data:`SETTING_KEY`, with
-the API key **encrypted** (Fernet, key derived from ``SECRET_KEY``) and never
-returned by any endpoint: only its last 4 characters are kept for display.
+``analytics_systemsetting`` under one reserved key, :data:`SETTING_KEY`. Each
+provider keeps its own API key (``keys: {provider: {enc, last4}}``), so an admin
+can switch between Claude, GPT, Groq… without pasting keys again. Keys are
+**encrypted** (Fernet, key derived from ``SECRET_KEY``) and never returned by
+any endpoint: only their last 4 characters are kept for display. A legacy
+single ``api_key_enc`` (before per-provider keys) counts as the key of the
+stored provider and is moved under ``keys`` on the next save.
 
 Resolution order:
 
@@ -82,21 +86,51 @@ def read_stored(session) -> dict[str, Any] | None:
     return dict(row.value) if row is not None and isinstance(row.value, dict) else None
 
 
+def stored_keys(stored: dict[str, Any] | None) -> dict[str, dict[str, str]]:
+    """``{provider: {"enc": ..., "last4": ...}}``, legacy single key included."""
+    stored = stored or {}
+    keys = {
+        p: dict(v)
+        for p, v in (stored.get("keys") or {}).items()
+        if isinstance(v, dict) and v.get("enc")
+    }
+    legacy_provider = stored.get("provider") or ""
+    if stored.get("api_key_enc") and legacy_provider and legacy_provider not in keys:
+        keys[legacy_provider] = {
+            "enc": stored["api_key_enc"],
+            "last4": stored.get("api_key_last4") or "",
+        }
+    return keys
+
+
+def key_for(stored: dict[str, Any] | None, provider: str) -> str | None:
+    """The decrypted key saved for ``provider``: "" when none is saved, None
+    when one is saved but can't be decrypted (SECRET_KEY changed)."""
+    entry = stored_keys(stored).get(provider)
+    if not entry:
+        return ""
+    return decrypt_secret(entry["enc"])
+
+
+def public_keys(stored: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
+    """Per-provider key status for the back-office: never the key itself."""
+    return {
+        p: {"has_key": True, "hint": v.get("last4") or ""}
+        for p, v in stored_keys(stored).items()
+    }
+
+
 def resolve(session) -> ResolvedConfig:
     settings = get_settings()
     stored = read_stored(session)
     if stored is not None:
         provider = stored.get("provider") or ""
         meta = PROVIDER_CATALOG.get(provider, {})
-        api_key = ""
-        unreadable = False
-        if stored.get("api_key_enc"):
-            api_key = decrypt_secret(stored["api_key_enc"]) or ""
-            unreadable = not api_key
-            if unreadable:
-                log.error(
-                    "assistant LLM API key cannot be decrypted (SECRET_KEY changed?)"
-                )
+        decrypted = key_for(stored, provider)
+        api_key = decrypted or ""
+        unreadable = decrypted is None
+        if unreadable:
+            log.error("assistant LLM API key cannot be decrypted (SECRET_KEY changed?)")
         enabled = bool(stored.get("enabled"))
         base_url = stored.get("base_url") or meta.get("default_base_url", "")
         model = stored.get("model") or meta.get("default_model", "")
@@ -126,8 +160,8 @@ def resolve(session) -> ResolvedConfig:
             model=model,
             base_url=base_url,
             effort=effort,
-            has_api_key=bool(stored.get("api_key_enc")),
-            api_key_hint=stored.get("api_key_last4") or "",
+            has_api_key=provider in stored_keys(stored),
+            api_key_hint=(stored_keys(stored).get(provider) or {}).get("last4", ""),
             key_unreadable=unreadable,
             updated_at=stored.get("updated_at"),
             updated_by=stored.get("updated_by"),
@@ -155,17 +189,21 @@ def resolve(session) -> ResolvedConfig:
 def save(
     session, *, values: dict[str, Any], api_key: str | None, username: str
 ) -> None:
-    """Persist the admin's settings. ``api_key``: None keeps the stored key,
-    "" removes it, any other string replaces it (encrypted)."""
+    """Persist the admin's settings. ``api_key`` is for ``values["provider"]``:
+    None keeps its stored key, "" removes it, any other string replaces it
+    (encrypted). The other providers' keys are kept as they are."""
     stored = read_stored(session) or {}
+    keys = stored_keys(stored)  # migrates a legacy single key under ``keys``
     new = {**stored, **values}
-    if api_key is not None:
+    new.pop("api_key_enc", None)
+    new.pop("api_key_last4", None)
+    provider = new.get("provider") or ""
+    if api_key is not None and provider:
         if api_key:
-            new["api_key_enc"] = encrypt_secret(api_key)
-            new["api_key_last4"] = api_key[-4:]
+            keys[provider] = {"enc": encrypt_secret(api_key), "last4": api_key[-4:]}
         else:
-            new.pop("api_key_enc", None)
-            new.pop("api_key_last4", None)
+            keys.pop(provider, None)
+    new["keys"] = keys
     now = datetime.datetime.now(datetime.timezone.utc)
     new["updated_at"] = now.isoformat()
     new["updated_by"] = username
