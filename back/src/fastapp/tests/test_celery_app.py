@@ -24,6 +24,7 @@ _EXPECTED_TASKS = {
     "agriapi.tasks.scan_proactive_insights": tasks_scan.scan_proactive_insights,
     "agriapi.tasks.run_due_irrigation_programs": tasks_scan.run_due_irrigation_programs,
     "agriapi.tasks.check_ingest_staleness": tasks_ops.check_ingest_staleness,
+    "agriapi.tasks.check_station_exposure": tasks_ops.check_station_exposure,
     "agriapi.tasks.check_water_level_offline": tasks_water.check_water_level_offline,
     "agriapi.tasks.send_water_level_alert_email": (
         tasks_water.send_water_level_alert_email
@@ -57,6 +58,7 @@ def test_beat_schedule_matches_prod_set():
         "run_due_irrigation_programs",
         "flag_idle_zones",
         "check_ingest_staleness",
+        "check_station_exposure",
         "check_water_level_offline",
     }
     # every beat entry points at a registered task

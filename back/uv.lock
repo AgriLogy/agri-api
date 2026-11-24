@@ -4,7 +4,7 @@ requires-python = ">=3.12"
 
 [[package]]
 name = "agri-api"
-version = "1.145.0"
+version = "1.145.4"
 source = { virtual = "." }
 dependencies = [
     { name = "agri-core" },
@@ -83,7 +83,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agri-core", git = "https://github.com/AgriLogy/agri-core.git?rev=0.32.1" },
+    { name = "agri-core", git = "https://github.com/AgriLogy/agri-core.git?rev=0.33.0" },
     { name = "amqp", specifier = "==5.3.1" },
     { name = "anthropic", specifier = ">=1.0" },
     { name = "asgiref", specifier = "==3.8.1" },
@@ -159,8 +159,8 @@ dev = [
 
 [[package]]
 name = "agri-core"
-version = "0.32.1"
-source = { git = "https://github.com/AgriLogy/agri-core.git?rev=0.32.1#2bcbdb96528c405a56490ef98371d8f53afa5389" }
+version = "0.33.0"
+source = { git = "https://github.com/AgriLogy/agri-core.git?rev=0.33.0#6dac645317cce51668d6be17e1011d61ab5d8b5f" }
 dependencies = [
     { name = "agri-db" },
     { name = "pydantic" },

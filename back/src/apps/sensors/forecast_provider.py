@@ -496,3 +496,75 @@ def fetch_openmeteo_et0(
             "Open-Meteo ET₀ fetch failed (%s) — reference curve omitted", exc
         )
         return {}
+
+
+_REFERENCE_CACHE: dict[tuple, tuple[float, dict[str, dict[str, float | None]]]] = {}
+
+
+def fetch_openmeteo_hourly_reference(
+    *,
+    start: date,
+    end: date,
+    latitude: float | None,
+    longitude: float | None,
+) -> dict[str, dict[str, float | None]]:
+    """``{"YYYY-MM-DDTHH": {"temp_c", "wind_ms", "rs_wm2"}}`` — outdoor hourly
+    weather (UTC) at a point: 2 m temperature, 10 m wind, shortwave radiation.
+
+    The reference a station is compared with to tell whether it measures the
+    field or sits sheltered (``agri.core.station_exposure``). Best-effort like
+    the other fetches: ``{}`` when disabled, without coordinates or on error;
+    cached per (point, window) for the forecast TTL, last good copy in Redis.
+    """
+    if _openmeteo_disabled() or latitude is None or longitude is None:
+        return {}
+    lat, lon = round(float(latitude), 3), round(float(longitude), 3)
+    key = (lat, lon, start.isoformat(), end.isoformat())
+    hit = _REFERENCE_CACHE.get(key)
+    if hit is not None and monotonic() - hit[0] < _FORECAST_TTL_S:
+        return dict(hit[1])
+    query = urllib.parse.urlencode(
+        {
+            "latitude": lat,
+            "longitude": lon,
+            "hourly": "temperature_2m,wind_speed_10m,shortwave_radiation",
+            "wind_speed_unit": "ms",
+            "timezone": "UTC",
+            "start_date": start.isoformat(),
+            "end_date": end.isoformat(),
+        }
+    )
+    try:
+        payload = _fetch_json(f"{_OPENMETEO_URL}?{query}", "agri-api/station-exposure")
+        hourly = payload.get("hourly") or {}
+        times = hourly.get("time") or []
+        temp = hourly.get("temperature_2m") or []
+        wind = hourly.get("wind_speed_10m") or []
+        rs = hourly.get("shortwave_radiation") or []
+    except (urllib.error.URLError, TimeoutError, ValueError, OSError) as exc:
+        stale = _stale(_REFERENCE_CACHE, key) or _persist_get("reference", key)
+        if stale:
+            logger.warning(
+                "Open-Meteo reference failed (%s) — serving cached data", exc
+            )
+            return dict(stale)
+        logger.warning("Open-Meteo reference fetch failed (%s)", exc)
+        return {}
+
+    def at(values: list, i: int) -> float | None:
+        return float(values[i]) if i < len(values) and values[i] is not None else None
+
+    out = {
+        str(t)[:13]: {
+            "temp_c": at(temp, i),
+            "wind_ms": at(wind, i),
+            "rs_wm2": at(rs, i),
+        }
+        for i, t in enumerate(times)
+    }
+    if len(_REFERENCE_CACHE) >= _FORECAST_CACHE_MAX:
+        _REFERENCE_CACHE.clear()
+    _REFERENCE_CACHE[key] = (monotonic(), out)
+    if out:
+        _persist_set("reference", key, out)
+    return dict(out)

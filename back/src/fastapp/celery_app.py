@@ -78,6 +78,8 @@ _TASK_BODIES = {
     "agriapi.tasks.run_due_irrigation_programs": tasks_scan.run_due_irrigation_programs,
     # ops (#429): alert when an ingest feed goes quiet
     "agriapi.tasks.check_ingest_staleness": tasks_ops.check_ingest_staleness,
+    # weather stations installed sheltered / indoors (agri-core#101)
+    "agriapi.tasks.check_station_exposure": tasks_ops.check_station_exposure,
     # water level monitoring (agrilogy-front#261)
     "agriapi.tasks.check_water_level_offline": tasks_water.check_water_level_offline,
     "agriapi.tasks.send_water_level_alert_email": (
@@ -125,6 +127,12 @@ app.conf.beat_schedule = {
     "check_ingest_staleness": {
         "task": "agriapi.tasks.check_ingest_staleness",
         "schedule": crontab(minute="*/30"),
+    },
+    # Daily, after the day's light: is each weather station measuring the
+    # field, or sheltered / indoors? fastapp-beat only.
+    "check_station_exposure": {
+        "task": "agriapi.tasks.check_station_exposure",
+        "schedule": crontab(hour=14, minute=15),
     },
     # agrilogy-front#261 — OFFLINE alerts for water sources that stop reporting.
     "check_water_level_offline": {

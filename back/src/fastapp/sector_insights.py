@@ -46,6 +46,7 @@ from agri.db.analytics import (
     AnalyticsWaterflowsensor,
     AnalyticsZone,
 )
+from agri.db.users import CustomUserCustomuser
 from apps.sensors.forecast_provider import (
     fetch_openmeteo_daily_water,
     get_daily_forecast_with_source,
@@ -55,6 +56,7 @@ from sqlalchemy.orm import Session
 
 from fastapp.calibration import corrected_value, load_calibrations
 from fastapp.farm_map_tables import sector_meta
+from fastapp.ordering import latest_first
 from fastapp.satellite import store as satellite_store
 from fastapp.schema_compat import sector_geometry_available
 
@@ -246,7 +248,7 @@ def _soil_moisture(
             AnalyticsSoilmoisturemedium.zone_id.in_(zone_ids),
             AnalyticsSoilmoisturemedium.timestamp >= since,
         )
-        .order_by(AnalyticsSoilmoisturemedium.timestamp.desc())
+        .order_by(*latest_first(AnalyticsSoilmoisturemedium))
         .limit(1)
     ).first()
     if row is None or row.value is None:
@@ -264,29 +266,98 @@ def _soil_moisture(
 
 
 # ---------------------------------------------------------------- insights
-def sector_insights(
+def farm_point(session: Session, user_id: int) -> tuple[float, float] | None:
+    """The account's farm location (``latitude``/``longitude``), if set."""
+    owner = session.execute(
+        select(CustomUserCustomuser.latitude, CustomUserCustomuser.longitude).where(
+            CustomUserCustomuser.id == user_id
+        )
+    ).first()
+    if owner is None or not owner.latitude or not owner.longitude:
+        return None
+    return float(owner.latitude), float(owner.longitude)
+
+
+def zone_point(
+    session: Session, zone_id: int | None, user_id: int
+) -> tuple[float, float] | None:
+    """``(lat, lon)`` for a zone's weather: its sector shape, else a zone
+    station, else the account's farm location."""
+    zone = (
+        session.scalars(
+            select(AnalyticsZone).where(
+                AnalyticsZone.id == zone_id, AnalyticsZone.user_id == user_id
+            )
+        ).first()
+        if zone_id
+        else None
+    )
+    sector = (
+        load_sector(session, zone.sector_id, user_id)
+        if zone is not None and getattr(zone, "sector_id", None)
+        else None
+    )
+    return sector_coordinates(
+        (sector or {}).get("geometry"), [zone] if zone is not None else []
+    ) or farm_point(session, user_id)
+
+
+def zone_balance(
     session: Session,
-    sector_id: int,
+    zone_id: int,
     user_id: int,
     *,
     today: dt.date | None = None,
-    zone_ids: set[int] | None = None,
     lang: str = DEFAULT_LANG,
 ) -> dict[str, Any] | None:
-    """The ``GET /farm-map/sectors/{id}/insights`` body, or None (not found).
+    """:func:`balance_for_zones` for one zone (None if not the user's).
 
-    ``user_id`` is the data owner; ``zone_ids`` (a technician's granted zones)
-    narrows the zones the balance is computed on, None meaning all of them.
-    ``lang`` (fr | ar | en) picks the language of the human strings only.
+    The weather point is the zone's sector shape when it has one. The area is
+    the sector's when the zone is alone in it (so the answer matches the
+    sector's "Conseil" exactly), else the zone's own.
+    """
+    zone = session.scalars(
+        select(AnalyticsZone).where(
+            AnalyticsZone.id == zone_id, AnalyticsZone.user_id == user_id
+        )
+    ).first()
+    if zone is None:
+        return None
+    sector = (
+        load_sector(session, zone.sector_id, user_id)
+        if getattr(zone, "sector_id", None)
+        else None
+    )
+    alone = sector is not None and len(_zones(session, zone.sector_id, user_id)) == 1
+    return balance_for_zones(
+        session,
+        [zone],
+        geometry=(sector or {}).get("geometry"),
+        area_ha=sector.get("area_ha") if alone else None,
+        today=today or _today(),
+        lang=lang,
+        fallback_coords=farm_point(session, user_id),
+    )
+
+
+def balance_for_zones(
+    session: Session,
+    zones: list[AnalyticsZone],
+    *,
+    geometry: dict[str, Any] | None,
+    area_ha: float | None,
+    today: dt.date,
+    lang: str = DEFAULT_LANG,
+    fallback_coords: tuple[float, float] | None = None,
+) -> dict[str, Any]:
+    """The FAO-56 water balance and irrigation advice for a group of zones.
+
+    Shared by the sector insights and the assistant's irrigation advice, so the
+    two never disagree. ``geometry`` (a sector shape) gives the weather point,
+    else a zone's weather station; ``area_ha`` overrides the zones' area.
     """
     lang = normalize_lang(lang)
-    sector = load_sector(session, sector_id, user_id)
-    if sector is None:
-        return None
-    today = today or _today()
-    zones = _zones(session, sector_id, user_id, zone_ids)
     zone_ids = [z.id for z in zones]
-
     periods = _kc_periods(session, zone_ids)
     kc_today, kc_source, kc_name = kc_for_day(periods, today)
 
@@ -306,7 +377,7 @@ def sector_insights(
         ),
         None,
     )
-    area_m2 = (_positive(sector.get("area_ha")) or 0.0) * 10_000.0 or (
+    area_m2 = (_positive(area_ha) or 0.0) * 10_000.0 or (
         sum(_positive(z.space) or 0.0 for z in zones) or None
     )
     pump_l_s = sum(_positive(z.pomp_flow_rate) or 0.0 for z in zones) or None
@@ -314,7 +385,7 @@ def sector_insights(
         sum(_positive(z.irrigation_water_quantity) or 0.0 for z in zones) or None
     )
 
-    coords = sector_coordinates(sector.get("geometry"), zones)
+    coords = sector_coordinates(geometry, zones) or fallback_coords
     start = today - dt.timedelta(days=BALANCE_DAYS - 1)
     weather: dict[str, dict[str, float | None]] = {}
     if coords is not None:
@@ -396,6 +467,58 @@ def sector_insights(
             rain_next_48h_mm=rain_48h,
             lang=lang,
         )
+
+    return {
+        "zone_ids": zone_ids,
+        "kc": {"value": kc_today, "source": kc_source, "period_name": kc_name},
+        "water_balance": water_balance,
+        "recommendation": recommendation,
+        "depletion_ratio": depletion_ratio,
+        "soil_moisture_pct": soil_pct,
+        "soil_moisture_at": soil_at,
+        "critical_moisture_pct": critical,
+        "weather": weather,
+    }
+
+
+def sector_insights(
+    session: Session,
+    sector_id: int,
+    user_id: int,
+    *,
+    today: dt.date | None = None,
+    zone_ids: set[int] | None = None,
+    lang: str = DEFAULT_LANG,
+) -> dict[str, Any] | None:
+    """The ``GET /farm-map/sectors/{id}/insights`` body, or None (not found).
+
+    ``user_id`` is the data owner; ``zone_ids`` (a technician's granted zones)
+    narrows the zones the balance is computed on, None meaning all of them.
+    ``lang`` (fr | ar | en) picks the language of the human strings only.
+    """
+    lang = normalize_lang(lang)
+    sector = load_sector(session, sector_id, user_id)
+    if sector is None:
+        return None
+    today = today or _today()
+    zones = _zones(session, sector_id, user_id, zone_ids)
+    balance = balance_for_zones(
+        session,
+        zones,
+        geometry=sector.get("geometry"),
+        area_ha=sector.get("area_ha"),
+        today=today,
+        lang=lang,
+    )
+    zone_ids = balance["zone_ids"]
+    kc = balance["kc"]
+    kc_today, kc_source, kc_name = kc["value"], kc["source"], kc["period_name"]
+    water_balance = balance["water_balance"]
+    recommendation = balance["recommendation"]
+    depletion_ratio = balance["depletion_ratio"]
+    soil_pct = balance["soil_moisture_pct"]
+    soil_at = balance["soil_moisture_at"]
+    critical = balance["critical_moisture_pct"]
 
     ndvi_points: list[tuple[dt.date, float]] = []
     if isinstance(sector.get("geometry"), dict):

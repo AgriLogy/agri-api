@@ -1,6 +1,87 @@
 # CHANGELOG
 
 
+## v1.146.0 (2026-11-24)
+
+### Features
+
+- **ops**: Daily check that each weather station measures the field
+  ([#525](https://github.com/AgriLogy/agri-api/pull/525),
+  [`ca54b12`](https://github.com/AgriLogy/agri-api/commit/ca54b1234cacb7b22184847e345850112a60b055))
+
+Closes #524.
+
+## Why A station installed in a closed or dark spot sends plausible readings that aren't the
+  field's. ET₀, VPD and temperature alerts built on them are off, and nothing flagged it. Router02
+  is the live case.
+
+## What - **`check_station_exposure`** is a daily beat task (14:15 UTC, fastapp-beat only). - For
+  each device with weather readings in the last 24 h, it takes hourly means of temperature, wind and
+  solar, plus Open-Meteo's hourly 2 m temperature, 10 m wind and shortwave at the farm's location. -
+  Then it runs `agri.core.station_exposure.assess_station_exposure` (agri-core 0.33.0). - The status
+  is `sheltered` (2+ signals), `suspect` (1), `ok`, or `insufficient_data`. The signals are no_sun,
+  no_wind, damped_temperature and warm_nights. - For `sheltered` or `suspect` it emails
+  `OPS_ALERT_EMAILS` (falling back to `INTERNAL_FEEDBACK_EMAILS`), at most once per 7 days per
+  station (Redis `SET NX EX`). The email gives the numbers behind each signal and what to do. - It
+  stores the latest report per station in Redis (3-day TTL). - **`GET /admin/monitoring/stations`**
+  (staff): the stored reports. nginx already routes `/admin/monitoring/` to fastapp. -
+  **`forecast_provider.fetch_openmeteo_hourly_reference`**: cached, with the Redis last-good copy
+  like the other Open-Meteo fetches. - **`sector_insights.zone_point` / `farm_point`**: extracted
+  from `zone_balance`, which now uses them. - agri-core pin → **0.33.0**.
+
+No migration: dedup and reports live in Redis.
+
+## Tests - New Postgres tests replay **Router02's real day** (station vs Open-Meteo, 24 h): -
+  sheltered with all 4 signals, one ops email, report stored and served; - the next run sends no
+  second email; - an outdoor station is `ok` and silent; - a station with no location is skipped. -
+  The beat-set test is updated. - Local Postgres: 49 passed (station exposure, celery app, ingest
+  staleness, farm-map phase 3). SQLite full suite: 788 passed. ruff is clean.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+
+## v1.145.4 (2026-11-24)
+
+### Bug Fixes
+
+- **assistant**: Irrigation advice runs the zone's water balance
+  ([#523](https://github.com/AgriLogy/agri-api/pull/523),
+  [`4b0dcab`](https://github.com/AgriLogy/agri-api/commit/4b0dcabc52da3682bf1882be49727f6559bf783b))
+
+Closes #522.
+
+## Why - The assistant's irrigation advice never used its Dr/RAW tier. Every answer came from the
+  "soil under threshold" rule, the quantity was simply the zone's daily cap, and Kc was always 1.0.
+  - The Conseil tab, meanwhile, runs a full 14-day FAO-56 balance, so the two could disagree. -
+  Separately, "latest reading" picked an arbitrary row when parallel streams without a device id
+  share a timestamp.
+
+## What - **Shared balance.** `sector_insights.balance_for_zones` is split out of
+  `sector_insights()`. The new `zone_balance()` runs it for one zone: - weather point: the sector
+  shape, else a zone station, else the account's farm latitude/longitude; - area: the sector's when
+  the zone is alone in its sector, so the assistant's answer equals the Conseil one; otherwise the
+  zone's own. - **Advice Tier 1 = water balance.** `decision_source: "water_balance"`, with
+  `dr_today_mm`, `raw_mm`, volume, duration and message taken from the balance's recommendation. New
+  fields: `kc_used`, `kc_period_name`, `water_balance_unavailable` (why Tier 2 was used). - The
+  decision log now records `kc_used`. - **Deterministic latest reading**
+  (`fastapp/ordering.latest_first`): order by timestamp, then rows that have a device, then newest
+  stored. Used in the assistant registry, the trend first/last rows and the insights soil read. -
+  Not changed: the Django twin in `apps/assistant/tools`. The assistant is served by fastapp (nginx
+  `/assistant` → :8001).
+
+## Checked - Local stack, Router01 zone with its farm location: before, "hold" from the threshold
+  rule; after, "hold" from the water balance, "déficit de 32,3 mm, sous la RFU (50 mm)", using live
+  Open-Meteo data. - New Postgres tests: advice equals the sector insight (Dr 70 → irrigate, same
+  volume, duration and message); the Kc calendar is used (0.5 → Dr 35 → hold); fallback with a
+  reason, then the farm location enables the balance; shared timestamps always return the same row.
+  - Local Postgres: 227 passed across insights, technician access, proactive scan, history,
+  assistant and sectors. SQLite full suite: 788 passed.
+
+Still open (a data decision): the historical parallel streams themselves, see #522.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+
 ## v1.145.3 (2026-11-24)
 
 ### Bug Fixes
