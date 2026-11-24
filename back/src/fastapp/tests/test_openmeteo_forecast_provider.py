@@ -61,9 +61,25 @@ def _hourly_payload(days: int, *, rs_peak: float = 900.0) -> dict:
     }
 
 
+class _FakeRedis:
+    """Dict-backed stand-in for the broker Redis (no TTL: tests clear it)."""
+
+    def __init__(self) -> None:
+        self.data: dict[str, bytes] = {}
+        self.ttls: dict[str, int] = {}
+
+    def get(self, key: str):
+        return self.data.get(key)
+
+    def set(self, key: str, value: str, ex: int | None = None) -> None:
+        self.data[key] = value.encode()
+        self.ttls[key] = ex
+
+
 @pytest.fixture(autouse=True)
 def _clean(monkeypatch):
     provider._FORECAST_CACHE.clear()
+    monkeypatch.setattr(provider, "_redis_client", _FakeRedis())
     monkeypatch.delenv("ET0_OPENMETEO", raising=False)
     monkeypatch.delenv("ET_FORECAST_PROVIDER", raising=False)
     yield
@@ -224,6 +240,7 @@ def test_outage_after_a_day_falls_back_to_mock(monkeypatch):
         start=START, days=2, latitude=32.9, longitude=-6.9
     )
     _expire(provider._FORECAST_CACHE, provider._STALE_MAX_S + 60)
+    provider._redis_client.data.clear()  # Redis TTL = the same stale window
     _down(monkeypatch)
     _, source = provider.get_daily_forecast_with_source(
         start=START, days=2, latitude=32.9, longitude=-6.9
@@ -257,6 +274,7 @@ def test_daily_water_outage_serves_cache_then_empty(monkeypatch):
     )
 
     _expire(provider._WATER_CACHE, provider._STALE_MAX_S)
+    provider._redis_client.data.clear()  # Redis TTL = the same stale window
     assert (
         provider.fetch_openmeteo_daily_water(
             start=start, end=end, latitude=32.9, longitude=-6.9
@@ -264,3 +282,66 @@ def test_daily_water_outage_serves_cache_then_empty(monkeypatch):
         == {}
     )
     provider._WATER_CACHE.clear()
+
+
+def test_restart_during_outage_serves_the_redis_copy(monkeypatch):
+    """#518: a deploy empties process memory; the last good forecast survives."""
+    _serve(monkeypatch, _hourly_payload(2))
+    fresh, _ = provider.get_daily_forecast_with_source(
+        start=START, days=2, latitude=32.9, longitude=-6.9
+    )
+    ttls = list(provider._redis_client.ttls.values())
+    assert ttls == [int(provider._STALE_MAX_S)]
+    provider._FORECAST_CACHE.clear()  # the restart
+    _down(monkeypatch)
+    again, source = provider.get_daily_forecast_with_source(
+        start=START, days=2, latitude=32.9, longitude=-6.9
+    )
+    assert source == "open-meteo" and again == fresh
+
+
+def test_restart_during_outage_serves_the_redis_water_copy(monkeypatch):
+    provider._WATER_CACHE.clear()
+    _serve(
+        monkeypatch,
+        {
+            "daily": {
+                "time": ["2026-11-20"],
+                "et0_fao_evapotranspiration": [2.1],
+                "precipitation_sum": [0.4],
+            }
+        },
+    )
+    first = provider.fetch_openmeteo_daily_water(
+        start=START, end=START, latitude=32.9, longitude=-6.9
+    )
+    provider._WATER_CACHE.clear()  # the restart
+    _down(monkeypatch)
+    assert (
+        provider.fetch_openmeteo_daily_water(
+            start=START, end=START, latitude=32.9, longitude=-6.9
+        )
+        == first
+    )
+
+
+def test_redis_errors_never_break_the_forecast(monkeypatch):
+    class _Broken:
+        def get(self, key):
+            raise ConnectionError("redis down")
+
+        def set(self, *a, **k):
+            raise ConnectionError("redis down")
+
+    monkeypatch.setattr(provider, "_redis_client", _Broken())
+    _serve(monkeypatch, _hourly_payload(2))
+    _, source = provider.get_daily_forecast_with_source(
+        start=START, days=2, latitude=32.9, longitude=-6.9
+    )
+    assert source == "open-meteo"
+    provider._FORECAST_CACHE.clear()
+    _down(monkeypatch)
+    _, source = provider.get_daily_forecast_with_source(
+        start=START, days=2, latitude=32.9, longitude=-6.9
+    )
+    assert source == "mock"
