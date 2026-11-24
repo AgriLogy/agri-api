@@ -1,6 +1,36 @@
 # CHANGELOG
 
 
+## v1.145.1 (2026-11-24)
+
+### Bug Fixes
+
+- **farm-map**: Insights ignore stale soil probes; crop start reads as expected
+  ([#515](https://github.com/AgriLogy/agri-api/pull/515),
+  [`f3e7231`](https://github.com/AgriLogy/agri-api/commit/f3e7231eac99214d5e4520708abbfa55a6b844ec))
+
+Closes #514
+
+Both issues were found by running the advice on the prod **test farms** (Router01 / Router02,
+  imaginary farms near Oulad Abdoune):
+
+1. **Stale soil probe:** Router02 has no soil probe, and its last `soil_moisture_medium` reading is
+  from **22 June**. The vegetation reading still showed « humidité du sol 27 % ». Readings older
+  than **72 h** are now ignored (`SOIL_MOISTURE_MAX_AGE`), and the reading falls back to the water
+  balance. 2. **Crop start:** the fields were freshly sown (Kc period *Initial* 0.4) with real
+  Sentinel-2 NDVI around 0.2, and every sector read « Faible vigueur … chercher nutrition, maladie,
+  ravageurs ». When today's Kc-calendar period is initial (name starts with Initial / Semis / Levée,
+  or Kc ≤ 0.5), we now pass `early_season=True` to agri-core **0.32.1** (AgriLogy/agri-core#97).
+  Low, flat NDVI on soil that is neither dry nor wet then reads « Culture en démarrage » (status
+  `healthy`). Dry or wet soil is still flagged.
+
+**Tests:** 2 new in `test_farm_map_phase3.py`: a June reading is ignored while a 2-hour-old one is
+  used; and the same low NDVI reads `low_vigor_other` without a calendar but « Culture en démarrage
+  » with an *Initial* period. The file passes 28/28 locally on Postgres 16.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+
 ## v1.145.0 (2026-11-23)
 
 ### Features
