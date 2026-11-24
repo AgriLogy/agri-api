@@ -22,6 +22,8 @@ from sqlalchemy.orm import Session
 
 import agri.db.analytics as analytics
 
+from fastapp.ordering import latest_first
+
 
 @dataclass(frozen=True)
 class SensorSource:
@@ -177,7 +179,7 @@ def latest_reading(
     if zone_id is not None:
         criteria.append(model.zone_id == zone_id)
     row = session.scalars(
-        select(model).where(*criteria).order_by(model.timestamp.desc()).limit(1)
+        select(model).where(*criteria).order_by(*latest_first(model)).limit(1)
     ).first()
     if row is None:
         return Reading(value=None, unit=source.unit, timestamp=None)

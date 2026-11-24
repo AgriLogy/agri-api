@@ -651,3 +651,110 @@ def test_low_ndvi_at_initial_stage_reads_as_establishing(api, owner, monkeypatch
     assert body["kc"]["period_name"] == "Initial"
     assert veg["status"] == "healthy" and veg["label"] == "Culture en démarrage"
     assert "NDVI bas attendu" in veg["message"]
+
+
+# ------------------------------------------------- assistant irrigation advice
+def _advice(user, zone_id):
+    from fastapp.assistant.tools import _get_irrigation_advice
+    from fastapp.auth import AuthedUser
+
+    authed = AuthedUser(
+        id=user.id,
+        username=user.username,
+        email=user.email,
+        is_staff=False,
+        preferred_language="fr",
+        access_level="editor",
+    )
+    return _get_irrigation_advice(authed, {"zone_id": zone_id})
+
+
+@_requires_pg
+@pytest.mark.django_db(transaction=True)
+def test_assistant_advice_is_the_zone_water_balance(api, owner, monkeypatch):
+    """The chat's advice and the Conseil tab run the same balance."""
+    monkeypatch.setattr(insights_mod, "fetch_openmeteo_daily_water", _weather(et0=5.0))
+    sid = _sector(api, owner)
+    zone = _zone(owner, sid)
+
+    advice = _advice(owner, zone.id)
+    body = api.get(f"/farm-map/sectors/{sid}/insights", headers=_auth(owner)).json()
+    assert advice["decision_source"] == "water_balance"
+    assert advice["recommendation"] == "irrigate"
+    assert advice["dr_today_mm"] == body["water_balance"]["dr_mm"] == 70.0
+    assert advice["raw_mm"] == 40.5
+    assert advice["estimated_water_m3"] == body["recommendation"]["volume_m3"]
+    assert advice["estimated_duration_min"] == body["recommendation"]["duration_min"]
+    assert advice["reason"] == body["recommendation"]["message"]
+    assert advice["kc_used"] == 1.0 and advice["water_balance_unavailable"] is None
+
+    # The crop's Kc calendar is used, not a constant 1.0.
+    today = dt.datetime.now(dt.UTC).date()
+    res = api.post(
+        "/kc",
+        json={
+            "name": "Pomme de terre",
+            "plant_name": "Pomme de terre",
+            "zone_id": zone.id,
+            "periods": [
+                {
+                    "period_name": "Initial",
+                    "start_date": (today - dt.timedelta(days=60)).isoformat(),
+                    "end_date": (today + dt.timedelta(days=60)).isoformat(),
+                    "kc_value": 0.5,
+                }
+            ],
+        },
+        headers=_auth(owner),
+    )
+    assert res.status_code in (200, 201), res.text
+    advice = _advice(owner, zone.id)
+    assert advice["kc_used"] == 0.5 and advice["kc_period_name"] == "Initial"
+    assert advice["dr_today_mm"] == 35.0
+    assert advice["recommendation"] == "hold"
+
+
+@_requires_pg
+@pytest.mark.django_db(transaction=True)
+def test_assistant_advice_falls_back_and_says_why(owner, monkeypatch):
+    from apps.sensors.models import SoilMoistureMedium
+
+    monkeypatch.setattr(insights_mod, "fetch_openmeteo_daily_water", _weather(et0=5.0))
+    zone = _zone(owner, None)  # no sector shape, no station: no weather point
+    SoilMoistureMedium.objects.create(
+        zone=zone, user=owner, value=18.0, timestamp=dt.datetime.now(dt.UTC)
+    )
+    advice = _advice(owner, zone.id)
+    assert advice["decision_source"] == "critical_threshold_fallback"
+    assert advice["water_balance_unavailable"] == "no_location"
+    assert advice["recommendation"] == "irrigate"  # 18 % < 25 %
+
+    # The account's farm location is the last weather point.
+    owner.latitude, owner.longitude = 32.9, -6.9
+    owner.save(update_fields=["latitude", "longitude"])
+    advice = _advice(owner, zone.id)
+    assert advice["decision_source"] == "water_balance"
+    assert advice["water_balance_unavailable"] is None
+
+
+@_requires_pg
+@pytest.mark.django_db(transaction=True)
+def test_latest_reading_is_deterministic_on_shared_timestamps(owner):
+    """Parallel streams saved without a device: the same row every time."""
+    from agri.core.database import session_scope
+    from apps.sensors.models import SoilMoistureMedium
+
+    from fastapp.assistant.registry import latest_reading
+
+    zone = _zone(owner, None)
+    at = dt.datetime.now(dt.UTC).replace(microsecond=0)
+    SoilMoistureMedium.objects.create(zone=zone, user=owner, value=24.0, timestamp=at)
+    last = SoilMoistureMedium.objects.create(
+        zone=zone, user=owner, value=59.0, timestamp=at
+    )
+    with session_scope() as s:
+        values = {
+            latest_reading(s, owner.id, "soilMoisture", zone_id=zone.id).value
+            for _ in range(5)
+        }
+    assert values == {last.value}

@@ -356,6 +356,7 @@ def build_decision_row_from_advice(
             "dr_today_mm": _float(advice.get("dr_today_mm")),
             "raw_mm": _float(advice.get("raw_mm")),
             "et0_mm": _float(advice.get("et0_mm")),
+            "kc_used": _float(advice.get("kc_used")),
             "soil_moisture_pct": _float(advice.get("soil_moisture_pct")),
             "critical_moisture_pct": _float(advice.get("critical_moisture_threshold")),
             "zone_area_m2": _float(advice.get("zone_area_m2")),
