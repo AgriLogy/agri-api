@@ -57,7 +57,11 @@ SMALL_INT_MAX = 10
 
 _ARABIC = re.compile(r"[؀-ۿݐ-ݿﭐ-﷿ﹰ-﻿]")
 _LATIN = re.compile(r"[A-Za-zÀ-ÖØ-öø-ÿ]")
-_NUMBER = re.compile(r"(?<![\w.])-?\d+(?:[.,]\d+)?")
+# A number, with thousands written "144 638" (space, no-break or narrow
+# no-break space) read as one number.
+_NUMBER = re.compile(
+    r"(?<![\w.])-?\d{1,3}(?:[ \u00a0\u202f]\d{3})+(?:[.,]\d+)?(?!\d)|(?<![\w.])-?\d+(?:[.,]\d+)?"
+)
 # Arabizi spells letters with digits (3=ع, 7=ح, 9=ق, 2=ء, 5=خ): "nsa9i" is a word.
 _ARABIZI_WORD = re.compile(r"\b[a-z]*[23579][a-z]+\b|\b[a-z]+[23579][a-z]*\b", re.I)
 _EASTERN_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
@@ -404,7 +408,7 @@ def _numbers(text: str) -> list[float]:
     out = []
     for raw in _NUMBER.findall(text.translate(_EASTERN_DIGITS)):
         try:
-            out.append(float(raw.replace(",", ".")))
+            out.append(float(re.sub(r"[ \u00a0\u202f]", "", raw).replace(",", ".")))
         except ValueError:
             continue
     return out

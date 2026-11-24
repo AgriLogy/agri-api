@@ -101,6 +101,11 @@ class TestGraders:
         assert checks["tools_any"] is False
         assert checks["grounded_numbers"] is False
 
+    def test_thousands_with_spaces_are_one_number(self):
+        nums = harness._numbers("Zone de 144 638 m², 150 m³ en 6 h (2026).")
+        assert nums == [144638.0, 150.0, 6.0, 2026.0]
+        assert harness._numbers("144\u202f638,5 m²") == [144638.5]
+
     def test_arabizi_digits_are_letters_not_numbers(self):
         reply = "Iyeh, khassek tsa9i daba: l'humidité dyal trab 18.4% w hiya t7t 25%."
         r = harness.run_case(
