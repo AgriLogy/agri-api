@@ -1,6 +1,36 @@
 # CHANGELOG
 
 
+## v1.145.3 (2026-11-24)
+
+### Bug Fixes
+
+- **weather**: Keep last good Open-Meteo answer in Redis across restarts
+  ([#519](https://github.com/AgriLogy/agri-api/pull/519),
+  [`562387b`](https://github.com/AgriLogy/agri-api/commit/562387b363fd4631b60b778fc2ff4a89d62d228b))
+
+Closes #518.
+
+## Why On 2026-11-24, right after the v1.145.2 deploy, sector 5 insights returned `no_weather`. The
+  24 h stale fallback from #517 only lives in process memory, and a restart wipes it. At the same
+  moment the droplet's Open-Meteo node (geo-DNS → 51.81.167.44) was hanging, so there was nothing to
+  serve. Prod is currently patched with a temporary `extra_hosts` pin to the CA node.
+
+## What - On every successful fetch, the forecast and daily-water answers are also written to Redis
+  under `openmeteo:last-good:*`, with `EX = OPENMETEO_STALE_MAX_S` (24 h). - On fetch failure the
+  fallback order is: in-memory stale, then the Redis copy, then the previous behaviour (mock /
+  `{}`). - The Redis URL comes from `OPENMETEO_STALE_REDIS_URL`, falling back to
+  `CELERY_BROKER_URL`. Timeouts are 0.5 s. With no URL, or on any Redis error, the Redis step is
+  skipped.
+
+## Tests - A fake Redis in the autouse fixture. - New: restart during an outage serves the Redis
+  copy (forecast and water), and a broken Redis never breaks the forecast. - Local, SQLite: 788
+  passed. `test_e2e_workflow` also fails on main locally (SQLite env). ruff check and format are
+  clean.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+
 ## v1.145.2 (2026-11-24)
 
 ### Bug Fixes
