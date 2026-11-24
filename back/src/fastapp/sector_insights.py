@@ -62,6 +62,9 @@ BALANCE_DAYS = 14
 """Water-balance window: Dr is assumed at field capacity at its start."""
 
 NDVI_LOOKBACK_DAYS = 60
+SOIL_MOISTURE_MAX_AGE = dt.timedelta(hours=72)
+"""A probe reading older than this is not "the soil now": ignore it (a farm
+whose probe went silent in June must not be read with June's moisture)."""
 SOIL_MOISTURE_KEY = "soil_moisture_medium"
 
 
@@ -222,14 +225,27 @@ def _daily_irrigation_m3(
     return dict(out)
 
 
+def _early_season(source: str, period_name: str | None, kc: float) -> bool:
+    """The farmer's Kc calendar says the crop is at its initial stage: a named
+    "Initial…" period, or a period Kc at or under 0.5 (FAO-56 Kc ini range)."""
+    if source != "kc_period":
+        return False
+    name = (period_name or "").strip().lower()
+    return name.startswith(("init", "semis", "levée", "levee")) or kc <= 0.5
+
+
 def _soil_moisture(
-    session: Session, zone_ids: list[int]
+    session: Session, zone_ids: list[int], *, now: dt.datetime | None = None
 ) -> tuple[float | None, str | None]:
     if not zone_ids:
         return None, None
+    since = (now or dt.datetime.now(dt.UTC)) - SOIL_MOISTURE_MAX_AGE
     row = session.scalars(
         select(AnalyticsSoilmoisturemedium)
-        .where(AnalyticsSoilmoisturemedium.zone_id.in_(zone_ids))
+        .where(
+            AnalyticsSoilmoisturemedium.zone_id.in_(zone_ids),
+            AnalyticsSoilmoisturemedium.timestamp >= since,
+        )
         .order_by(AnalyticsSoilmoisturemedium.timestamp.desc())
         .limit(1)
     ).first()
@@ -401,6 +417,7 @@ def sector_insights(
         depletion_ratio=depletion_ratio,
         today=today,
         lang=lang,
+        early_season=_early_season(kc_source, kc_name, kc_today),
     )
     vegetation["soil_moisture_pct"] = soil_pct
     vegetation["soil_moisture_at"] = soil_at
