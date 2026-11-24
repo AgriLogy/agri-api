@@ -276,7 +276,11 @@ class TestRealDataset:
         )
         assert age.days >= 3
         empty = real.scenarios["empty"]()["get_irrigation_advice"]
-        assert empty["recommendation"] == "unknown"
+        # No readings, no crop: the balance runs on the farm's weather alone,
+        # so there is no soil reading, no crop period and no water quantity.
+        assert empty["soil_moisture_pct"] is None
+        assert empty["kc_period_name"] is None
+        assert empty["estimated_water_m3"] is None
         alerts = real.scenarios["alerts"]()["get_active_alerts"]["alerts"]
         assert any(a["last_triggered_at"] for a in alerts)
 

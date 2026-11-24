@@ -27,12 +27,18 @@ readings come from one device with weather from real Open-Meteo history.
 * empty  — no readings, no crop;
 * alerts — dry, plus the zone's two real alerts; the soil one fired on the
            last reading.
+
+The farm location (used for the weather forecast, ET0 and the water balance)
+comes from ``EVAL_FARM_LAT`` / ``EVAL_FARM_LON`` at build time and is never
+written to the repo or the fixture: it is a real farm. The zone's elevation is
+that location's (Open-Meteo elevation API).
 """
 
 from __future__ import annotations
 
 import datetime as dt
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -59,7 +65,7 @@ ZONE = {
     "soil_param_RAW": 45,
     "soil_param_TAW": 90,
     "soil_param_WP": 15,
-    "elevation_m": 790,
+    "elevation_m": 824,  # the eval farm location (Open-Meteo elevation)
 }
 CROP = {"plant_name": "Pomme de terre", "name": "Pomme de terre d'arrière-saison"}
 PERIODS = [
@@ -120,6 +126,15 @@ def export_window(out: Path) -> None:
     log(f"{sum(map(len, window.values()))} rows from {len(window)} tables -> {out}")
 
 
+def farm_location() -> tuple[float, float]:
+    try:
+        return float(os.environ["EVAL_FARM_LAT"]), float(os.environ["EVAL_FARM_LON"])
+    except (KeyError, ValueError):
+        raise SystemExit(
+            "set EVAL_FARM_LAT and EVAL_FARM_LON (decimal degrees)"
+        ) from None
+
+
 def ensure_eval_farm(s) -> tuple[int, int]:
     uid = s.execute(
         text('select id from "CustomUser_customuser" where username=:u'),
@@ -148,6 +163,13 @@ def ensure_eval_farm(s) -> tuple[int, int]:
                 'from "CustomUser_customuser" order by id limit 1 returning id'
             )
         ).scalar()
+    lat, lon = farm_location()
+    s.execute(
+        text(
+            'update "CustomUser_customuser" set latitude=:lat, longitude=:lon where id=:u'
+        ),
+        {"lat": lat, "lon": lon, "u": uid},
+    )
     zid = s.execute(
         text("select id from analytics_zone where user_id=:u order by id limit 1"),
         {"u": uid},
@@ -365,7 +387,9 @@ def build(window_file: Path) -> None:
             f"ending {T_DRY.isoformat()} (driest point of November, soil 29.95 %, "
             "weather from real Open-Meteo history), shifted by whole days so the last "
             "reading is 20 min (stale: 3 days) before eval_now. Zone settings and crop as in prod "
-            "on 2026-11-24, critical threshold 30 % (the zone's earlier setting). "
+            "on 2026-11-24, critical threshold 30 % (the zone's earlier setting), elevation "
+            "824 m. Farm location: a real farm in central Morocco, given at build "
+            "time and kept out of this file. "
             "Tool outputs come from the real assistant tool handlers on the local stack."
         ),
     }

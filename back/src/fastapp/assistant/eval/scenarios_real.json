@@ -1,12 +1,12 @@
 {
  "meta": {
   "eval_now": "2026-11-24T07:20:00+00:00",
-  "captured_at": "2026-11-24T12:09:08+00:00",
+  "captured_at": "2026-11-24T21:00:17+00:00",
   "zone": {
    "id": 12,
    "name": "Zone Sol"
   },
-  "source": "Router01 test farm (imaginary), Zone Sol: its readings for the 48 h ending 2026-11-02T07:00:00+00:00 (driest point of November, soil 29.95 %, weather from real Open-Meteo history), shifted by whole days so the last reading is 20 min (stale: 3 days) before eval_now. Zone settings and crop as in prod on 2026-11-24, critical threshold 30 % (the zone's earlier setting). Tool outputs come from the real assistant tool handlers on the local stack."
+  "source": "Router01 test farm (imaginary), Zone Sol: its readings for the 48 h ending 2026-11-02T07:00:00+00:00 (driest point of November, soil 29.95 %, weather from real Open-Meteo history), shifted by whole days so the last reading is 20 min (stale: 3 days) before eval_now. Zone settings and crop as in prod on 2026-11-24, critical threshold 30 % (the zone's earlier setting), elevation 824 m. Farm location: a real farm in central Morocco, given at build time and kept out of this file. Tool outputs come from the real assistant tool handlers on the local stack."
  },
  "scenarios": {
   "dry": {
@@ -375,21 +375,24 @@
    },
    "get_irrigation_advice": {
     "recommendation": "irrigate",
-    "reason": "Humidité du sol 29.9 % < seuil critique 30.0 %.",
+    "reason": "Irriguer 150 m³ (≈ 417 min) — l'humidité du sol (30 %) est sous le seuil critique (30 %). Volume plafonné au maximum journalier de la zone.",
     "soil_moisture_pct": 29.95,
     "critical_moisture_threshold": 30.0,
     "soil_moisture_status": "warning",
     "et0_mm": 0.0,
     "vpd_kpa": 0.38,
-    "dr_today_mm": null,
-    "raw_mm": null,
+    "dr_today_mm": 27.1,
+    "raw_mm": 45.0,
+    "kc_used": 0.85,
+    "kc_period_name": "Développement",
+    "water_balance_unavailable": null,
     "zone_name": "Zone Sol",
     "zone_area_m2": 144638.0,
     "estimated_water_m3": 150.0,
-    "estimated_duration_min": 416.67,
+    "estimated_duration_min": 417.0,
     "morning_volume_m3": null,
     "evening_volume_m3": null,
-    "decision_source": "critical_threshold_fallback",
+    "decision_source": "water_balance",
     "last_update_timestamp": "2026-11-24T07:00:00+00:00"
    },
    "list_recent_notifications": {
@@ -406,12 +409,12 @@
     "unit": "%",
     "latest": 29.95,
     "min": 29.95,
-    "max": 32.47,
-    "avg": 31.2,
-    "count": 76,
+    "max": 31.69,
+    "avg": 30.76,
+    "count": 40,
     "direction": "falling",
-    "window_start": "2026-11-23T12:09:06.770826+00:00",
-    "window_end": "2026-11-24T12:09:06.770826+00:00"
+    "window_start": "2026-11-23T21:00:16.551793+00:00",
+    "window_end": "2026-11-24T21:00:16.551793+00:00"
    },
    "get_sensor_trend|soilTemp": {
     "key": "soilTemp",
@@ -419,12 +422,12 @@
     "unit": "°C",
     "latest": 19.2,
     "min": 19.11,
-    "max": 22.33,
-    "avg": 20.96,
-    "count": 76,
+    "max": 21.87,
+    "avg": 20.51,
+    "count": 40,
     "direction": "falling",
-    "window_start": "2026-11-23T12:09:06.776296+00:00",
-    "window_end": "2026-11-24T12:09:06.776296+00:00"
+    "window_start": "2026-11-23T21:00:16.557867+00:00",
+    "window_end": "2026-11-24T21:00:16.557867+00:00"
    },
    "get_sensor_trend|airTemp": {
     "key": "airTemp",
@@ -432,25 +435,25 @@
     "unit": "°C",
     "latest": 14.46,
     "min": 14.46,
-    "max": 25.26,
-    "avg": 19.01,
-    "count": 76,
+    "max": 17.23,
+    "avg": 15.61,
+    "count": 40,
     "direction": "falling",
-    "window_start": "2026-11-23T12:09:06.781498+00:00",
-    "window_end": "2026-11-24T12:09:06.781498+00:00"
+    "window_start": "2026-11-23T21:00:16.563401+00:00",
+    "window_end": "2026-11-24T21:00:16.563401+00:00"
    },
    "get_sensor_trend|humidity": {
     "key": "humidity",
     "label": "Air humidity",
     "unit": "%",
     "latest": 77.17,
-    "min": 34.52,
+    "min": 67.79,
     "max": 81.09,
-    "avg": 61.14,
-    "count": 76,
+    "avg": 76.09,
+    "count": 40,
     "direction": "rising",
-    "window_start": "2026-11-23T12:09:06.786740+00:00",
-    "window_end": "2026-11-24T12:09:06.786740+00:00"
+    "window_start": "2026-11-23T21:00:16.568808+00:00",
+    "window_end": "2026-11-24T21:00:16.568808+00:00"
    },
    "get_sensor_trend|et0": {
     "key": "et0",
@@ -458,12 +461,12 @@
     "unit": "mm",
     "latest": 0.0,
     "min": 0.0,
-    "max": 0.49,
-    "avg": 0.09,
-    "count": 19,
+    "max": 0.01,
+    "avg": 0.0,
+    "count": 10,
     "direction": "falling",
-    "window_start": "2026-11-23T12:09:06.791665+00:00",
-    "window_end": "2026-11-24T12:09:06.791665+00:00"
+    "window_start": "2026-11-23T21:00:16.574505+00:00",
+    "window_end": "2026-11-24T21:00:16.574505+00:00"
    },
    "get_sensor_trend|vpd": {
     "key": "vpd",
@@ -471,12 +474,12 @@
     "unit": "kPa",
     "latest": 0.38,
     "min": 0.33,
-    "max": 2.08,
-    "avg": 0.96,
-    "count": 19,
+    "max": 0.56,
+    "avg": 0.42,
+    "count": 10,
     "direction": "falling",
-    "window_start": "2026-11-23T12:09:06.796349+00:00",
-    "window_end": "2026-11-24T12:09:06.796349+00:00"
+    "window_start": "2026-11-23T21:00:16.580802+00:00",
+    "window_end": "2026-11-24T21:00:16.580802+00:00"
    }
   },
   "stale": {
@@ -844,22 +847,25 @@
     "zone_id": null
    },
    "get_irrigation_advice": {
-    "recommendation": "irrigate",
-    "reason": "Humidité du sol 29.9 % < seuil critique 30.0 %.",
+    "recommendation": "hold",
+    "reason": "Pas d'irrigation nécessaire — déficit de 27,1 mm, sous la réserve facilement utilisable (45 mm).",
     "soil_moisture_pct": 29.95,
     "critical_moisture_threshold": 30.0,
     "soil_moisture_status": "warning",
     "et0_mm": 0.0,
     "vpd_kpa": 0.38,
-    "dr_today_mm": null,
-    "raw_mm": null,
+    "dr_today_mm": 27.1,
+    "raw_mm": 45.0,
+    "kc_used": 0.85,
+    "kc_period_name": "Développement",
+    "water_balance_unavailable": null,
     "zone_name": "Zone Sol",
     "zone_area_m2": 144638.0,
-    "estimated_water_m3": 150.0,
-    "estimated_duration_min": 416.67,
+    "estimated_water_m3": null,
+    "estimated_duration_min": null,
     "morning_volume_m3": null,
     "evening_volume_m3": null,
-    "decision_source": "critical_threshold_fallback",
+    "decision_source": "water_balance",
     "last_update_timestamp": "2026-11-21T07:00:00+00:00"
    },
    "list_recent_notifications": {
@@ -880,8 +886,8 @@
     "avg": null,
     "count": 0,
     "direction": "flat",
-    "window_start": "2026-11-23T12:09:07.407812+00:00",
-    "window_end": "2026-11-24T12:09:07.407812+00:00"
+    "window_start": "2026-11-23T21:00:17.067535+00:00",
+    "window_end": "2026-11-24T21:00:17.067535+00:00"
    },
    "get_sensor_trend|soilTemp": {
     "key": "soilTemp",
@@ -893,8 +899,8 @@
     "avg": null,
     "count": 0,
     "direction": "flat",
-    "window_start": "2026-11-23T12:09:07.412566+00:00",
-    "window_end": "2026-11-24T12:09:07.412566+00:00"
+    "window_start": "2026-11-23T21:00:17.072239+00:00",
+    "window_end": "2026-11-24T21:00:17.072239+00:00"
    },
    "get_sensor_trend|airTemp": {
     "key": "airTemp",
@@ -906,8 +912,8 @@
     "avg": null,
     "count": 0,
     "direction": "flat",
-    "window_start": "2026-11-23T12:09:07.417232+00:00",
-    "window_end": "2026-11-24T12:09:07.417232+00:00"
+    "window_start": "2026-11-23T21:00:17.076973+00:00",
+    "window_end": "2026-11-24T21:00:17.076973+00:00"
    },
    "get_sensor_trend|humidity": {
     "key": "humidity",
@@ -919,8 +925,8 @@
     "avg": null,
     "count": 0,
     "direction": "flat",
-    "window_start": "2026-11-23T12:09:07.421912+00:00",
-    "window_end": "2026-11-24T12:09:07.421912+00:00"
+    "window_start": "2026-11-23T21:00:17.081650+00:00",
+    "window_end": "2026-11-24T21:00:17.081650+00:00"
    },
    "get_sensor_trend|et0": {
     "key": "et0",
@@ -932,8 +938,8 @@
     "avg": null,
     "count": 0,
     "direction": "flat",
-    "window_start": "2026-11-23T12:09:07.426810+00:00",
-    "window_end": "2026-11-24T12:09:07.426810+00:00"
+    "window_start": "2026-11-23T21:00:17.086400+00:00",
+    "window_end": "2026-11-24T21:00:17.086400+00:00"
    },
    "get_sensor_trend|vpd": {
     "key": "vpd",
@@ -945,8 +951,8 @@
     "avg": null,
     "count": 0,
     "direction": "flat",
-    "window_start": "2026-11-23T12:09:07.431405+00:00",
-    "window_end": "2026-11-24T12:09:07.431405+00:00"
+    "window_start": "2026-11-23T21:00:17.090887+00:00",
+    "window_end": "2026-11-24T21:00:17.090887+00:00"
    }
   },
   "empty": {
@@ -1314,22 +1320,25 @@
     "zone_id": null
    },
    "get_irrigation_advice": {
-    "recommendation": "unknown",
-    "reason": "Données insuffisantes pour une recommandation.",
+    "recommendation": "hold",
+    "reason": "Pas d'irrigation nécessaire — déficit de 32 mm, sous la réserve facilement utilisable (45 mm).",
     "soil_moisture_pct": null,
     "critical_moisture_threshold": 30.0,
     "soil_moisture_status": "unknown",
     "et0_mm": null,
     "vpd_kpa": null,
-    "dr_today_mm": null,
-    "raw_mm": null,
+    "dr_today_mm": 32.0,
+    "raw_mm": 45.0,
+    "kc_used": 1.0,
+    "kc_period_name": null,
+    "water_balance_unavailable": null,
     "zone_name": "Zone Sol",
     "zone_area_m2": 144638.0,
     "estimated_water_m3": null,
     "estimated_duration_min": null,
     "morning_volume_m3": null,
     "evening_volume_m3": null,
-    "decision_source": "fallback",
+    "decision_source": "water_balance",
     "last_update_timestamp": null
    },
    "list_recent_notifications": {
@@ -1350,8 +1359,8 @@
     "avg": null,
     "count": 0,
     "direction": "flat",
-    "window_start": "2026-11-23T12:09:07.535642+00:00",
-    "window_end": "2026-11-24T12:09:07.535642+00:00"
+    "window_start": "2026-11-23T21:00:17.175381+00:00",
+    "window_end": "2026-11-24T21:00:17.175381+00:00"
    },
    "get_sensor_trend|soilTemp": {
     "key": "soilTemp",
@@ -1363,8 +1372,8 @@
     "avg": null,
     "count": 0,
     "direction": "flat",
-    "window_start": "2026-11-23T12:09:07.540203+00:00",
-    "window_end": "2026-11-24T12:09:07.540203+00:00"
+    "window_start": "2026-11-23T21:00:17.180084+00:00",
+    "window_end": "2026-11-24T21:00:17.180084+00:00"
    },
    "get_sensor_trend|airTemp": {
     "key": "airTemp",
@@ -1376,8 +1385,8 @@
     "avg": null,
     "count": 0,
     "direction": "flat",
-    "window_start": "2026-11-23T12:09:07.544633+00:00",
-    "window_end": "2026-11-24T12:09:07.544633+00:00"
+    "window_start": "2026-11-23T21:00:17.184636+00:00",
+    "window_end": "2026-11-24T21:00:17.184636+00:00"
    },
    "get_sensor_trend|humidity": {
     "key": "humidity",
@@ -1389,8 +1398,8 @@
     "avg": null,
     "count": 0,
     "direction": "flat",
-    "window_start": "2026-11-23T12:09:07.549009+00:00",
-    "window_end": "2026-11-24T12:09:07.549009+00:00"
+    "window_start": "2026-11-23T21:00:17.189690+00:00",
+    "window_end": "2026-11-24T21:00:17.189690+00:00"
    },
    "get_sensor_trend|et0": {
     "key": "et0",
@@ -1402,8 +1411,8 @@
     "avg": null,
     "count": 0,
     "direction": "flat",
-    "window_start": "2026-11-23T12:09:07.553436+00:00",
-    "window_end": "2026-11-24T12:09:07.553436+00:00"
+    "window_start": "2026-11-23T21:00:17.194355+00:00",
+    "window_end": "2026-11-24T21:00:17.194355+00:00"
    },
    "get_sensor_trend|vpd": {
     "key": "vpd",
@@ -1415,8 +1424,8 @@
     "avg": null,
     "count": 0,
     "direction": "flat",
-    "window_start": "2026-11-23T12:09:07.557565+00:00",
-    "window_end": "2026-11-24T12:09:07.557565+00:00"
+    "window_start": "2026-11-23T21:00:17.198930+00:00",
+    "window_end": "2026-11-24T21:00:17.198930+00:00"
    }
   },
   "alerts": {
@@ -1806,21 +1815,24 @@
    },
    "get_irrigation_advice": {
     "recommendation": "irrigate",
-    "reason": "Humidité du sol 29.9 % < seuil critique 30.0 %.",
+    "reason": "Irriguer 150 m³ (≈ 417 min) — l'humidité du sol (30 %) est sous le seuil critique (30 %). Volume plafonné au maximum journalier de la zone.",
     "soil_moisture_pct": 29.95,
     "critical_moisture_threshold": 30.0,
     "soil_moisture_status": "warning",
     "et0_mm": 0.0,
     "vpd_kpa": 0.38,
-    "dr_today_mm": null,
-    "raw_mm": null,
+    "dr_today_mm": 27.1,
+    "raw_mm": 45.0,
+    "kc_used": 0.85,
+    "kc_period_name": "Développement",
+    "water_balance_unavailable": null,
     "zone_name": "Zone Sol",
     "zone_area_m2": 144638.0,
     "estimated_water_m3": 150.0,
-    "estimated_duration_min": 416.67,
+    "estimated_duration_min": 417.0,
     "morning_volume_m3": null,
     "evening_volume_m3": null,
-    "decision_source": "critical_threshold_fallback",
+    "decision_source": "water_balance",
     "last_update_timestamp": "2026-11-24T07:00:00+00:00"
    },
    "list_recent_notifications": {
@@ -1837,12 +1849,12 @@
     "unit": "%",
     "latest": 29.95,
     "min": 29.95,
-    "max": 32.47,
-    "avg": 31.2,
-    "count": 76,
+    "max": 31.69,
+    "avg": 30.76,
+    "count": 40,
     "direction": "falling",
-    "window_start": "2026-11-23T12:09:08.163310+00:00",
-    "window_end": "2026-11-24T12:09:08.163310+00:00"
+    "window_start": "2026-11-23T21:00:17.777644+00:00",
+    "window_end": "2026-11-24T21:00:17.777644+00:00"
    },
    "get_sensor_trend|soilTemp": {
     "key": "soilTemp",
@@ -1850,12 +1862,12 @@
     "unit": "°C",
     "latest": 19.2,
     "min": 19.11,
-    "max": 22.33,
-    "avg": 20.96,
-    "count": 76,
+    "max": 21.87,
+    "avg": 20.51,
+    "count": 40,
     "direction": "falling",
-    "window_start": "2026-11-23T12:09:08.168057+00:00",
-    "window_end": "2026-11-24T12:09:08.168057+00:00"
+    "window_start": "2026-11-23T21:00:17.782357+00:00",
+    "window_end": "2026-11-24T21:00:17.782357+00:00"
    },
    "get_sensor_trend|airTemp": {
     "key": "airTemp",
@@ -1863,25 +1875,25 @@
     "unit": "°C",
     "latest": 14.46,
     "min": 14.46,
-    "max": 25.26,
-    "avg": 19.01,
-    "count": 76,
+    "max": 17.23,
+    "avg": 15.61,
+    "count": 40,
     "direction": "falling",
-    "window_start": "2026-11-23T12:09:08.172649+00:00",
-    "window_end": "2026-11-24T12:09:08.172649+00:00"
+    "window_start": "2026-11-23T21:00:17.787092+00:00",
+    "window_end": "2026-11-24T21:00:17.787092+00:00"
    },
    "get_sensor_trend|humidity": {
     "key": "humidity",
     "label": "Air humidity",
     "unit": "%",
     "latest": 77.17,
-    "min": 34.52,
+    "min": 67.79,
     "max": 81.09,
-    "avg": 61.14,
-    "count": 76,
+    "avg": 76.09,
+    "count": 40,
     "direction": "rising",
-    "window_start": "2026-11-23T12:09:08.177234+00:00",
-    "window_end": "2026-11-24T12:09:08.177234+00:00"
+    "window_start": "2026-11-23T21:00:17.791587+00:00",
+    "window_end": "2026-11-24T21:00:17.791587+00:00"
    },
    "get_sensor_trend|et0": {
     "key": "et0",
@@ -1889,12 +1901,12 @@
     "unit": "mm",
     "latest": 0.0,
     "min": 0.0,
-    "max": 0.49,
-    "avg": 0.09,
-    "count": 19,
+    "max": 0.01,
+    "avg": 0.0,
+    "count": 10,
     "direction": "falling",
-    "window_start": "2026-11-23T12:09:08.181870+00:00",
-    "window_end": "2026-11-24T12:09:08.181870+00:00"
+    "window_start": "2026-11-23T21:00:17.801773+00:00",
+    "window_end": "2026-11-24T21:00:17.801773+00:00"
    },
    "get_sensor_trend|vpd": {
     "key": "vpd",
@@ -1902,12 +1914,12 @@
     "unit": "kPa",
     "latest": 0.38,
     "min": 0.33,
-    "max": 2.08,
-    "avg": 0.96,
-    "count": 19,
+    "max": 0.56,
+    "avg": 0.42,
+    "count": 10,
     "direction": "falling",
-    "window_start": "2026-11-23T12:09:08.186414+00:00",
-    "window_end": "2026-11-24T12:09:08.186414+00:00"
+    "window_start": "2026-11-23T21:00:17.806753+00:00",
+    "window_end": "2026-11-24T21:00:17.806753+00:00"
    }
   }
  }
