@@ -14,6 +14,7 @@ the two mutating handlers open a ``commit=True`` session.
 from __future__ import annotations
 
 import datetime
+import logging
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any, Callable
@@ -30,8 +31,11 @@ from sqlalchemy import func, select
 
 from fastapp.auth import AuthedUser
 from fastapp.history import record_advice_decision
+from fastapp.ordering import latest_first
 
 from .registry import SENSOR_SOURCES, latest_reading
+
+logger = logging.getLogger(__name__)
 
 # Tool handler: (authed user, validated params) -> JSON-serializable data.
 ToolHandler = Callable[[Any, dict], dict]
@@ -358,10 +362,13 @@ def _get_sensor_trend(user: AuthedUser, params: dict) -> dict:
             ).where(*criteria)
         ).one()
         first_row = session.scalars(
-            select(model).where(*criteria).order_by(model.timestamp).limit(1)
+            select(model)
+            .where(*criteria)
+            .order_by(model.timestamp, model.device_id.is_(None), model.id.desc())
+            .limit(1)
         ).first()
         last_row = session.scalars(
-            select(model).where(*criteria).order_by(model.timestamp.desc()).limit(1)
+            select(model).where(*criteria).order_by(*latest_first(model)).limit(1)
         ).first()
         latest = latest_reading(session, user.id, sensor_key, zone_id=zone_id)
         first_value = first_row.value if first_row is not None else None
@@ -391,8 +398,6 @@ def _get_sensor_trend(user: AuthedUser, params: dict) -> dict:
 
 _DEFAULT_CRITICAL_MOISTURE_PCT = 20.0
 # decision_reason values from agri-core that mean "irrigate now" / "hold".
-_IRRIGATE_REASONS = {"stress", "soil_moisture_low", "complementary"}
-_HOLD_REASONS = {"no_stress", "rain_will_suffice"}
 
 
 #: Callers that may label a recorded decision (RPT-1 #441). An allowlist, not
@@ -433,14 +438,16 @@ def _irrigation_unknown(reason: str) -> dict:
 def _get_irrigation_advice(user: AuthedUser, params: dict) -> dict:
     """Per-zone irrigation recommendation.
 
-    Two-tier: prefer agri-core's Dr/RAW field snapshot; if that is unavailable
-    (missing data, raises), fall back to a simple soil-moisture-vs-critical-
-    threshold rule. Always returns a valid payload — never raises — and never
-    writes. Byte-parity port of ``apps/assistant/tools._get_irrigation_advice``;
-    Tier 1 calls agri-core's ``field_snapshot_for_user`` directly (the SQLAlchemy
-    twin of the Django adapter's ``agriapi.agronomy.field_snapshot``).
+    Two-tier. Tier 1 is the zone's FAO-56 water balance — the same computation
+    as the sector insights ("Conseil"): Dr over 14 days from Open-Meteo ET₀ and
+    rain, metered irrigation and the crop's Kc by period, then the Dr/RAW rules.
+    When that is unavailable (no soil parameters, no location, no weather) it
+    falls back to a soil-moisture-vs-critical-threshold rule. Never raises. It
+    records the decision it returns (RPT-1, #441). The Django twin in
+    ``apps/assistant/tools`` still has the old Tier 1; the assistant is served
+    by fastapp.
     """
-    from agri.core.agronomy import field_snapshot_for_user
+    from fastapp.sector_insights import zone_balance
 
     zone_id = params.get("zone_id")
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -469,11 +476,12 @@ def _get_irrigation_advice(user: AuthedUser, params: dict) -> dict:
         et0_reading = latest_reading(session, user.id, "et0", zone_id=z_id)
         vpd_reading = latest_reading(session, user.id, "vpd", zone_id=z_id)
 
-        # Tier 1: agri-core Dr/RAW snapshot (best-effort, never fatal).
+        # Tier 1: the zone's water balance (best-effort, never fatal).
         try:
-            snap = field_snapshot_for_user(session, user.id, now=now)
-        except Exception:
-            snap = None
+            balance = zone_balance(session, z_id, user.id, today=now.date())
+        except Exception:  # weather/DB trouble must not cost the farmer an answer
+            logger.exception("irrigation advice: water balance failed (zone %s)", z_id)
+            balance = None
 
     soil_moisture_pct = _round(soil_reading.value) if soil_reading else None
     et0_mm = _round(et0_reading.value) if et0_reading else None
@@ -490,27 +498,25 @@ def _get_irrigation_advice(user: AuthedUser, params: dict) -> dict:
     morning_volume_m3 = evening_volume_m3 = None
 
     decision_reason = None
-    if snap:
-        decision_reason = snap.get("decision_reason")
-        if decision_reason in _IRRIGATE_REASONS:
-            recommendation = "irrigate"
-        elif decision_reason in _HOLD_REASONS:
-            recommendation = "hold"
-        if recommendation != "unknown":
-            decision_source = "field_snapshot_dr"
-            reason = snap.get("irrigation_decision") or reason
-            dr_today_mm = _round(snap.get("dr_today_mm"))
-            raw_mm = _round(snap.get("raw_mm"))
-            estimated_water_m3 = _round(snap.get("recommended_volume_m3"))
-            estimated_duration_min = _round(snap.get("recommended_duration_min"))
-            morning_volume_m3 = _round(snap.get("morning_volume_m3"))
-            evening_volume_m3 = _round(snap.get("evening_volume_m3"))
-            if soil_moisture_pct is None and snap.get("soil_moisture_pct") is not None:
-                soil_moisture_pct = _round(snap.get("soil_moisture_pct"))
-            if et0_mm is None and snap.get("et0_today_mm") is not None:
-                et0_mm = _round(snap.get("et0_today_mm"))
+    kc_used = kc_period_name = balance_unavailable = None
+    wb = (balance or {}).get("water_balance") or {}
+    rec = (balance or {}).get("recommendation")
+    if balance:
+        kc_used = _round(balance["kc"]["value"])
+        kc_period_name = balance["kc"]["period_name"]
+    if wb.get("available") and rec:
+        decision_reason = rec.get("reason")
+        recommendation = "irrigate" if rec.get("action") == "irrigate" else "hold"
+        decision_source = "water_balance"
+        reason = rec.get("message") or reason
+        dr_today_mm = _round(wb.get("dr_mm"))
+        raw_mm = _round(wb.get("raw_mm"))
+        estimated_water_m3 = _round(rec.get("volume_m3"))
+        estimated_duration_min = _round(rec.get("duration_min"))
+    elif wb:
+        balance_unavailable = wb.get("reason")
 
-    # Tier 2: critical-threshold fallback when the snapshot gave no decision.
+    # Tier 2: critical-threshold fallback when the balance gave no decision.
     if recommendation == "unknown" and soil_moisture_pct is not None:
         decision_source = "critical_threshold_fallback"
         if soil_moisture_pct < critical_threshold:
@@ -543,6 +549,9 @@ def _get_irrigation_advice(user: AuthedUser, params: dict) -> dict:
         "vpd_kpa": vpd_kpa,
         "dr_today_mm": dr_today_mm,
         "raw_mm": raw_mm,
+        "kc_used": kc_used,
+        "kc_period_name": kc_period_name,
+        "water_balance_unavailable": balance_unavailable,
         "zone_name": z_name,
         "zone_area_m2": _round(z_space),
         "estimated_water_m3": estimated_water_m3,
