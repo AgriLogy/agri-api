@@ -42,10 +42,9 @@ def owner(django_user_model, set_access_level):
         lastname="Owner",
         phone_number="+212600000021",
     )
-    # Sector writes are gated to editor and deletes to admin (#444); grant admin
-    # so this owner exercises the full CRUD (incl. delete) — the tier gate is
-    # covered independently in test_access_level_rbac.
-    set_access_level(user, "admin")
+    # Sector writes and deletes are gated to editor (#444, #526); the tier gate
+    # is covered independently in test_access_level_rbac.
+    set_access_level(user, "editor")
     return user
 
 
@@ -56,9 +55,9 @@ def other(django_user_model, set_access_level):
         email="sec-other@example.com",
         password="irrelevant-3921",
     )
-    # Admin tier so the cross-owner test reaches the ownership 404 (not the tier
+    # Editor tier so the cross-owner test reaches the ownership 404 (not the tier
     # 403) when it tries to delete a sector that isn't theirs.
-    set_access_level(user, "admin")
+    set_access_level(user, "editor")
     return user
 
 
