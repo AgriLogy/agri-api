@@ -89,6 +89,76 @@ def _stale(cache: dict, key: tuple):
     return None
 
 
+# The in-memory stale tier dies with the process, so a deploy during an
+# Open-Meteo outage left nothing to serve (#518). The last good answer is also
+# kept in Redis (the Celery broker) for the stale window. Best-effort only:
+# without a URL, or on any Redis error, it is skipped.
+_PERSIST_PREFIX = "openmeteo:last-good:"
+_redis_client = None  # lazily built; tests swap in a fake
+
+
+def _redis():
+    global _redis_client
+    if _redis_client is None:
+        url = os.getenv("OPENMETEO_STALE_REDIS_URL") or os.getenv("CELERY_BROKER_URL")
+        if not url:
+            return None
+        import redis
+
+        _redis_client = redis.from_url(
+            url, socket_connect_timeout=0.5, socket_timeout=0.5
+        )
+    return _redis_client
+
+
+def _persist_key(kind: str, key: tuple) -> str:
+    return _PERSIST_PREFIX + kind + ":" + "|".join(str(part) for part in key)
+
+
+def _persist_set(kind: str, key: tuple, value) -> None:
+    try:
+        client = _redis()
+        if client is not None:
+            client.set(_persist_key(kind, key), json.dumps(value), ex=int(_STALE_MAX_S))
+    except Exception as exc:  # Redis down never breaks a weather call
+        logger.debug("Open-Meteo last-good write skipped (%s)", exc)
+
+
+def _persist_get(kind: str, key: tuple):
+    try:
+        client = _redis()
+        raw = client.get(_persist_key(kind, key)) if client is not None else None
+        return json.loads(raw) if raw else None
+    except Exception as exc:
+        logger.debug("Open-Meteo last-good read skipped (%s)", exc)
+        return None
+
+
+def _forecast_to_json(days: list[DailyWeatherForecast]) -> list[dict]:
+    return [
+        {
+            "day": d.day.isoformat(),
+            "temp_c": d.temp_c,
+            "rh_pct": d.rh_pct,
+            "wind_ms": d.wind_ms,
+            "rs_wm2": d.rs_wm2,
+            "pressure_hpa": d.pressure_hpa,
+            "precipitation_mm": d.precipitation_mm,
+        }
+        for d in days
+    ]
+
+
+def _forecast_from_json(rows) -> list[DailyWeatherForecast] | None:
+    try:
+        return [
+            DailyWeatherForecast(**{**row, "day": date.fromisoformat(row["day"])})
+            for row in rows
+        ]
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 PROVIDER_MOCK = "mock"
 PROVIDER_OPENMETEO = "open-meteo"
 
@@ -194,7 +264,9 @@ def _openmeteo_forecast(
         rain_series = hourly.get("precipitation") or []
     except (urllib.error.URLError, TimeoutError, ValueError, OSError) as exc:
         stale = _stale(_FORECAST_CACHE, key)
-        if stale is not None:
+        if stale is None:
+            stale = _forecast_from_json(_persist_get("forecast", key) or [])
+        if stale:
             logger.warning("Open-Meteo forecast failed (%s) — serving cached data", exc)
             return list(stale)
         raise ProviderUnavailable(f"fetch failed: {exc}") from exc
@@ -244,6 +316,7 @@ def _openmeteo_forecast(
     if len(_FORECAST_CACHE) >= _FORECAST_CACHE_MAX:
         _FORECAST_CACHE.clear()
     _FORECAST_CACHE[key] = (monotonic(), out)
+    _persist_set("forecast", key, _forecast_to_json(out))
     return list(out)
 
 
@@ -343,7 +416,9 @@ def fetch_openmeteo_daily_water(
         rain = daily.get("precipitation_sum") or []
     except (urllib.error.URLError, TimeoutError, ValueError, OSError) as exc:
         stale = _stale(_WATER_CACHE, key)
-        if stale is not None:
+        if stale is None:
+            stale = _persist_get("water", key)
+        if stale:
             logger.warning(
                 "Open-Meteo daily water failed (%s) — serving cached data", exc
             )
@@ -363,6 +438,8 @@ def fetch_openmeteo_daily_water(
     if len(_WATER_CACHE) >= _FORECAST_CACHE_MAX:
         _WATER_CACHE.clear()
     _WATER_CACHE[key] = (monotonic(), out)
+    if out:
+        _persist_set("water", key, out)
     return dict(out)
 
 
