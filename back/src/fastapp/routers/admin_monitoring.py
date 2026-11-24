@@ -435,6 +435,15 @@ def ingest_status(user: AuthedUser = Depends(get_current_staff_user)):
         return feed_status(session)
 
 
+@router.get("/admin/monitoring/stations", summary="Admin: weather-station exposure")
+def stations_exposure(user: AuthedUser = Depends(get_current_staff_user)):
+    """Latest daily check per weather station: is it measuring the field or
+    sitting sheltered / indoors (agri-core station_exposure). fastapp-only."""
+    from fastapp.tasks_ops import stored_exposure_reports
+
+    return {"stations": stored_exposure_reports()}
+
+
 @router.get("/admin/monitoring/tasks", summary="Admin: task-run history + schedule")
 def tasks(
     task_name: str | None = None,
