@@ -8,6 +8,8 @@ real run.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from fastapp.assistant.eval import harness
@@ -243,3 +245,133 @@ class TestCli:
         assert rc == 0
         assert len(list(tmp_path.glob("assistant-eval-*.md"))) == 1
         assert len(list(tmp_path.glob("assistant-eval-*.json"))) == 1
+
+
+class TestRealDataset:
+    """The pseudo-real dataset: real tool outputs over a test farm's readings."""
+
+    @pytest.fixture(scope="class")
+    def real(self):
+        return harness.get_dataset("real")
+
+    def _case(self, real, case_id: str) -> dict:
+        return next(c for c in harness.load_cases(dataset=real) if c["id"] == case_id)
+
+    def test_is_the_default_and_covers_every_scenario(self, real):
+        assert harness.DEFAULT_DATASET == "real"
+        names = harness.catalog_tool_names()
+        scenarios = {c["scenario"] for c in harness.load_cases()}
+        assert scenarios <= set(real.scenarios)
+        for state, build in real.scenarios.items():
+            outputs = build()
+            assert {k.split("|")[0] for k in outputs} <= names, state
+
+    def test_states_mean_what_the_cases_test(self, real):
+        dry = real.scenarios["dry"]()["get_irrigation_advice"]
+        assert dry["recommendation"] == "irrigate"
+        assert dry["estimated_water_m3"]
+        stale = real.scenarios["stale"]()["get_irrigation_advice"]
+        age = real.now - harness.datetime.datetime.fromisoformat(
+            stale["last_update_timestamp"]
+        )
+        assert age.days >= 3
+        empty = real.scenarios["empty"]()["get_irrigation_advice"]
+        assert empty["recommendation"] == "unknown"
+        alerts = real.scenarios["alerts"]()["get_active_alerts"]["alerts"]
+        assert any(a["last_triggered_at"] for a in alerts)
+
+    def test_placeholders_expand_to_this_farm(self, real):
+        dry = real.scenarios["dry"]()["get_irrigation_advice"]
+        irrigate = self._case(real, "irrigate_now.fr")
+        assert f"{dry['soil_moisture_pct']:g}" in irrigate["mentions_any"]
+        assert "{soil}" not in irrigate["mentions_any"]
+        stale = self._case(real, "stale_readings.fr")
+        assert dry["estimated_water_m3"] in stale["expect"]["forbid_numbers"]
+        alerts = self._case(real, "active_alerts.fr")
+        assert "{alert_threshold}" not in alerts["mentions_any"]
+
+    def test_grounded_answer_passes_and_invented_figure_fails(self, real):
+        dry = real.scenarios["dry"]()["get_irrigation_advice"]
+        soil, water = dry["soil_moisture_pct"], dry["estimated_water_m3"]
+        good = (
+            f"Oui : l'humidité du sol est à {soil} %, sous le seuil de "
+            f"{dry['critical_moisture_threshold']:g} %, mesurée il y a 20 minutes. "
+            f"Le calcul donne {water:g} m³."
+        )
+        call = [("get_irrigation_advice", {})]
+        r = harness.run_case(
+            self._case(real, "irrigate_now.fr"), Scripted(good, call), real
+        )
+        assert r.passed, r.checks
+        r = harness.run_case(
+            self._case(real, "irrigate_now.fr"),
+            Scripted(good + " Réglez la pression à 1.5 bar.", call),
+            real,
+        )
+        assert _checks(r)["grounded_numbers"] is False
+
+    def test_stale_quantity_is_forbidden(self, real):
+        water = real.scenarios["dry"]()["get_irrigation_advice"]["estimated_water_m3"]
+        r = harness.run_case(
+            self._case(real, "stale_readings.fr"),
+            Scripted(
+                f"Les mesures datent de 3 jours. Irriguez {water:g} m³.",
+                [("get_soil_status", {})],
+            ),
+            real,
+        )
+        assert _checks(r)["forbid_numbers"] is False
+
+    def test_trend_answers_the_requested_sensor(self, real):
+        tools = harness.ScenarioTools("dry", real)
+        et0 = tools("get_sensor_trend", {"sensor_key": "et0", "hours": 24})
+        assert et0["key"] == "et0"
+        unknown = tools("get_sensor_trend", {"sensor_key": "nope"})
+        assert "error" in unknown
+        assert tools.calls[0] == {
+            "name": "get_sensor_trend",
+            "input": {"sensor_key": "et0", "hours": 24},
+        }
+
+
+class TestPacing:
+    def test_rate_limited_case_is_retried(self, monkeypatch, tmp_path):
+        from fastapp.assistant.eval import __main__ as cli
+
+        attempts = []
+
+        class Flaky:
+            def complete(self, **kw):
+                attempts.append(1)
+                if len(attempts) == 1:
+                    raise ProviderError("rate_limit", "slow down")
+                return Scripted("Ouvrez la page Vannes et pompes.").complete(**kw)
+
+        sleeps = []
+        monkeypatch.setattr(cli.time, "sleep", sleeps.append)
+        monkeypatch.setenv("EVAL_TEST_KEY", "k")
+        monkeypatch.setattr(cli, "build_provider", lambda cfg: Flaky())
+        rc = cli.main(
+            [
+                "--provider",
+                "groq",
+                "--api-key-env",
+                "EVAL_TEST_KEY",
+                "--only",
+                "open_valve",
+                "--lang",
+                "fr",
+                "msa",
+                "--pace",
+                "5",
+                "--out",
+                str(tmp_path),
+                "--yes",
+            ]
+        )
+        report = json.loads(next(tmp_path.glob("assistant-eval-*.json")).read_text())
+        assert report["meta"]["data"] == "real"
+        assert [r["fallback_reason"] for r in report["results"]] == [None, None]
+        assert len(attempts) == 3  # fr: limited then ok; msa: ok
+        assert sleeps == [5, 5]  # one retry wait + one gap between cases
+        assert rc in (0, 1)

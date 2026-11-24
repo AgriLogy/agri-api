@@ -1,0 +1,1914 @@
+{
+ "meta": {
+  "eval_now": "2026-11-24T07:20:00+00:00",
+  "captured_at": "2026-11-24T12:09:08+00:00",
+  "zone": {
+   "id": 12,
+   "name": "Zone Sol"
+  },
+  "source": "Router01 test farm (imaginary), Zone Sol: its readings for the 48 h ending 2026-11-02T07:00:00+00:00 (driest point of November, soil 29.95 %, weather from real Open-Meteo history), shifted by whole days so the last reading is 20 min (stale: 3 days) before eval_now. Zone settings and crop as in prod on 2026-11-24, critical threshold 30 % (the zone's earlier setting). Tool outputs come from the real assistant tool handlers on the local stack."
+ },
+ "scenarios": {
+  "dry": {
+   "get_sitemap": {
+    "routes": [
+     {
+      "path": "/",
+      "key": "dashboard",
+      "icon": "🏠"
+     },
+     {
+      "path": "/soil",
+      "key": "soil",
+      "icon": "🌱"
+     },
+     {
+      "path": "/station",
+      "key": "station",
+      "icon": "🌤️"
+     },
+     {
+      "path": "/plant",
+      "key": "plant",
+      "icon": "🌿"
+     },
+     {
+      "path": "/water",
+      "key": "water",
+      "icon": "💧"
+     },
+     {
+      "path": "/vannes-pompes",
+      "key": "vannesPompes",
+      "icon": "🚰"
+     },
+     {
+      "path": "/alerts",
+      "key": "alerts",
+      "icon": "🔔"
+     },
+     {
+      "path": "/notifications",
+      "key": "notifications",
+      "icon": "📩"
+     },
+     {
+      "path": "/settings",
+      "key": "settings",
+      "icon": "⚙️"
+     }
+    ]
+   },
+   "get_active_alerts": {
+    "alerts": []
+   },
+   "get_farm_status": {
+    "metrics": [
+     {
+      "key": "soilMoisture",
+      "label": "Soil moisture",
+      "value": 29.95,
+      "unit": "%",
+      "status": "warning",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "soilTemp",
+      "label": "Soil temperature",
+      "value": 19.2,
+      "unit": "°C",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "vpd",
+      "label": "VPD",
+      "value": 0.38,
+      "unit": "kPa",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "et0",
+      "label": "ET0",
+      "value": 0.0,
+      "unit": "mm",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "airTemp",
+      "label": "Air temperature",
+      "value": 14.46,
+      "unit": "°C",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "humidity",
+      "label": "Air humidity",
+      "value": 77.17,
+      "unit": "%",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     }
+    ],
+    "zone_id": null
+   },
+   "get_weather": {
+    "metrics": [
+     {
+      "key": "airTemp",
+      "label": "Air temperature",
+      "value": 14.46,
+      "unit": "°C",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "humidity",
+      "label": "Air humidity",
+      "value": 77.17,
+      "unit": "%",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "pressure",
+      "label": "Pressure",
+      "value": 928.1,
+      "unit": "hPa",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "et0",
+      "label": "ET0",
+      "value": 0.0,
+      "unit": "mm",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "vpd",
+      "label": "VPD",
+      "value": 0.38,
+      "unit": "kPa",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     }
+    ]
+   },
+   "list_zones": {
+    "zones": [
+     {
+      "id": 12,
+      "name": "Zone Sol",
+      "area_m2": 144638.0,
+      "critical_moisture": 30.0,
+      "soil_param_TAW": 90.0,
+      "soil_param_FC": 30.0,
+      "soil_param_WP": 15.0,
+      "soil_param_RAW": 45.0
+     }
+    ]
+   },
+   "get_zone_detail": {
+    "zone": {
+     "id": 12,
+     "name": "Zone Sol",
+     "area_m2": 144638.0,
+     "critical_moisture": 30.0,
+     "soil_param_TAW": 90.0,
+     "soil_param_FC": 30.0,
+     "soil_param_WP": 15.0,
+     "soil_param_RAW": 45.0,
+     "pomp_flow_rate": 6.0,
+     "irrigation_water_quantity": 150000.0
+    }
+   },
+   "get_soil_status": {
+    "metrics": [
+     {
+      "key": "soilMoistureMedium",
+      "label": "Soil moisture (medium)",
+      "value": 29.95,
+      "unit": "%",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "soilMoistureHigh",
+      "label": "Soil moisture (shallow)",
+      "value": 31.77,
+      "unit": "%",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "soilMoistureLow",
+      "label": "Soil moisture (deep)",
+      "value": 27.64,
+      "unit": "%",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "soilTempMedium",
+      "label": "Soil temperature (medium)",
+      "value": 19.2,
+      "unit": "°C",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "soilTempHigh",
+      "label": "Soil temperature (shallow)",
+      "value": 21.12,
+      "unit": "°C",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "soilTempLow",
+      "label": "Soil temperature (deep)",
+      "value": 15.39,
+      "unit": "°C",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "phSoil",
+      "label": "Soil pH",
+      "value": 7.05,
+      "unit": "pH",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "soilSalinity",
+      "label": "Soil salinity",
+      "value": 1486.1,
+      "unit": "dS/m",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "soilConductivity",
+      "label": "Soil conductivity",
+      "value": 780.5,
+      "unit": "µS/cm",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "ecSoilMedium",
+      "label": "Soil EC (medium)",
+      "value": 1.42,
+      "unit": "dS/m",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "ecSoilHigh",
+      "label": "Soil EC (shallow)",
+      "value": 1.65,
+      "unit": "dS/m",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "ecSoilLow",
+      "label": "Soil EC (deep)",
+      "value": 1.16,
+      "unit": "dS/m",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     }
+    ],
+    "zone_id": null
+   },
+   "get_plant_status": {
+    "metrics": [
+     {
+      "key": "leafMoisture",
+      "label": "Leaf moisture",
+      "value": 54.7,
+      "unit": "%",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "leafTemperature",
+      "label": "Leaf temperature",
+      "value": 13.73,
+      "unit": "°C",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "fruitSize",
+      "label": "Fruit size",
+      "value": 10.37,
+      "unit": "mm",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "largeFruitDiameter",
+      "label": "Large fruit diameter",
+      "value": 15.6,
+      "unit": "mm",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     }
+    ],
+    "zone_id": null
+   },
+   "get_water_status": {
+    "metrics": [
+     {
+      "key": "waterFlow",
+      "label": "Water flow",
+      "value": 11.71,
+      "unit": "L/s",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "waterPressure",
+      "label": "Water pressure",
+      "value": 2.42,
+      "unit": "Bar",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "waterEC",
+      "label": "Water conductivity",
+      "value": 675.1,
+      "unit": "µS/cm",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "waterPH",
+      "label": "Water pH",
+      "value": 7.2,
+      "unit": "pH",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "precipitation",
+      "label": "Precipitation rate",
+      "value": 0.0,
+      "unit": "mm/h",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "waterLevel",
+      "label": "Water level",
+      "value": 149.62,
+      "unit": "cm",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     }
+    ],
+    "zone_id": null
+   },
+   "get_irrigation_advice": {
+    "recommendation": "irrigate",
+    "reason": "Humidité du sol 29.9 % < seuil critique 30.0 %.",
+    "soil_moisture_pct": 29.95,
+    "critical_moisture_threshold": 30.0,
+    "soil_moisture_status": "warning",
+    "et0_mm": 0.0,
+    "vpd_kpa": 0.38,
+    "dr_today_mm": null,
+    "raw_mm": null,
+    "zone_name": "Zone Sol",
+    "zone_area_m2": 144638.0,
+    "estimated_water_m3": 150.0,
+    "estimated_duration_min": 416.67,
+    "morning_volume_m3": null,
+    "evening_volume_m3": null,
+    "decision_source": "critical_threshold_fallback",
+    "last_update_timestamp": "2026-11-24T07:00:00+00:00"
+   },
+   "list_recent_notifications": {
+    "notifications": []
+   },
+   "search_knowledge": {
+    "available": true,
+    "query": "irrigation pomme de terre",
+    "articles": []
+   },
+   "get_sensor_trend|soilMoisture": {
+    "key": "soilMoisture",
+    "label": "Soil moisture",
+    "unit": "%",
+    "latest": 29.95,
+    "min": 29.95,
+    "max": 32.47,
+    "avg": 31.2,
+    "count": 76,
+    "direction": "falling",
+    "window_start": "2026-11-23T12:09:06.770826+00:00",
+    "window_end": "2026-11-24T12:09:06.770826+00:00"
+   },
+   "get_sensor_trend|soilTemp": {
+    "key": "soilTemp",
+    "label": "Soil temperature",
+    "unit": "°C",
+    "latest": 19.2,
+    "min": 19.11,
+    "max": 22.33,
+    "avg": 20.96,
+    "count": 76,
+    "direction": "falling",
+    "window_start": "2026-11-23T12:09:06.776296+00:00",
+    "window_end": "2026-11-24T12:09:06.776296+00:00"
+   },
+   "get_sensor_trend|airTemp": {
+    "key": "airTemp",
+    "label": "Air temperature",
+    "unit": "°C",
+    "latest": 14.46,
+    "min": 14.46,
+    "max": 25.26,
+    "avg": 19.01,
+    "count": 76,
+    "direction": "falling",
+    "window_start": "2026-11-23T12:09:06.781498+00:00",
+    "window_end": "2026-11-24T12:09:06.781498+00:00"
+   },
+   "get_sensor_trend|humidity": {
+    "key": "humidity",
+    "label": "Air humidity",
+    "unit": "%",
+    "latest": 77.17,
+    "min": 34.52,
+    "max": 81.09,
+    "avg": 61.14,
+    "count": 76,
+    "direction": "rising",
+    "window_start": "2026-11-23T12:09:06.786740+00:00",
+    "window_end": "2026-11-24T12:09:06.786740+00:00"
+   },
+   "get_sensor_trend|et0": {
+    "key": "et0",
+    "label": "ET0",
+    "unit": "mm",
+    "latest": 0.0,
+    "min": 0.0,
+    "max": 0.49,
+    "avg": 0.09,
+    "count": 19,
+    "direction": "falling",
+    "window_start": "2026-11-23T12:09:06.791665+00:00",
+    "window_end": "2026-11-24T12:09:06.791665+00:00"
+   },
+   "get_sensor_trend|vpd": {
+    "key": "vpd",
+    "label": "VPD",
+    "unit": "kPa",
+    "latest": 0.38,
+    "min": 0.33,
+    "max": 2.08,
+    "avg": 0.96,
+    "count": 19,
+    "direction": "falling",
+    "window_start": "2026-11-23T12:09:06.796349+00:00",
+    "window_end": "2026-11-24T12:09:06.796349+00:00"
+   }
+  },
+  "stale": {
+   "get_sitemap": {
+    "routes": [
+     {
+      "path": "/",
+      "key": "dashboard",
+      "icon": "🏠"
+     },
+     {
+      "path": "/soil",
+      "key": "soil",
+      "icon": "🌱"
+     },
+     {
+      "path": "/station",
+      "key": "station",
+      "icon": "🌤️"
+     },
+     {
+      "path": "/plant",
+      "key": "plant",
+      "icon": "🌿"
+     },
+     {
+      "path": "/water",
+      "key": "water",
+      "icon": "💧"
+     },
+     {
+      "path": "/vannes-pompes",
+      "key": "vannesPompes",
+      "icon": "🚰"
+     },
+     {
+      "path": "/alerts",
+      "key": "alerts",
+      "icon": "🔔"
+     },
+     {
+      "path": "/notifications",
+      "key": "notifications",
+      "icon": "📩"
+     },
+     {
+      "path": "/settings",
+      "key": "settings",
+      "icon": "⚙️"
+     }
+    ]
+   },
+   "get_active_alerts": {
+    "alerts": []
+   },
+   "get_farm_status": {
+    "metrics": [
+     {
+      "key": "soilMoisture",
+      "label": "Soil moisture",
+      "value": 29.95,
+      "unit": "%",
+      "status": "warning",
+      "as_of": "2026-11-21T07:00:00+00:00"
+     },
+     {
+      "key": "soilTemp",
+      "label": "Soil temperature",
+      "value": 19.2,
+      "unit": "°C",
+      "status": "ok",
+      "as_of": "2026-11-21T07:00:00+00:00"
+     },
+     {
+      "key": "vpd",
+      "label": "VPD",
+      "value": 0.38,
+      "unit": "kPa",
+      "status": "ok",
+      "as_of": "2026-11-21T07:00:00+00:00"
+     },
+     {
+      "key": "et0",
+      "label": "ET0",
+      "value": 0.0,
+      "unit": "mm",
+      "status": "ok",
+      "as_of": "2026-11-21T07:00:00+00:00"
+     },
+     {
+      "key": "airTemp",
+      "label": "Air temperature",
+      "value": 14.46,
+      "unit": "°C",
+      "status": "ok",
+      "as_of": "2026-11-21T07:00:00+00:00"
+     },
+     {
+      "key": "humidity",
+      "label": "Air humidity",
+      "value": 77.17,
+      "unit": "%",
+      "status": "ok",
+      "as_of": "2026-11-21T07:00:00+00:00"
+     }
+    ],
+    "zone_id": null
+   },
+   "get_weather": {
+    "metrics": [
+     {
+      "key": "airTemp",
+      "label": "Air temperature",
+      "value": 14.46,
+      "unit": "°C",
+      "as_of": "2026-11-21T07:00:00+00:00"
+     },
+     {
+      "key": "humidity",
+      "label": "Air humidity",
+      "value": 77.17,
+      "unit": "%",
+      "as_of": "2026-11-21T07:00:00+00:00"
+     },
+     {
+      "key": "pressure",
+      "label": "Pressure",
+      "value": 928.1,
+      "unit": "hPa",
+      "as_of": "2026-11-21T07:00:00+00:00"
+     },
+     {
+      "key": "et0",
+      "label": "ET0",
+      "value": 0.0,
+      "unit": "mm",
+      "as_of": "2026-11-21T07:00:00+00:00"
+     },
+     {
+      "key": "vpd",
+      "label": "VPD",
+      "value": 0.38,
+      "unit": "kPa",
+      "as_of": "2026-11-21T07:00:00+00:00"
+     }
+    ]
+   },
+   "list_zones": {
+    "zones": [
+     {
+      "id": 12,
+      "name": "Zone Sol",
+      "area_m2": 144638.0,
+      "critical_moisture": 30.0,
+      "soil_param_TAW": 90.0,
+      "soil_param_FC": 30.0,
+      "soil_param_WP": 15.0,
+      "soil_param_RAW": 45.0
+     }
+    ]
+   },
+   "get_zone_detail": {
+    "zone": {
+     "id": 12,
+     "name": "Zone Sol",
+     "area_m2": 144638.0,
+     "critical_moisture": 30.0,
+     "soil_param_TAW": 90.0,
+     "soil_param_FC": 30.0,
+     "soil_param_WP": 15.0,
+     "soil_param_RAW": 45.0,
+     "pomp_flow_rate": 6.0,
+     "irrigation_water_quantity": 150000.0
+    }
+   },
+   "get_soil_status": {
+    "metrics": [
+     {
+      "key": "soilMoistureMedium",
+      "label": "Soil moisture (medium)",
+      "value": 29.95,
+      "unit": "%",
+      "status": "ok",
+      "as_of": "2026-11-21T07:00:00+00:00"
+     },
+     {
+      "key": "soilMoistureHigh",
+      "label": "Soil moisture (shallow)",
+      "value": 31.77,
+      "unit": "%",
+      "status": "ok",
+      "as_of": "2026-11-21T07:00:00+00:00"
+     },
+     {
+      "key": "soilMoistureLow",
+      "label": "Soil moisture (deep)",
+      "value": 27.64,
+      "unit": "%",
+      "status": "ok",
+      "as_of": "2026-11-21T07:00:00+00:00"
+     },
+     {
+      "key": "soilTempMedium",
+      "label": "Soil temperature (medium)",
+      "value": 19.2,
+      "unit": "°C",
+      "status": "ok",
+      "as_of": "2026-11-21T07:00:00+00:00"
+     },
+     {
+      "key": "soilTempHigh",
+      "label": "Soil temperature (shallow)",
+      "value": 21.12,
+      "unit": "°C",
+      "status": "ok",
+      "as_of": "2026-11-21T07:00:00+00:00"
+     },
+     {
+      "key": "soilTempLow",
+      "label": "Soil temperature (deep)",
+      "value": 15.39,
+      "unit": "°C",
+      "status": "ok",
+      "as_of": "2026-11-21T07:00:00+00:00"
+     },
+     {
+      "key": "phSoil",
+      "label": "Soil pH",
+      "value": 7.05,
+      "unit": "pH",
+      "status": "ok",
+      "as_of": "2026-11-21T07:00:00+00:00"
+     },
+     {
+      "key": "soilSalinity",
+      "label": "Soil salinity",
+      "value": 1486.1,
+      "unit": "dS/m",
+      "status": "ok",
+      "as_of": "2026-11-21T07:00:00+00:00"
+     },
+     {
+      "key": "soilConductivity",
+      "label": "Soil conductivity",
+      "value": 780.5,
+      "unit": "µS/cm",
+      "status": "ok",
+      "as_of": "2026-11-21T07:00:00+00:00"
+     },
+     {
+      "key": "ecSoilMedium",
+      "label": "Soil EC (medium)",
+      "value": 1.42,
+      "unit": "dS/m",
+      "status": "ok",
+      "as_of": "2026-11-21T07:00:00+00:00"
+     },
+     {
+      "key": "ecSoilHigh",
+      "label": "Soil EC (shallow)",
+      "value": 1.65,
+      "unit": "dS/m",
+      "status": "ok",
+      "as_of": "2026-11-21T07:00:00+00:00"
+     },
+     {
+      "key": "ecSoilLow",
+      "label": "Soil EC (deep)",
+      "value": 1.16,
+      "unit": "dS/m",
+      "status": "ok",
+      "as_of": "2026-11-21T07:00:00+00:00"
+     }
+    ],
+    "zone_id": null
+   },
+   "get_plant_status": {
+    "metrics": [
+     {
+      "key": "leafMoisture",
+      "label": "Leaf moisture",
+      "value": 54.7,
+      "unit": "%",
+      "status": "ok",
+      "as_of": "2026-11-21T07:00:00+00:00"
+     },
+     {
+      "key": "leafTemperature",
+      "label": "Leaf temperature",
+      "value": 13.73,
+      "unit": "°C",
+      "status": "ok",
+      "as_of": "2026-11-21T07:00:00+00:00"
+     },
+     {
+      "key": "fruitSize",
+      "label": "Fruit size",
+      "value": 10.37,
+      "unit": "mm",
+      "status": "ok",
+      "as_of": "2026-11-21T07:00:00+00:00"
+     },
+     {
+      "key": "largeFruitDiameter",
+      "label": "Large fruit diameter",
+      "value": 15.6,
+      "unit": "mm",
+      "status": "ok",
+      "as_of": "2026-11-21T07:00:00+00:00"
+     }
+    ],
+    "zone_id": null
+   },
+   "get_water_status": {
+    "metrics": [
+     {
+      "key": "waterFlow",
+      "label": "Water flow",
+      "value": 11.71,
+      "unit": "L/s",
+      "status": "ok",
+      "as_of": "2026-11-21T07:00:00+00:00"
+     },
+     {
+      "key": "waterPressure",
+      "label": "Water pressure",
+      "value": 2.42,
+      "unit": "Bar",
+      "status": "ok",
+      "as_of": "2026-11-21T07:00:00+00:00"
+     },
+     {
+      "key": "waterEC",
+      "label": "Water conductivity",
+      "value": 675.1,
+      "unit": "µS/cm",
+      "status": "ok",
+      "as_of": "2026-11-21T07:00:00+00:00"
+     },
+     {
+      "key": "waterPH",
+      "label": "Water pH",
+      "value": 7.2,
+      "unit": "pH",
+      "status": "ok",
+      "as_of": "2026-11-21T07:00:00+00:00"
+     },
+     {
+      "key": "precipitation",
+      "label": "Precipitation rate",
+      "value": 0.0,
+      "unit": "mm/h",
+      "status": "ok",
+      "as_of": "2026-11-21T07:00:00+00:00"
+     },
+     {
+      "key": "waterLevel",
+      "label": "Water level",
+      "value": 149.62,
+      "unit": "cm",
+      "status": "ok",
+      "as_of": "2026-11-21T07:00:00+00:00"
+     }
+    ],
+    "zone_id": null
+   },
+   "get_irrigation_advice": {
+    "recommendation": "irrigate",
+    "reason": "Humidité du sol 29.9 % < seuil critique 30.0 %.",
+    "soil_moisture_pct": 29.95,
+    "critical_moisture_threshold": 30.0,
+    "soil_moisture_status": "warning",
+    "et0_mm": 0.0,
+    "vpd_kpa": 0.38,
+    "dr_today_mm": null,
+    "raw_mm": null,
+    "zone_name": "Zone Sol",
+    "zone_area_m2": 144638.0,
+    "estimated_water_m3": 150.0,
+    "estimated_duration_min": 416.67,
+    "morning_volume_m3": null,
+    "evening_volume_m3": null,
+    "decision_source": "critical_threshold_fallback",
+    "last_update_timestamp": "2026-11-21T07:00:00+00:00"
+   },
+   "list_recent_notifications": {
+    "notifications": []
+   },
+   "search_knowledge": {
+    "available": true,
+    "query": "irrigation pomme de terre",
+    "articles": []
+   },
+   "get_sensor_trend|soilMoisture": {
+    "key": "soilMoisture",
+    "label": "Soil moisture",
+    "unit": "%",
+    "latest": 29.95,
+    "min": null,
+    "max": null,
+    "avg": null,
+    "count": 0,
+    "direction": "flat",
+    "window_start": "2026-11-23T12:09:07.407812+00:00",
+    "window_end": "2026-11-24T12:09:07.407812+00:00"
+   },
+   "get_sensor_trend|soilTemp": {
+    "key": "soilTemp",
+    "label": "Soil temperature",
+    "unit": "°C",
+    "latest": 19.2,
+    "min": null,
+    "max": null,
+    "avg": null,
+    "count": 0,
+    "direction": "flat",
+    "window_start": "2026-11-23T12:09:07.412566+00:00",
+    "window_end": "2026-11-24T12:09:07.412566+00:00"
+   },
+   "get_sensor_trend|airTemp": {
+    "key": "airTemp",
+    "label": "Air temperature",
+    "unit": "°C",
+    "latest": 14.46,
+    "min": null,
+    "max": null,
+    "avg": null,
+    "count": 0,
+    "direction": "flat",
+    "window_start": "2026-11-23T12:09:07.417232+00:00",
+    "window_end": "2026-11-24T12:09:07.417232+00:00"
+   },
+   "get_sensor_trend|humidity": {
+    "key": "humidity",
+    "label": "Air humidity",
+    "unit": "%",
+    "latest": 77.17,
+    "min": null,
+    "max": null,
+    "avg": null,
+    "count": 0,
+    "direction": "flat",
+    "window_start": "2026-11-23T12:09:07.421912+00:00",
+    "window_end": "2026-11-24T12:09:07.421912+00:00"
+   },
+   "get_sensor_trend|et0": {
+    "key": "et0",
+    "label": "ET0",
+    "unit": "mm",
+    "latest": 0.0,
+    "min": null,
+    "max": null,
+    "avg": null,
+    "count": 0,
+    "direction": "flat",
+    "window_start": "2026-11-23T12:09:07.426810+00:00",
+    "window_end": "2026-11-24T12:09:07.426810+00:00"
+   },
+   "get_sensor_trend|vpd": {
+    "key": "vpd",
+    "label": "VPD",
+    "unit": "kPa",
+    "latest": 0.38,
+    "min": null,
+    "max": null,
+    "avg": null,
+    "count": 0,
+    "direction": "flat",
+    "window_start": "2026-11-23T12:09:07.431405+00:00",
+    "window_end": "2026-11-24T12:09:07.431405+00:00"
+   }
+  },
+  "empty": {
+   "get_sitemap": {
+    "routes": [
+     {
+      "path": "/",
+      "key": "dashboard",
+      "icon": "🏠"
+     },
+     {
+      "path": "/soil",
+      "key": "soil",
+      "icon": "🌱"
+     },
+     {
+      "path": "/station",
+      "key": "station",
+      "icon": "🌤️"
+     },
+     {
+      "path": "/plant",
+      "key": "plant",
+      "icon": "🌿"
+     },
+     {
+      "path": "/water",
+      "key": "water",
+      "icon": "💧"
+     },
+     {
+      "path": "/vannes-pompes",
+      "key": "vannesPompes",
+      "icon": "🚰"
+     },
+     {
+      "path": "/alerts",
+      "key": "alerts",
+      "icon": "🔔"
+     },
+     {
+      "path": "/notifications",
+      "key": "notifications",
+      "icon": "📩"
+     },
+     {
+      "path": "/settings",
+      "key": "settings",
+      "icon": "⚙️"
+     }
+    ]
+   },
+   "get_active_alerts": {
+    "alerts": []
+   },
+   "get_farm_status": {
+    "metrics": [
+     {
+      "key": "soilMoisture",
+      "label": "Soil moisture",
+      "value": null,
+      "unit": "%",
+      "status": "unknown",
+      "as_of": null
+     },
+     {
+      "key": "soilTemp",
+      "label": "Soil temperature",
+      "value": null,
+      "unit": "°C",
+      "status": "unknown",
+      "as_of": null
+     },
+     {
+      "key": "vpd",
+      "label": "VPD",
+      "value": null,
+      "unit": "kPa",
+      "status": "unknown",
+      "as_of": null
+     },
+     {
+      "key": "et0",
+      "label": "ET0",
+      "value": null,
+      "unit": "mm",
+      "status": "unknown",
+      "as_of": null
+     },
+     {
+      "key": "airTemp",
+      "label": "Air temperature",
+      "value": null,
+      "unit": "°C",
+      "status": "unknown",
+      "as_of": null
+     },
+     {
+      "key": "humidity",
+      "label": "Air humidity",
+      "value": null,
+      "unit": "%",
+      "status": "unknown",
+      "as_of": null
+     }
+    ],
+    "zone_id": null
+   },
+   "get_weather": {
+    "metrics": [
+     {
+      "key": "airTemp",
+      "label": "Air temperature",
+      "value": null,
+      "unit": "°C",
+      "as_of": null
+     },
+     {
+      "key": "humidity",
+      "label": "Air humidity",
+      "value": null,
+      "unit": "%",
+      "as_of": null
+     },
+     {
+      "key": "pressure",
+      "label": "Pressure",
+      "value": null,
+      "unit": "hPa",
+      "as_of": null
+     },
+     {
+      "key": "et0",
+      "label": "ET0",
+      "value": null,
+      "unit": "mm",
+      "as_of": null
+     },
+     {
+      "key": "vpd",
+      "label": "VPD",
+      "value": null,
+      "unit": "kPa",
+      "as_of": null
+     }
+    ]
+   },
+   "list_zones": {
+    "zones": [
+     {
+      "id": 12,
+      "name": "Zone Sol",
+      "area_m2": 144638.0,
+      "critical_moisture": 30.0,
+      "soil_param_TAW": 90.0,
+      "soil_param_FC": 30.0,
+      "soil_param_WP": 15.0,
+      "soil_param_RAW": 45.0
+     }
+    ]
+   },
+   "get_zone_detail": {
+    "zone": {
+     "id": 12,
+     "name": "Zone Sol",
+     "area_m2": 144638.0,
+     "critical_moisture": 30.0,
+     "soil_param_TAW": 90.0,
+     "soil_param_FC": 30.0,
+     "soil_param_WP": 15.0,
+     "soil_param_RAW": 45.0,
+     "pomp_flow_rate": 6.0,
+     "irrigation_water_quantity": 150000.0
+    }
+   },
+   "get_soil_status": {
+    "metrics": [
+     {
+      "key": "soilMoistureMedium",
+      "label": "Soil moisture (medium)",
+      "value": null,
+      "unit": "%",
+      "status": "unknown",
+      "as_of": null
+     },
+     {
+      "key": "soilMoistureHigh",
+      "label": "Soil moisture (shallow)",
+      "value": null,
+      "unit": "%",
+      "status": "unknown",
+      "as_of": null
+     },
+     {
+      "key": "soilMoistureLow",
+      "label": "Soil moisture (deep)",
+      "value": null,
+      "unit": "%",
+      "status": "unknown",
+      "as_of": null
+     },
+     {
+      "key": "soilTempMedium",
+      "label": "Soil temperature (medium)",
+      "value": null,
+      "unit": "°C",
+      "status": "unknown",
+      "as_of": null
+     },
+     {
+      "key": "soilTempHigh",
+      "label": "Soil temperature (shallow)",
+      "value": null,
+      "unit": "°C",
+      "status": "unknown",
+      "as_of": null
+     },
+     {
+      "key": "soilTempLow",
+      "label": "Soil temperature (deep)",
+      "value": null,
+      "unit": "°C",
+      "status": "unknown",
+      "as_of": null
+     },
+     {
+      "key": "phSoil",
+      "label": "Soil pH",
+      "value": null,
+      "unit": "pH",
+      "status": "unknown",
+      "as_of": null
+     },
+     {
+      "key": "soilSalinity",
+      "label": "Soil salinity",
+      "value": null,
+      "unit": "dS/m",
+      "status": "unknown",
+      "as_of": null
+     },
+     {
+      "key": "soilConductivity",
+      "label": "Soil conductivity",
+      "value": null,
+      "unit": "µS/cm",
+      "status": "unknown",
+      "as_of": null
+     },
+     {
+      "key": "ecSoilMedium",
+      "label": "Soil EC (medium)",
+      "value": null,
+      "unit": "dS/m",
+      "status": "unknown",
+      "as_of": null
+     },
+     {
+      "key": "ecSoilHigh",
+      "label": "Soil EC (shallow)",
+      "value": null,
+      "unit": "dS/m",
+      "status": "unknown",
+      "as_of": null
+     },
+     {
+      "key": "ecSoilLow",
+      "label": "Soil EC (deep)",
+      "value": null,
+      "unit": "dS/m",
+      "status": "unknown",
+      "as_of": null
+     }
+    ],
+    "zone_id": null
+   },
+   "get_plant_status": {
+    "metrics": [
+     {
+      "key": "leafMoisture",
+      "label": "Leaf moisture",
+      "value": null,
+      "unit": "%",
+      "status": "unknown",
+      "as_of": null
+     },
+     {
+      "key": "leafTemperature",
+      "label": "Leaf temperature",
+      "value": null,
+      "unit": "°C",
+      "status": "unknown",
+      "as_of": null
+     },
+     {
+      "key": "fruitSize",
+      "label": "Fruit size",
+      "value": null,
+      "unit": "mm",
+      "status": "unknown",
+      "as_of": null
+     },
+     {
+      "key": "largeFruitDiameter",
+      "label": "Large fruit diameter",
+      "value": null,
+      "unit": "mm",
+      "status": "unknown",
+      "as_of": null
+     }
+    ],
+    "zone_id": null
+   },
+   "get_water_status": {
+    "metrics": [
+     {
+      "key": "waterFlow",
+      "label": "Water flow",
+      "value": null,
+      "unit": "L/s",
+      "status": "unknown",
+      "as_of": null
+     },
+     {
+      "key": "waterPressure",
+      "label": "Water pressure",
+      "value": null,
+      "unit": "Bar",
+      "status": "unknown",
+      "as_of": null
+     },
+     {
+      "key": "waterEC",
+      "label": "Water conductivity",
+      "value": null,
+      "unit": "µS/cm",
+      "status": "unknown",
+      "as_of": null
+     },
+     {
+      "key": "waterPH",
+      "label": "Water pH",
+      "value": null,
+      "unit": "pH",
+      "status": "unknown",
+      "as_of": null
+     },
+     {
+      "key": "precipitation",
+      "label": "Precipitation rate",
+      "value": null,
+      "unit": "mm/h",
+      "status": "unknown",
+      "as_of": null
+     },
+     {
+      "key": "waterLevel",
+      "label": "Water level",
+      "value": null,
+      "unit": "cm",
+      "status": "unknown",
+      "as_of": null
+     }
+    ],
+    "zone_id": null
+   },
+   "get_irrigation_advice": {
+    "recommendation": "unknown",
+    "reason": "Données insuffisantes pour une recommandation.",
+    "soil_moisture_pct": null,
+    "critical_moisture_threshold": 30.0,
+    "soil_moisture_status": "unknown",
+    "et0_mm": null,
+    "vpd_kpa": null,
+    "dr_today_mm": null,
+    "raw_mm": null,
+    "zone_name": "Zone Sol",
+    "zone_area_m2": 144638.0,
+    "estimated_water_m3": null,
+    "estimated_duration_min": null,
+    "morning_volume_m3": null,
+    "evening_volume_m3": null,
+    "decision_source": "fallback",
+    "last_update_timestamp": null
+   },
+   "list_recent_notifications": {
+    "notifications": []
+   },
+   "search_knowledge": {
+    "available": true,
+    "query": "irrigation pomme de terre",
+    "articles": []
+   },
+   "get_sensor_trend|soilMoisture": {
+    "key": "soilMoisture",
+    "label": "Soil moisture",
+    "unit": "%",
+    "latest": null,
+    "min": null,
+    "max": null,
+    "avg": null,
+    "count": 0,
+    "direction": "flat",
+    "window_start": "2026-11-23T12:09:07.535642+00:00",
+    "window_end": "2026-11-24T12:09:07.535642+00:00"
+   },
+   "get_sensor_trend|soilTemp": {
+    "key": "soilTemp",
+    "label": "Soil temperature",
+    "unit": "°C",
+    "latest": null,
+    "min": null,
+    "max": null,
+    "avg": null,
+    "count": 0,
+    "direction": "flat",
+    "window_start": "2026-11-23T12:09:07.540203+00:00",
+    "window_end": "2026-11-24T12:09:07.540203+00:00"
+   },
+   "get_sensor_trend|airTemp": {
+    "key": "airTemp",
+    "label": "Air temperature",
+    "unit": "°C",
+    "latest": null,
+    "min": null,
+    "max": null,
+    "avg": null,
+    "count": 0,
+    "direction": "flat",
+    "window_start": "2026-11-23T12:09:07.544633+00:00",
+    "window_end": "2026-11-24T12:09:07.544633+00:00"
+   },
+   "get_sensor_trend|humidity": {
+    "key": "humidity",
+    "label": "Air humidity",
+    "unit": "%",
+    "latest": null,
+    "min": null,
+    "max": null,
+    "avg": null,
+    "count": 0,
+    "direction": "flat",
+    "window_start": "2026-11-23T12:09:07.549009+00:00",
+    "window_end": "2026-11-24T12:09:07.549009+00:00"
+   },
+   "get_sensor_trend|et0": {
+    "key": "et0",
+    "label": "ET0",
+    "unit": "mm",
+    "latest": null,
+    "min": null,
+    "max": null,
+    "avg": null,
+    "count": 0,
+    "direction": "flat",
+    "window_start": "2026-11-23T12:09:07.553436+00:00",
+    "window_end": "2026-11-24T12:09:07.553436+00:00"
+   },
+   "get_sensor_trend|vpd": {
+    "key": "vpd",
+    "label": "VPD",
+    "unit": "kPa",
+    "latest": null,
+    "min": null,
+    "max": null,
+    "avg": null,
+    "count": 0,
+    "direction": "flat",
+    "window_start": "2026-11-23T12:09:07.557565+00:00",
+    "window_end": "2026-11-24T12:09:07.557565+00:00"
+   }
+  },
+  "alerts": {
+   "get_sitemap": {
+    "routes": [
+     {
+      "path": "/",
+      "key": "dashboard",
+      "icon": "🏠"
+     },
+     {
+      "path": "/soil",
+      "key": "soil",
+      "icon": "🌱"
+     },
+     {
+      "path": "/station",
+      "key": "station",
+      "icon": "🌤️"
+     },
+     {
+      "path": "/plant",
+      "key": "plant",
+      "icon": "🌿"
+     },
+     {
+      "path": "/water",
+      "key": "water",
+      "icon": "💧"
+     },
+     {
+      "path": "/vannes-pompes",
+      "key": "vannesPompes",
+      "icon": "🚰"
+     },
+     {
+      "path": "/alerts",
+      "key": "alerts",
+      "icon": "🔔"
+     },
+     {
+      "path": "/notifications",
+      "key": "notifications",
+      "icon": "📩"
+     },
+     {
+      "path": "/settings",
+      "key": "settings",
+      "icon": "⚙️"
+     }
+    ]
+   },
+   "get_active_alerts": {
+    "alerts": [
+     {
+      "id": 14,
+      "name": "Sol froid",
+      "sensor_key": "soil_temperature_medium",
+      "zone": "Zone Sol",
+      "condition": "<",
+      "threshold": 5.0,
+      "last_triggered_at": null,
+      "severity": "ok"
+     },
+     {
+      "id": 13,
+      "name": "Sol sec — Zone Sol",
+      "sensor_key": "soil_moisture_medium",
+      "zone": "Zone Sol",
+      "condition": "<",
+      "threshold": 30.0,
+      "last_triggered_at": "2026-11-24T07:00:00+00:00",
+      "severity": "warning"
+     }
+    ]
+   },
+   "get_farm_status": {
+    "metrics": [
+     {
+      "key": "soilMoisture",
+      "label": "Soil moisture",
+      "value": 29.95,
+      "unit": "%",
+      "status": "warning",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "soilTemp",
+      "label": "Soil temperature",
+      "value": 19.2,
+      "unit": "°C",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "vpd",
+      "label": "VPD",
+      "value": 0.38,
+      "unit": "kPa",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "et0",
+      "label": "ET0",
+      "value": 0.0,
+      "unit": "mm",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "airTemp",
+      "label": "Air temperature",
+      "value": 14.46,
+      "unit": "°C",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "humidity",
+      "label": "Air humidity",
+      "value": 77.17,
+      "unit": "%",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     }
+    ],
+    "zone_id": null
+   },
+   "get_weather": {
+    "metrics": [
+     {
+      "key": "airTemp",
+      "label": "Air temperature",
+      "value": 14.46,
+      "unit": "°C",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "humidity",
+      "label": "Air humidity",
+      "value": 77.17,
+      "unit": "%",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "pressure",
+      "label": "Pressure",
+      "value": 928.1,
+      "unit": "hPa",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "et0",
+      "label": "ET0",
+      "value": 0.0,
+      "unit": "mm",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "vpd",
+      "label": "VPD",
+      "value": 0.38,
+      "unit": "kPa",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     }
+    ]
+   },
+   "list_zones": {
+    "zones": [
+     {
+      "id": 12,
+      "name": "Zone Sol",
+      "area_m2": 144638.0,
+      "critical_moisture": 30.0,
+      "soil_param_TAW": 90.0,
+      "soil_param_FC": 30.0,
+      "soil_param_WP": 15.0,
+      "soil_param_RAW": 45.0
+     }
+    ]
+   },
+   "get_zone_detail": {
+    "zone": {
+     "id": 12,
+     "name": "Zone Sol",
+     "area_m2": 144638.0,
+     "critical_moisture": 30.0,
+     "soil_param_TAW": 90.0,
+     "soil_param_FC": 30.0,
+     "soil_param_WP": 15.0,
+     "soil_param_RAW": 45.0,
+     "pomp_flow_rate": 6.0,
+     "irrigation_water_quantity": 150000.0
+    }
+   },
+   "get_soil_status": {
+    "metrics": [
+     {
+      "key": "soilMoistureMedium",
+      "label": "Soil moisture (medium)",
+      "value": 29.95,
+      "unit": "%",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "soilMoistureHigh",
+      "label": "Soil moisture (shallow)",
+      "value": 31.77,
+      "unit": "%",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "soilMoistureLow",
+      "label": "Soil moisture (deep)",
+      "value": 27.64,
+      "unit": "%",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "soilTempMedium",
+      "label": "Soil temperature (medium)",
+      "value": 19.2,
+      "unit": "°C",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "soilTempHigh",
+      "label": "Soil temperature (shallow)",
+      "value": 21.12,
+      "unit": "°C",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "soilTempLow",
+      "label": "Soil temperature (deep)",
+      "value": 15.39,
+      "unit": "°C",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "phSoil",
+      "label": "Soil pH",
+      "value": 7.05,
+      "unit": "pH",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "soilSalinity",
+      "label": "Soil salinity",
+      "value": 1486.1,
+      "unit": "dS/m",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "soilConductivity",
+      "label": "Soil conductivity",
+      "value": 780.5,
+      "unit": "µS/cm",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "ecSoilMedium",
+      "label": "Soil EC (medium)",
+      "value": 1.42,
+      "unit": "dS/m",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "ecSoilHigh",
+      "label": "Soil EC (shallow)",
+      "value": 1.65,
+      "unit": "dS/m",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "ecSoilLow",
+      "label": "Soil EC (deep)",
+      "value": 1.16,
+      "unit": "dS/m",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     }
+    ],
+    "zone_id": null
+   },
+   "get_plant_status": {
+    "metrics": [
+     {
+      "key": "leafMoisture",
+      "label": "Leaf moisture",
+      "value": 54.7,
+      "unit": "%",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "leafTemperature",
+      "label": "Leaf temperature",
+      "value": 13.73,
+      "unit": "°C",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "fruitSize",
+      "label": "Fruit size",
+      "value": 10.37,
+      "unit": "mm",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "largeFruitDiameter",
+      "label": "Large fruit diameter",
+      "value": 15.6,
+      "unit": "mm",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     }
+    ],
+    "zone_id": null
+   },
+   "get_water_status": {
+    "metrics": [
+     {
+      "key": "waterFlow",
+      "label": "Water flow",
+      "value": 11.71,
+      "unit": "L/s",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "waterPressure",
+      "label": "Water pressure",
+      "value": 2.42,
+      "unit": "Bar",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "waterEC",
+      "label": "Water conductivity",
+      "value": 675.1,
+      "unit": "µS/cm",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "waterPH",
+      "label": "Water pH",
+      "value": 7.2,
+      "unit": "pH",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "precipitation",
+      "label": "Precipitation rate",
+      "value": 0.0,
+      "unit": "mm/h",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     },
+     {
+      "key": "waterLevel",
+      "label": "Water level",
+      "value": 149.62,
+      "unit": "cm",
+      "status": "ok",
+      "as_of": "2026-11-24T07:00:00+00:00"
+     }
+    ],
+    "zone_id": null
+   },
+   "get_irrigation_advice": {
+    "recommendation": "irrigate",
+    "reason": "Humidité du sol 29.9 % < seuil critique 30.0 %.",
+    "soil_moisture_pct": 29.95,
+    "critical_moisture_threshold": 30.0,
+    "soil_moisture_status": "warning",
+    "et0_mm": 0.0,
+    "vpd_kpa": 0.38,
+    "dr_today_mm": null,
+    "raw_mm": null,
+    "zone_name": "Zone Sol",
+    "zone_area_m2": 144638.0,
+    "estimated_water_m3": 150.0,
+    "estimated_duration_min": 416.67,
+    "morning_volume_m3": null,
+    "evening_volume_m3": null,
+    "decision_source": "critical_threshold_fallback",
+    "last_update_timestamp": "2026-11-24T07:00:00+00:00"
+   },
+   "list_recent_notifications": {
+    "notifications": []
+   },
+   "search_knowledge": {
+    "available": true,
+    "query": "irrigation pomme de terre",
+    "articles": []
+   },
+   "get_sensor_trend|soilMoisture": {
+    "key": "soilMoisture",
+    "label": "Soil moisture",
+    "unit": "%",
+    "latest": 29.95,
+    "min": 29.95,
+    "max": 32.47,
+    "avg": 31.2,
+    "count": 76,
+    "direction": "falling",
+    "window_start": "2026-11-23T12:09:08.163310+00:00",
+    "window_end": "2026-11-24T12:09:08.163310+00:00"
+   },
+   "get_sensor_trend|soilTemp": {
+    "key": "soilTemp",
+    "label": "Soil temperature",
+    "unit": "°C",
+    "latest": 19.2,
+    "min": 19.11,
+    "max": 22.33,
+    "avg": 20.96,
+    "count": 76,
+    "direction": "falling",
+    "window_start": "2026-11-23T12:09:08.168057+00:00",
+    "window_end": "2026-11-24T12:09:08.168057+00:00"
+   },
+   "get_sensor_trend|airTemp": {
+    "key": "airTemp",
+    "label": "Air temperature",
+    "unit": "°C",
+    "latest": 14.46,
+    "min": 14.46,
+    "max": 25.26,
+    "avg": 19.01,
+    "count": 76,
+    "direction": "falling",
+    "window_start": "2026-11-23T12:09:08.172649+00:00",
+    "window_end": "2026-11-24T12:09:08.172649+00:00"
+   },
+   "get_sensor_trend|humidity": {
+    "key": "humidity",
+    "label": "Air humidity",
+    "unit": "%",
+    "latest": 77.17,
+    "min": 34.52,
+    "max": 81.09,
+    "avg": 61.14,
+    "count": 76,
+    "direction": "rising",
+    "window_start": "2026-11-23T12:09:08.177234+00:00",
+    "window_end": "2026-11-24T12:09:08.177234+00:00"
+   },
+   "get_sensor_trend|et0": {
+    "key": "et0",
+    "label": "ET0",
+    "unit": "mm",
+    "latest": 0.0,
+    "min": 0.0,
+    "max": 0.49,
+    "avg": 0.09,
+    "count": 19,
+    "direction": "falling",
+    "window_start": "2026-11-23T12:09:08.181870+00:00",
+    "window_end": "2026-11-24T12:09:08.181870+00:00"
+   },
+   "get_sensor_trend|vpd": {
+    "key": "vpd",
+    "label": "VPD",
+    "unit": "kPa",
+    "latest": 0.38,
+    "min": 0.33,
+    "max": 2.08,
+    "avg": 0.96,
+    "count": 19,
+    "direction": "falling",
+    "window_start": "2026-11-23T12:09:08.186414+00:00",
+    "window_end": "2026-11-24T12:09:08.186414+00:00"
+   }
+  }
+ }
+}
