@@ -85,7 +85,7 @@ dependencies = [
     # agri-db 0.28.0 (satellite history tables, #459 phase 3).
     # 0.32.0 adds the lang keyword (fr | ar | en) to recommend() and
     # interpret_vegetation() — the insights endpoint passes it (agri-core#94).
-    "agri-core @ git+https://github.com/AgriLogy/agri-core.git@0.32.0",
+    "agri-core @ git+https://github.com/AgriLogy/agri-core.git@0.32.1",
     # FastAPI sidecar (back/src/fastapp) — the strangler target the Django
     # surface migrates into, served by uvicorn on :8001 (entrypoint `fast`
     # role). Same image/venv as Django so both stay in lockstep.

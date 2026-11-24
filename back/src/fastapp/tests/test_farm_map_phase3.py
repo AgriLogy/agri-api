@@ -562,3 +562,92 @@ def test_insights_lang_defaults_to_preferred_language(api, owner, monkeypatch):
     body = api.get(f"{url}?lang=xx", headers=_auth(owner)).json()
     assert body["lang"] == "fr"
     assert body["recommendation"]["message"].startswith("Irriguer ")
+
+
+class _FakeCDSEBareSoil(_FakeCDSE):
+    """Freshly sown field: low, flat NDVI."""
+
+    def ndvi_stats(self, geometry, start, end, kind="ndvi"):
+        rows = super().ndvi_stats(geometry, start, end, kind)
+        for row, mean in zip(rows, (0.19, 0.2, 0.2, 0.21), strict=True):
+            row["mean"] = mean
+        return rows
+
+
+def _kc_initial(api, owner, zone_id, name="Initial", value=0.4):
+    today = dt.datetime.now(dt.UTC).date()
+    res = api.post(
+        "/kc",
+        json={
+            "name": "Blé",
+            "plant_name": "Blé",
+            "zone_id": zone_id,
+            "periods": [
+                {
+                    "period_name": name,
+                    "start_date": (today - dt.timedelta(days=10)).isoformat(),
+                    "end_date": (today + dt.timedelta(days=20)).isoformat(),
+                    "kc_value": value,
+                }
+            ],
+        },
+        headers=_auth(owner),
+    )
+    assert res.status_code in (200, 201), res.text
+
+
+@_requires_pg
+@pytest.mark.django_db(transaction=True)
+def test_stale_soil_probe_is_ignored(api, owner, monkeypatch):
+    from apps.sensors.models import SoilMoistureMedium
+
+    monkeypatch.setattr(insights_mod, "fetch_openmeteo_daily_water", _weather(et0=2.0))
+    sid = _sector(api, owner)
+    zone = _zone(owner, sid)
+    now = dt.datetime.now(dt.UTC)
+    SoilMoistureMedium.objects.create(
+        zone=zone, user=owner, value=27.0, timestamp=now - dt.timedelta(days=150)
+    )
+    veg = api.get(f"/farm-map/sectors/{sid}/insights", headers=_auth(owner)).json()[
+        "vegetation"
+    ]
+    assert veg["soil_moisture_pct"] is None  # a June reading is not "the soil now"
+
+    SoilMoistureMedium.objects.create(
+        zone=zone, user=owner, value=33.0, timestamp=now - dt.timedelta(hours=2)
+    )
+    veg = api.get(f"/farm-map/sectors/{sid}/insights", headers=_auth(owner)).json()[
+        "vegetation"
+    ]
+    assert veg["soil_moisture_pct"] == 33.0
+
+
+@_requires_pg
+@pytest.mark.django_db(transaction=True)
+def test_low_ndvi_at_initial_stage_reads_as_establishing(api, owner, monkeypatch):
+    from apps.sensors.models import SoilMoistureMedium
+
+    monkeypatch.setattr(insights_mod, "fetch_openmeteo_daily_water", _weather(et0=2.0))
+    monkeypatch.setattr(ndvi_router, "get_client", lambda: _FakeCDSEBareSoil())
+    sid = _sector(api, owner)
+    zone = _zone(owner, sid)
+    SoilMoistureMedium.objects.create(
+        zone=zone, user=owner, value=34.0, timestamp=dt.datetime.now(dt.UTC)
+    )
+    api.get(f"/farm-map/ndvi/sectors/{sid}/stats", headers=_auth(owner))
+
+    # No crop calendar: low NDVI on moist soil is "low vigour, other cause".
+    veg = api.get(f"/farm-map/sectors/{sid}/insights", headers=_auth(owner)).json()[
+        "vegetation"
+    ]
+    assert veg["status"] == "low_vigor_other"
+
+    # The farmer's calendar says "Initial": the same NDVI is expected.
+    _kc_initial(api, owner, zone.id)
+    body = api.get(
+        f"/farm-map/sectors/{sid}/insights?lang=fr", headers=_auth(owner)
+    ).json()
+    veg = body["vegetation"]
+    assert body["kc"]["period_name"] == "Initial"
+    assert veg["status"] == "healthy" and veg["label"] == "Culture en démarrage"
+    assert "NDVI bas attendu" in veg["message"]
