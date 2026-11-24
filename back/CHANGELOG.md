@@ -1,6 +1,45 @@
 # CHANGELOG
 
 
+## v1.146.0 (2026-11-24)
+
+### Features
+
+- **ops**: Daily check that each weather station measures the field
+  ([#525](https://github.com/AgriLogy/agri-api/pull/525),
+  [`ca54b12`](https://github.com/AgriLogy/agri-api/commit/ca54b1234cacb7b22184847e345850112a60b055))
+
+Closes #524.
+
+## Why A station installed in a closed or dark spot sends plausible readings that aren't the
+  field's. ET₀, VPD and temperature alerts built on them are off, and nothing flagged it. Router02
+  is the live case.
+
+## What - **`check_station_exposure`** is a daily beat task (14:15 UTC, fastapp-beat only). - For
+  each device with weather readings in the last 24 h, it takes hourly means of temperature, wind and
+  solar, plus Open-Meteo's hourly 2 m temperature, 10 m wind and shortwave at the farm's location. -
+  Then it runs `agri.core.station_exposure.assess_station_exposure` (agri-core 0.33.0). - The status
+  is `sheltered` (2+ signals), `suspect` (1), `ok`, or `insufficient_data`. The signals are no_sun,
+  no_wind, damped_temperature and warm_nights. - For `sheltered` or `suspect` it emails
+  `OPS_ALERT_EMAILS` (falling back to `INTERNAL_FEEDBACK_EMAILS`), at most once per 7 days per
+  station (Redis `SET NX EX`). The email gives the numbers behind each signal and what to do. - It
+  stores the latest report per station in Redis (3-day TTL). - **`GET /admin/monitoring/stations`**
+  (staff): the stored reports. nginx already routes `/admin/monitoring/` to fastapp. -
+  **`forecast_provider.fetch_openmeteo_hourly_reference`**: cached, with the Redis last-good copy
+  like the other Open-Meteo fetches. - **`sector_insights.zone_point` / `farm_point`**: extracted
+  from `zone_balance`, which now uses them. - agri-core pin → **0.33.0**.
+
+No migration: dedup and reports live in Redis.
+
+## Tests - New Postgres tests replay **Router02's real day** (station vs Open-Meteo, 24 h): -
+  sheltered with all 4 signals, one ops email, report stored and served; - the next run sends no
+  second email; - an outdoor station is `ok` and silent; - a station with no location is skipped. -
+  The beat-set test is updated. - Local Postgres: 49 passed (station exposure, celery app, ingest
+  staleness, farm-map phase 3). SQLite full suite: 788 passed. ruff is clean.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+
 ## v1.145.4 (2026-11-24)
 
 ### Bug Fixes
