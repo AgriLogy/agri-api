@@ -1,6 +1,48 @@
 # CHANGELOG
 
 
+## v1.145.4 (2026-11-24)
+
+### Bug Fixes
+
+- **assistant**: Irrigation advice runs the zone's water balance
+  ([#523](https://github.com/AgriLogy/agri-api/pull/523),
+  [`4b0dcab`](https://github.com/AgriLogy/agri-api/commit/4b0dcabc52da3682bf1882be49727f6559bf783b))
+
+Closes #522.
+
+## Why - The assistant's irrigation advice never used its Dr/RAW tier. Every answer came from the
+  "soil under threshold" rule, the quantity was simply the zone's daily cap, and Kc was always 1.0.
+  - The Conseil tab, meanwhile, runs a full 14-day FAO-56 balance, so the two could disagree. -
+  Separately, "latest reading" picked an arbitrary row when parallel streams without a device id
+  share a timestamp.
+
+## What - **Shared balance.** `sector_insights.balance_for_zones` is split out of
+  `sector_insights()`. The new `zone_balance()` runs it for one zone: - weather point: the sector
+  shape, else a zone station, else the account's farm latitude/longitude; - area: the sector's when
+  the zone is alone in its sector, so the assistant's answer equals the Conseil one; otherwise the
+  zone's own. - **Advice Tier 1 = water balance.** `decision_source: "water_balance"`, with
+  `dr_today_mm`, `raw_mm`, volume, duration and message taken from the balance's recommendation. New
+  fields: `kc_used`, `kc_period_name`, `water_balance_unavailable` (why Tier 2 was used). - The
+  decision log now records `kc_used`. - **Deterministic latest reading**
+  (`fastapp/ordering.latest_first`): order by timestamp, then rows that have a device, then newest
+  stored. Used in the assistant registry, the trend first/last rows and the insights soil read. -
+  Not changed: the Django twin in `apps/assistant/tools`. The assistant is served by fastapp (nginx
+  `/assistant` → :8001).
+
+## Checked - Local stack, Router01 zone with its farm location: before, "hold" from the threshold
+  rule; after, "hold" from the water balance, "déficit de 32,3 mm, sous la RFU (50 mm)", using live
+  Open-Meteo data. - New Postgres tests: advice equals the sector insight (Dr 70 → irrigate, same
+  volume, duration and message); the Kc calendar is used (0.5 → Dr 35 → hold); fallback with a
+  reason, then the farm location enables the balance; shared timestamps always return the same row.
+  - Local Postgres: 227 passed across insights, technician access, proactive scan, history,
+  assistant and sectors. SQLite full suite: 788 passed.
+
+Still open (a data decision): the historical parallel streams themselves, see #522.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+
 ## v1.145.3 (2026-11-24)
 
 ### Bug Fixes
