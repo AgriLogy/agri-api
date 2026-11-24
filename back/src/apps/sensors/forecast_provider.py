@@ -60,6 +60,34 @@ _DAYLIGHT_H = 12.0
 _FORECAST_TTL_S = float(os.getenv("OPENMETEO_FORECAST_TTL_S", "1800"))
 _FORECAST_CACHE_MAX = 256
 _FORECAST_CACHE: dict[tuple, tuple[float, list[DailyWeatherForecast]]] = {}
+# When Open-Meteo fails (it occasionally times out from the droplet), a cached
+# answer for the same spot and window younger than this is served instead of
+# nothing: yesterday-old weather beats "weather unavailable".
+_STALE_MAX_S = float(os.getenv("OPENMETEO_STALE_MAX_S", "86400"))
+_FETCH_ATTEMPTS = 2  # one retry, on network errors only
+
+
+def _fetch_json(url: str, user_agent: str) -> dict:
+    """GET ``url`` as JSON, retrying once on a network error or timeout."""
+    last: Exception | None = None
+    for _ in range(_FETCH_ATTEMPTS):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": user_agent})
+            with urllib.request.urlopen(req, timeout=_OPENMETEO_TIMEOUT_S) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            last = exc
+    assert last is not None
+    raise last
+
+
+def _stale(cache: dict, key: tuple):
+    """A cached value for ``key`` past its TTL but within the stale window."""
+    hit = cache.get(key)
+    if hit is not None and monotonic() - hit[0] < _STALE_MAX_S:
+        return hit[1]
+    return None
+
 
 PROVIDER_MOCK = "mock"
 PROVIDER_OPENMETEO = "open-meteo"
@@ -159,17 +187,16 @@ def _openmeteo_forecast(
         }
     )
     try:
-        req = urllib.request.Request(
-            f"{_OPENMETEO_URL}?{query}",
-            headers={"User-Agent": "agri-api/et0-forecast"},
-        )
-        with urllib.request.urlopen(req, timeout=_OPENMETEO_TIMEOUT_S) as resp:
-            payload = json.loads(resp.read().decode("utf-8"))
+        payload = _fetch_json(f"{_OPENMETEO_URL}?{query}", "agri-api/et0-forecast")
         hourly = payload["hourly"]
         times: list[str] = hourly["time"]
         series = {name: hourly[name] for name in _OPENMETEO_HOURLY}
         rain_series = hourly.get("precipitation") or []
     except (urllib.error.URLError, TimeoutError, ValueError, OSError) as exc:
+        stale = _stale(_FORECAST_CACHE, key)
+        if stale is not None:
+            logger.warning("Open-Meteo forecast failed (%s) — serving cached data", exc)
+            return list(stale)
         raise ProviderUnavailable(f"fetch failed: {exc}") from exc
     except (KeyError, TypeError) as exc:
         raise ProviderUnavailable(f"unexpected payload: {exc!r}") from exc
@@ -309,17 +336,18 @@ def fetch_openmeteo_daily_water(
         }
     )
     try:
-        req = urllib.request.Request(
-            f"{_OPENMETEO_URL}?{query}",
-            headers={"User-Agent": "agri-api/sector-water"},
-        )
-        with urllib.request.urlopen(req, timeout=_OPENMETEO_TIMEOUT_S) as resp:
-            payload = json.loads(resp.read().decode("utf-8"))
+        payload = _fetch_json(f"{_OPENMETEO_URL}?{query}", "agri-api/sector-water")
         daily = payload.get("daily") or {}
         dates = daily.get("time") or []
         et0 = daily.get("et0_fao_evapotranspiration") or []
         rain = daily.get("precipitation_sum") or []
     except (urllib.error.URLError, TimeoutError, ValueError, OSError) as exc:
+        stale = _stale(_WATER_CACHE, key)
+        if stale is not None:
+            logger.warning(
+                "Open-Meteo daily water failed (%s) — serving cached data", exc
+            )
+            return dict(stale)
         logger.warning("Open-Meteo daily water fetch failed (%s)", exc)
         return {}
 
