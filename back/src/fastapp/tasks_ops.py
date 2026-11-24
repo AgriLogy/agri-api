@@ -238,3 +238,212 @@ def check_ingest_staleness() -> dict:
         "recovered": recovered,
         "checked": sorted(k for k, v in latest.items() if v is not None),
     }
+
+
+# ---------------------------------------------------------------------------
+# check_station_exposure — is a weather station measuring the field?
+# ---------------------------------------------------------------------------
+# A station installed in a dark or closed space (Router02, 2026-11) sends
+# plausible numbers that are not the field's: 0 W/m² at noon, 0 m/s all day,
+# a damped temperature swing and warm nights. Once a day each station that
+# reported in the last 24 h is compared with Open-Meteo at the farm's location
+# (agri.core.station_exposure); a sheltered/suspect one is emailed to ops,
+# at most once per EXPOSURE_RENOTIFY_DAYS while it lasts. The latest report per
+# station is kept in Redis for GET /admin/monitoring/stations.
+EXPOSURE_WINDOW_HOURS = 24
+EXPOSURE_RENOTIFY_DAYS = 7
+EXPOSURE_REPORT_TTL_S = 3 * 86400
+_EXPOSURE_REPORT_PREFIX = "station-exposure:report:"
+_EXPOSURE_ALERT_PREFIX = "station-exposure:alert:"
+_EXPOSURE_TABLES = {
+    "station_temp_c": "analytics_temperatureweather",
+    "station_wind_ms": "analytics_windspeed",
+    "station_rs_wm2": "analytics_solarradiation",
+}
+_SIGNAL_TEXT = {
+    "no_sun": "solar sensor reads ~0 in daylight (max {station_max_wm2} W/m², "
+    "outside up to {reference_max_wm2} W/m²)",
+    "no_wind": "wind sensor reads 0 all day (outside averages "
+    "{reference_mean_ms} m/s at 10 m)",
+    "damped_temperature": "temperature swings {station_range_c} °C vs "
+    "{reference_range_c} °C outside (low {station_min_c} vs {reference_min_c} °C)",
+    "warm_nights": "nights {mean_bias_c} °C warmer than outside",
+}
+
+
+def _station_devices(session, start, end) -> list:
+    """Stations with weather readings in ``[start, end)``: device id, its zone
+    and owner (from the latest reading), serial and name."""
+    return session.execute(
+        text(
+            "SELECT DISTINCT ON (t.device_id) t.device_id, t.zone_id, t.user_id, "
+            "d.serial, d.name "
+            "FROM analytics_temperatureweather t "
+            "JOIN analytics_device d ON d.id = t.device_id "
+            "WHERE t.device_id IS NOT NULL AND t.timestamp >= :a AND t.timestamp < :b "
+            "ORDER BY t.device_id, t.timestamp DESC"
+        ),
+        {"a": start, "b": end},
+    ).all()
+
+
+def _hourly_means(session, table: str, device_id: int, start, end) -> dict[str, float]:
+    rows = session.execute(
+        text(
+            f"SELECT date_trunc('hour', timestamp) AS h, avg(value) FROM {table} "
+            "WHERE device_id = :d AND timestamp >= :a AND timestamp < :b "
+            "GROUP BY 1"
+        ),
+        {"d": device_id, "a": start, "b": end},
+    ).all()
+    return {
+        h.astimezone(datetime.timezone.utc).strftime("%Y-%m-%dT%H"): float(v)
+        for h, v in rows
+        if v is not None
+    }
+
+
+def _exposure_hours(station: dict[str, dict[str, float]], reference: dict) -> list:
+    from agri.core.station_exposure import ExposureHour
+
+    out = []
+    for key in sorted(station["station_temp_c"]):
+        ref = reference.get(key) or {}
+        out.append(
+            ExposureHour(
+                hour=datetime.datetime.strptime(key, "%Y-%m-%dT%H").replace(
+                    tzinfo=datetime.timezone.utc
+                ),
+                station_temp_c=station["station_temp_c"].get(key),
+                station_wind_ms=station["station_wind_ms"].get(key),
+                station_rs_wm2=station["station_rs_wm2"].get(key),
+                ref_temp_c=ref.get("temp_c"),
+                ref_wind_ms=ref.get("wind_ms"),
+                ref_rs_wm2=ref.get("rs_wm2"),
+            )
+        )
+    return out
+
+
+def _store_exposure_report(device_id: int, report: dict) -> None:
+    import json
+
+    try:
+        _redis().set(
+            _EXPOSURE_REPORT_PREFIX + str(device_id),
+            json.dumps(report, default=str),
+            ex=EXPOSURE_REPORT_TTL_S,
+        )
+    except Exception:  # Redis down: the email path still works
+        logger.warning("station_exposure: cannot store report for %s", device_id)
+
+
+def stored_exposure_reports() -> list[dict]:
+    """Latest report per station (for the admin monitoring page)."""
+    import json
+
+    try:
+        r = _redis()
+        keys = sorted(r.scan_iter(_EXPOSURE_REPORT_PREFIX + "*"))
+        return [json.loads(v) for v in r.mget(keys) if v] if keys else []
+    except Exception:
+        logger.warning("station_exposure: redis unavailable for reports")
+        return []
+
+
+def check_station_exposure() -> dict:
+    """Beat job: flag weather stations that look sheltered (see section doc)."""
+    from agri.core.station_exposure import (
+        STATUS_SHELTERED,
+        STATUS_SUSPECT,
+        assess_station_exposure,
+    )
+    from apps.sensors.forecast_provider import fetch_openmeteo_hourly_reference
+
+    from fastapp.sector_insights import zone_point
+
+    s = get_settings()
+    end = _utcnow().replace(minute=0, second=0, microsecond=0)
+    start = end - datetime.timedelta(hours=EXPOSURE_WINDOW_HOURS)
+    results: dict[str, str] = {}
+    alerted: list[str] = []
+
+    with session_scope() as session:
+        for dev in _station_devices(session, start, end):
+            label = dev.name or dev.serial or f"device {dev.device_id}"
+            point = zone_point(session, dev.zone_id, dev.user_id)
+            if point is None:
+                results[label] = "no_location"
+                continue
+            station = {
+                field: _hourly_means(session, table, dev.device_id, start, end)
+                for field, table in _EXPOSURE_TABLES.items()
+            }
+            reference = fetch_openmeteo_hourly_reference(
+                start=start.date(),
+                end=end.date(),
+                latitude=point[0],
+                longitude=point[1],
+            )
+            if not reference:
+                results[label] = "no_reference"
+                continue
+            report = assess_station_exposure(_exposure_hours(station, reference))
+            results[label] = report.status
+            _store_exposure_report(
+                dev.device_id,
+                {
+                    "device_id": dev.device_id,
+                    "device": label,
+                    "zone_id": dev.zone_id,
+                    "user_id": dev.user_id,
+                    "checked_at": end.isoformat(),
+                    "window_hours": EXPOSURE_WINDOW_HOURS,
+                    **report.as_dict(),
+                },
+            )
+            if report.status not in (STATUS_SHELTERED, STATUS_SUSPECT):
+                continue
+            recipients = s.ops_alert_emails_list
+            ttl = EXPOSURE_RENOTIFY_DAYS * 86400
+            try:
+                claimed = bool(
+                    _redis().set(
+                        _EXPOSURE_ALERT_PREFIX + str(dev.device_id), 1, nx=True, ex=ttl
+                    )
+                )
+            except Exception:
+                logger.warning("station_exposure: redis unavailable, not alerting")
+                claimed = False
+            if not recipients or not claimed:
+                continue
+            lines = [
+                "- " + _SIGNAL_TEXT[sig.code].format(**sig.detail)
+                for sig in report.signals
+                if sig.code in _SIGNAL_TEXT
+            ]
+            subject = f"[Agrogo ops] Weather station {label} looks {report.status}"
+            body = (
+                f"Station {label} (zone {dev.zone_id}) does not seem to measure the "
+                f"field. Compared with outdoor weather at the farm over the last "
+                f"{EXPOSURE_WINDOW_HOURS} h ({report.hours_compared} hours):\n"
+                + "\n".join(lines)
+                + "\n\nA station in a closed, dark or sheltered spot sends readings "
+                "that are not the field's: ET0, VPD and temperature alerts built on "
+                "them are off. Move it outdoors, in the open, about 2 m high.\n\n"
+                f"You will be reminded every {EXPOSURE_RENOTIFY_DAYS} days while "
+                "it stays like this."
+            )
+            sent = sum(
+                _send_email(to=r, subject=subject, body=body) for r in recipients
+            )
+            logger.warning(
+                "station_exposure: %s %s (%s), emailed %d",
+                label,
+                report.status,
+                ", ".join(report.codes),
+                sent,
+            )
+            alerted.append(label)
+
+    return {"checked_at": end.isoformat(), "stations": results, "alerted": alerted}

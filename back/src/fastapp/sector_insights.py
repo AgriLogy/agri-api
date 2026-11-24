@@ -266,6 +266,42 @@ def _soil_moisture(
 
 
 # ---------------------------------------------------------------- insights
+def farm_point(session: Session, user_id: int) -> tuple[float, float] | None:
+    """The account's farm location (``latitude``/``longitude``), if set."""
+    owner = session.execute(
+        select(CustomUserCustomuser.latitude, CustomUserCustomuser.longitude).where(
+            CustomUserCustomuser.id == user_id
+        )
+    ).first()
+    if owner is None or not owner.latitude or not owner.longitude:
+        return None
+    return float(owner.latitude), float(owner.longitude)
+
+
+def zone_point(
+    session: Session, zone_id: int | None, user_id: int
+) -> tuple[float, float] | None:
+    """``(lat, lon)`` for a zone's weather: its sector shape, else a zone
+    station, else the account's farm location."""
+    zone = (
+        session.scalars(
+            select(AnalyticsZone).where(
+                AnalyticsZone.id == zone_id, AnalyticsZone.user_id == user_id
+            )
+        ).first()
+        if zone_id
+        else None
+    )
+    sector = (
+        load_sector(session, zone.sector_id, user_id)
+        if zone is not None and getattr(zone, "sector_id", None)
+        else None
+    )
+    return sector_coordinates(
+        (sector or {}).get("geometry"), [zone] if zone is not None else []
+    ) or farm_point(session, user_id)
+
+
 def zone_balance(
     session: Session,
     zone_id: int,
@@ -293,16 +329,6 @@ def zone_balance(
         else None
     )
     alone = sector is not None and len(_zones(session, zone.sector_id, user_id)) == 1
-    owner = session.execute(
-        select(CustomUserCustomuser.latitude, CustomUserCustomuser.longitude).where(
-            CustomUserCustomuser.id == user_id
-        )
-    ).first()
-    farm_point = (
-        (float(owner.latitude), float(owner.longitude))
-        if owner is not None and owner.latitude and owner.longitude
-        else None
-    )
     return balance_for_zones(
         session,
         [zone],
@@ -310,7 +336,7 @@ def zone_balance(
         area_ha=sector.get("area_ha") if alone else None,
         today=today or _today(),
         lang=lang,
-        fallback_coords=farm_point,  # the account's farm location
+        fallback_coords=farm_point(session, user_id),
     )
 
 
