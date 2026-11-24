@@ -1,6 +1,37 @@
 # CHANGELOG
 
 
+## v1.145.2 (2026-11-24)
+
+### Bug Fixes
+
+- **weather**: Retry Open-Meteo once and serve the last good answer during an outage
+  ([#517](https://github.com/AgriLogy/agri-api/pull/517),
+  [`c565e9f`](https://github.com/AgriLogy/agri-api/commit/c565e9ff8743ff3e6f27298d5657eb8b955d95b4))
+
+Closes #516
+
+**Seen in prod on 24 Nov:** one Open-Meteo call from the droplet hit a 15 s TLS handshake timeout,
+  and the next ones were fine. During such a blip the sector advice showed `no_weather`, and the
+  forecast layer and ET₀ graph switched to **mock** data.
+
+- New `_fetch_json` retries **once** on a network error or timeout (payload errors aren't retried).
+  - If the retry also fails, both `_openmeteo_forecast` and `fetch_openmeteo_daily_water` serve the
+  cached answer for the same spot and window when it's **under 24 h old** (`OPENMETEO_STALE_MAX_S`),
+  and log a warning. Past that age, the behaviour is unchanged: mock data for the forecast, an empty
+  result (`no_weather`) for the water balance.
+
+**Tests** (in `test_openmeteo_forecast_provider.py`): - one failure followed by success gives real
+  data with 2 calls; - an outage past the TTL serves the cached forecast (labelled `open-meteo`, and
+  the retry was tried); - an outage past 24 h falls back to mock; - the daily-water fetch serves its
+  cache during an outage, then returns empty past 24 h.
+
+The provider, NDVI-phase-3 and old Open-Meteo test files pass 47/47 locally on Postgres 16. Existing
+  behaviour is unchanged (the mock-fallback parametrised tests still pass).
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+
 ## v1.145.1 (2026-11-24)
 
 ### Bug Fixes
