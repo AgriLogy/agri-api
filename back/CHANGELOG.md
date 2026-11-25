@@ -1,6 +1,41 @@
 # CHANGELOG
 
 
+## v1.151.1 (2026-11-25)
+
+### Bug Fixes
+
+- **assistant**: Tell the model when Darija is typed in Latin letters
+  ([#551](https://github.com/AgriLogy/agri-api/pull/551),
+  [`bb7fc81`](https://github.com/AgriLogy/agri-api/commit/bb7fc8137e7cd025b38b8fbdc34f8561189ea57d))
+
+Closes #549
+
+**Problem:** after #548 the system prompt asks for a Latin-letter answer to Darija typed in Latin
+  letters, but on gpt-oss-20b 6 of 7 `ary_lat` eval cases still came back in Arabic script.
+
+**Change** - `prompt.latin_darija(text)` spots Darija typed in Latin letters. The text must contain
+  no Arabic letters and at least two signals: an Arabizi word (`ch7al`, `nsa9i`, `n3ti`, `7el`;
+  counts double) or a common Darija word (`wach`, `dyal`, `daba`, `khasni`…). - Letter+digit units
+  and codes are excluded (`m3`, `3h`, `30cm`, `co2`, `h2o`, `ph7`), so French or English with
+  numbers never triggers it. - `build_context(..., message=)` then adds an explicit line: answer in
+  Darija in Latin letters only, no Arabic script. - The line is added only when the language
+  preference is auto or Darija; a farmer who chose French, English or MSA keeps that language. -
+  `llm.py` passes the farmer's message through.
+
+**Tests** — `test_assistant_prompt.py` (52 cases): - every one of the 35 eval questions is
+  classified by script; only `ary_lat` triggers; - positives: uppercase text, a Darija word next to
+  `m3`; - negatives: French and English with numbers and units, greetings, Arabic script with one
+  Latin word; - the context line follows the language preference. - Assistant suites: 122 passed.
+
+**Measured** on `--lang ary_lat` (gpt-oss-20b, real data, Groq free): - **5/7 pass, was 1/7**; - the
+  script check passes on **all 6** cases that ran (stale_readings only hit the Groq rate limit); -
+  the remaining fail (`irrigate_now`) is a different problem: no tool call. Covered by the full 120b
+  run, which can't start before ~21:00 UTC because of the daily quota.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+
 ## v1.151.0 (2026-11-25)
 
 ### Features
