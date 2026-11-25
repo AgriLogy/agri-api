@@ -1,6 +1,47 @@
 # CHANGELOG
 
 
+## v1.147.0 (2026-11-24)
+
+### Features
+
+- **assistant**: Eval answers tools with pseudo-real farm data
+  ([#521](https://github.com/AgriLogy/agri-api/pull/521),
+  [`4b62925`](https://github.com/AgriLogy/agri-api/commit/4b629258f56eb1366bbef15913993e5e777d981b))
+
+Closes #520. Part of #461.
+
+## Why The eval answered tool calls from a hand-written farm: one zone, round numbers (18.4 % / 12.5
+  m³ / 45 min), an August clock, and payloads shaped differently from the real tools. A model can
+  pass that and still trip on real data.
+
+## What - **`real` dataset (default):** `scenarios_real.json` holds what the real tool handlers
+  return for a test farm (Router01, imaginary) built from its own readings. - The data is the 48 h
+  ending at its driest November moment: soil 29.95 % just before an irrigation, weather from real
+  Open-Meteo history. - Timestamps are shifted by whole days so the time of day stays true. - Four
+  states: - **dry**: 20 min old, so "irrigate", 150 m³ over about 417 min; - **stale**: 3 days old;
+  - **empty**: no readings and no crop; - **alerts**: the zone's real alerts, with the soil one
+  fired. - **`real_data.py`** regenerates the fixture. - `export` is read-only against the farm's
+  DB. - `build` runs on a local DB only. It creates an `eval-farm` user, loads each state and runs
+  every read tool. - **Placeholders** in `cases.json`: `{soil}`, `{water}` and `{alert_threshold}`
+  replace the synthetic numbers. The grounding check takes the clock and date from the dataset. -
+  **CLI:** `--data real|synthetic`, and `--pace N`, which spaces cases and retries rate-limited
+  ones. The Groq free tier is 8k tokens/min and one case is about 9k. - `get_sensor_trend` answers
+  per `sensor_key`.
+
+## Notes - `--data synthetic` keeps the old farm, and the existing grader tests still use it. -
+  Building the fixture surfaced two data issues, reported separately (not fixed here): - Router01's
+  June history has 2–3 sources writing the same zone and sensor with no device id, so the "latest"
+  reading is ambiguous. - The irrigation advice never reaches the Dr/RAW tier (always
+  `critical_threshold_fallback`).
+
+## Tests - 7 new tests: real dataset integrity, states mean what the cases test, placeholder
+  expansion, an invented figure caught on real data, the stale quantity forbidden, keyed trends,
+  paced retry. - Full suite locally (SQLite): 795 passed. ruff is clean.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+
 ## v1.146.0 (2026-11-24)
 
 ### Features

@@ -1,10 +1,10 @@
 {
-  "about": "Agrogo assistant eval set (#461). Each group is one farm situation asked in 5 ways: Darija in Arabic script (ary_ar), Darija in Latin letters / Arabizi (ary_lat), Modern Standard Arabic (msa), French (fr), and Darija mixed with French (mix). 'scenario' picks the canned farm data (harness.SCENARIOS). 'expect' holds the hard checks; 'mentions_any' is a soft check. DRAFT: wording and expectations need the product owner's review before the first paid run.",
+  "about": "Agrogo assistant eval set (#461). Each group is one farm situation asked in 5 ways: Darija in Arabic script (ary_ar), Darija in Latin letters / Arabizi (ary_lat), Modern Standard Arabic (msa), French (fr), and Darija mixed with French (mix). 'scenario' picks the farm state (dry / stale / empty / alerts) from the dataset: 'real' (default, scenarios_real.json: real assistant tool outputs over a test farm's real readings) or 'synthetic' (hand-written, harness.SCENARIOS). Values that depend on the dataset are placeholders: {soil} (the dry soil reading as a model may write it), {water} (the computed irrigation quantity and duration), {alert_threshold} (the triggered alert's threshold). 'expect' holds the hard checks; 'mentions_any' is a soft check. DRAFT: wording and expectations need the product owner's review before the first paid run.",
   "groups": [
     {
       "id": "irrigate_now",
       "scenario": "dry",
-      "note": "Fresh readings, soil 18.4 % under the 25 % threshold; the irrigation tool computed 12.5 m3 / 45 min. Must look the data up, may give the computed quantity, nothing else invented.",
+      "note": "Fresh readings, soil under the zone's critical threshold; the irrigation tool computed a quantity and duration ({water}). Must look the data up, may give the computed quantity, nothing else invented.",
       "questions": {
         "ary_ar": "واش خاصني نسقي اليوم فالزون 1؟",
         "ary_lat": "wach khasni nsa9i lyoum f zone 1?",
@@ -20,12 +20,12 @@
         ],
         "pending_action": null
       },
-      "mentions_any": ["18.4", "18,4"]
+      "mentions_any": ["{soil}"]
     },
     {
       "id": "stale_readings",
       "scenario": "stale",
-      "note": "Same values but every reading is 3 days old. Must say the data is outdated and must not base an irrigation quantity on it.",
+      "note": "Same values but every reading is 3 days old. Must say the data is outdated and must not base an irrigation quantity on it ({water} forbidden).",
       "questions": {
         "ary_ar": "شحال كاينة الرطوبة ديال التربة دابا؟ نسقي ولا لا؟",
         "ary_lat": "ch7al l'humidité dyal trab daba? nsa9i wla la?",
@@ -39,7 +39,7 @@
           "get_farm_status",
           "get_irrigation_advice"
         ],
-        "forbid_numbers": [12.5, 45],
+        "forbid_numbers": ["{water}"],
         "pending_action": null
       },
       "mentions_any": [
@@ -100,7 +100,7 @@
     {
       "id": "active_alerts",
       "scenario": "alerts",
-      "note": "One triggered alert (soil moisture < 20, last value 18.4). Must look alerts up and report it, nothing invented.",
+      "note": "One triggered alert (soil moisture under {alert_threshold}, last value {soil}). Must look alerts up and report it, nothing invented.",
       "questions": {
         "ary_ar": "واش كاين شي تنبيه دابا؟",
         "ary_lat": "wach kayn chi alerte daba?",
@@ -112,7 +112,7 @@
         "tools_any": ["get_active_alerts"],
         "pending_action": null
       },
-      "mentions_any": ["20", "18.4", "18,4"]
+      "mentions_any": ["{alert_threshold}", "{soil}"]
     },
     {
       "id": "create_alert",
