@@ -111,6 +111,9 @@ ET_FORECAST_PROVIDER=openmeteo
 ET0_OPENMETEO=on
 # OPENMETEO_TIMEOUT_S=4.0
 # OPENMETEO_FORECAST_TTL_S=1800
+# Extra Open-Meteo addresses (comma-separated IPs) tried when the normal call
+# fails on the network. TLS is still checked against api.open-meteo.com (#550).
+# OPENMETEO_FALLBACK_ADDRESSES=
 
 # Satellite NDVI (Copernicus Data Space). OAuth client from
 # https://shapps.dataspace.copernicus.eu/dashboard/#/account/settings

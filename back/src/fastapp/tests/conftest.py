@@ -188,3 +188,14 @@ def mqtt_publish(mqtt_broker):
 
     pub.loop_stop()
     pub.disconnect()
+
+
+@pytest.fixture(autouse=True)
+def _no_openmeteo_dns(monkeypatch):
+    """No test resolves Open-Meteo for real: the fallback-address retry (#550)
+    would otherwise reach the network whenever a test makes ``urlopen`` fail.
+    Tests of the retry patch these back themselves."""
+    import apps.sensors.forecast_provider as provider
+
+    monkeypatch.setattr(provider, "_resolved_addresses", lambda host, port: [])
+    monkeypatch.delenv(provider._FALLBACK_ADDRESSES_ENV, raising=False)
