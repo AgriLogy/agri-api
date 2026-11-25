@@ -190,6 +190,7 @@ class LLMOrchestrator:
                     language=language,
                     zone=zone,
                     page=context,
+                    message=message,
                 ),
                 history=clean_history(history),
                 message=message,

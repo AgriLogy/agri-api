@@ -9,6 +9,7 @@ selected zone, the page, the farmer's language preference) goes in
 from __future__ import annotations
 
 import datetime
+import re
 
 LANGUAGES = {
     "auto": "",
@@ -99,12 +100,55 @@ for key values, bullet lists when they help.
 """
 
 
+# Darija written in Latin letters ("Arabizi"). The prompt already asks for a
+# Latin-letter answer, but models often switch to Arabic script anyway (#549),
+# so the server spots these messages and says it again in the request context.
+_ARABIC = re.compile(r"[\u0600-\u06ff\u0750-\u077f\ufb50-\ufdff\ufe70-\ufeff]")
+_WORD = re.compile(r"[a-z0-9\u00c0-\u017f']+")
+# A word mixing letters with the digits Arabizi uses for Arabic sounds
+# (2=ء 3=ع 5=خ 7=ح 8=ه 9=ق): ch7al, nsa9i, n3ti, 7el, l7ajiyat.
+_ARABIZI = re.compile(r"(?=.*[a-z])(?=.*[235789])[a-z235789']{2,}")
+# Units and codes that also mix letters and digits (m3, 2h, co2, 30cm).
+_NOT_ARABIZI = re.compile(r"^(\d+([a-z]{1,3}|h\d*)|[a-z]{1,2}\d|h2o|co2|ph\d*)$")
+# Frequent Darija words, chosen not to collide with French or English.
+_DARIJA_WORDS = frozenset(
+    """wach wash chno chnou chnu ch7al chhal kifach kifash 3lach imta mnin
+    khas khass khasni khassni khasek khassek khassna khasna bghit bghina
+    dyal dial diali dyali dyalk dyalek daba lyoum lyom ghda lbare7 lbareh
+    hadi hada hadchi kayn kayna kaynin makaynch makayn mzyan mzyana bzaf
+    chwiya lma wla ila lia liya lik nta nti howa hiya homa ndir dir dirlia
+    n9der nqder nsqi nsa9i nsaqi tsqi sqi trab zitoun zitoune simana sif
+    chi bach 7ta 7tta walakin hit 7it ach""".split()
+)
+
+
+def latin_darija(text: str | None) -> bool:
+    """True when ``text`` looks like Moroccan Darija typed in Latin letters.
+
+    No Arabic letters at all, and at least two signals: Arabizi words (count
+    double) or common Darija words. French or English alone scores 0 or 1.
+    """
+    if not text or _ARABIC.search(text):
+        return False
+    score = 0
+    for word in _WORD.findall(text.lower()):
+        word = word.strip("'")
+        if word in _DARIJA_WORDS:
+            score += 1
+        elif _ARABIZI.fullmatch(word) and not _NOT_ARABIZI.match(word):
+            score += 2
+        if score >= 2:
+            return True
+    return False
+
+
 def build_context(
     *,
     now: datetime.datetime,
     language: str | None,
     zone: dict | None,
     page: str | None,
+    message: str | None = None,
 ) -> str:
     """Per-request facts the model needs. Never cached."""
     lines = [
@@ -115,6 +159,13 @@ def build_context(
     label = LANGUAGES.get(language or "auto", "")
     if label:
         lines.append(f"- The farmer chose to be answered in: {label}.")
+    if language in (None, "auto", "ary") and latin_darija(message):
+        lines.append(
+            "- The farmer's last message is Moroccan Darija written in Latin "
+            "letters. Answer in Darija in Latin letters only (digits like 3, 7, "
+            "9 for Arabic sounds are fine). Do not use Arabic script anywhere "
+            "in the answer."
+        )
     if zone:
         lines.append(
             f'- The farmer selected zone "{zone.get("name", "")}" (zone_id '
