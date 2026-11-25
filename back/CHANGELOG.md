@@ -1,6 +1,39 @@
 # CHANGELOG
 
 
+## v1.147.1 (2026-11-25)
+
+### Bug Fixes
+
+- **assistant**: No invented figures, Darija answered in the farmer's script, ask when the crop is
+  missing ([#548](https://github.com/AgriLogy/agri-api/pull/548),
+  [`dba63b9`](https://github.com/AgriLogy/agri-api/commit/dba63b9aafecfd83131341606ecc08a458a4ce30))
+
+Closes #539. **Stacked on #521** (eval data): merge #521 first. **Draft** until the eval re-run
+  confirms the fix.
+
+**Eval before (Groq gpt-oss-120b, pseudo-real farm data): 16/35.** - 13 answers added figures that
+  are in no tool result (e.g. "4–6 mm/day"), and one cited a knowledge article that was never
+  returned. Prod's knowledge base was empty. - 6 answers to Darija written in Latin letters came
+  back in Arabic script. - 3 answers for a zone without a crop didn't ask a follow-up question.
+
+**Prompt changes** (`assistant/prompt.py`): - Every number must come from a tool result, the
+  farmer's message or a returned knowledge article. No "typical" figures. - Never name an article
+  that wasn't returned. Without articles: guidance in words only, say so, and refer to an
+  agronomist. - Darija in Latin letters gets an answer in Latin letters (with examples). Mixed
+  Arabic-script Darija and French stays in Arabic-script Darija. - Missing inputs: end with one or
+  two targeted questions; always when the zone has no crop.
+
+**Grader** (`eval/harness.py`): "144 638" (space, no-break or narrow no-break space) is one number,
+  not two. A unit test was added.
+
+Tests: `test_assistant_eval.py` and `test_assistant_llm.py`: 50 passed.
+
+ruff clean. Eval re-run: results will be added here.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+
 ## v1.147.0 (2026-11-24)
 
 ### Features
