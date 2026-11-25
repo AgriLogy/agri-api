@@ -20,9 +20,12 @@ a real forecast for synthetic numbers.
 
 from __future__ import annotations
 
+import http.client
 import json
 import logging
 import os
+import socket
+import ssl
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -67,17 +70,114 @@ _STALE_MAX_S = float(os.getenv("OPENMETEO_STALE_MAX_S", "86400"))
 _FETCH_ATTEMPTS = 2  # one retry, on network errors only
 
 
+# Open-Meteo's DNS sometimes hands the production server a node that stops
+# completing TLS handshakes while another node still answers (#550). When the
+# normal call fails on the network, the same request is tried once on each
+# OTHER address of the host: the ones DNS returns, then any configured in
+# ``OPENMETEO_FALLBACK_ADDRESSES`` (comma-separated IPs). TLS is still verified
+# against the real host name, so a fallback address cannot serve a forged
+# answer.
+_FALLBACK_ADDRESSES_ENV = "OPENMETEO_FALLBACK_ADDRESSES"
+
+
+def _configured_fallbacks() -> list[str]:
+    raw = os.getenv(_FALLBACK_ADDRESSES_ENV, "")
+    return [part.strip() for part in raw.split(",") if part.strip()]
+
+
+def _resolved_addresses(host: str, port: int) -> list[str]:
+    """Every address DNS gives for ``host``, in DNS order, without repeats."""
+    try:
+        infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    except OSError:
+        return []
+    out: list[str] = []
+    for info in infos:
+        address = info[4][0]
+        if address not in out:
+            out.append(address)
+    return out
+
+
+def _alternate_addresses(host: str, port: int) -> list[str]:
+    """Addresses to try after the normal call failed.
+
+    DNS order is kept, but its FIRST answer is dropped: that is the node the
+    normal call most likely just failed on. Configured fallbacks come after.
+    """
+    resolved = _resolved_addresses(host, port)
+    out = resolved[1:]
+    for address in _configured_fallbacks():
+        if address not in out:
+            out.append(address)
+    return out
+
+
+class _AddressHTTPSConnection(http.client.HTTPSConnection):
+    """HTTPS to one chosen address; SNI, Host header and the certificate check
+    all still use the real host name."""
+
+    def __init__(self, host: str, address: str, **kwargs):
+        super().__init__(host, **kwargs)
+        self._address = address
+
+    def connect(self) -> None:
+        sock = socket.create_connection((self._address, self.port), self.timeout)
+        self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
+
+
+def _fetch_json_at(url: str, user_agent: str, address: str) -> dict:
+    """GET ``url`` as JSON from one specific address of its host."""
+    parts = urllib.parse.urlsplit(url)
+    path = parts.path + (f"?{parts.query}" if parts.query else "")
+    conn = _AddressHTTPSConnection(
+        parts.hostname,
+        address,
+        port=parts.port or 443,
+        timeout=_OPENMETEO_TIMEOUT_S,
+        context=ssl.create_default_context(),
+    )
+    try:
+        conn.request("GET", path, headers={"User-Agent": user_agent})
+        resp = conn.getresponse()
+        body = resp.read()
+        if resp.status != 200:
+            raise urllib.error.HTTPError(
+                url, resp.status, resp.reason, resp.headers, None
+            )
+        return json.loads(body.decode("utf-8"))
+    finally:
+        conn.close()
+
+
 def _fetch_json(url: str, user_agent: str) -> dict:
-    """GET ``url`` as JSON, retrying once on a network error or timeout."""
+    """GET ``url`` as JSON, retrying once on a network error or timeout, then
+    once on each other address of the host (#550). An HTTP error answer is
+    returned at once: the node is up, a retry elsewhere will not change it."""
     last: Exception | None = None
     for _ in range(_FETCH_ATTEMPTS):
         try:
             req = urllib.request.Request(url, headers={"User-Agent": user_agent})
             with urllib.request.urlopen(req, timeout=_OPENMETEO_TIMEOUT_S) as resp:
                 return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError:
+            raise
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             last = exc
     assert last is not None
+    parts = urllib.parse.urlsplit(url)
+    for address in _alternate_addresses(parts.hostname or "", parts.port or 443):
+        try:
+            payload = _fetch_json_at(url, user_agent, address)
+        except urllib.error.HTTPError:
+            raise
+        except (urllib.error.URLError, TimeoutError, OSError, ssl.SSLError) as exc:
+            last = exc
+            continue
+        logger.warning(
+            "Open-Meteo answered from fallback address %s after: %s", address, last
+        )
+        return payload
     raise last
 
 
@@ -477,11 +577,7 @@ def fetch_openmeteo_et0(
     )
     url = f"{_OPENMETEO_URL}?{query}"
     try:
-        req = urllib.request.Request(
-            url, headers={"User-Agent": "agri-api/et0-forecast"}
-        )
-        with urllib.request.urlopen(req, timeout=_OPENMETEO_TIMEOUT_S) as resp:
-            payload = json.loads(resp.read().decode("utf-8"))
+        payload = _fetch_json(url, "agri-api/et0-forecast")
         daily = payload.get("daily") or {}
         dates = daily.get("time") or []
         values = daily.get("et0_fao_evapotranspiration") or []
