@@ -480,6 +480,49 @@ def record_advice_decision(**kwargs: Any) -> None:
     record_irrigation_decision_standalone(row)
 
 
+#: Sources that re-evaluate on a timer rather than on a person's request. The
+#: proactive scan asks every 10 minutes (~720 times a day per farmer) and the
+#: answer rarely changes, so for these only a CHANGE of decision is recorded
+#: (#546). A farmer's own question is always recorded: it is an event.
+REPEATING_SOURCES = frozenset({"proactive"})
+
+_LATEST_SAME_DAY_DECISION = text(
+    f"SELECT irrigate, reason, volume_m3 FROM {IRRIGATION_DECISION_TABLE} "
+    "WHERE user_id = :user_id AND zone_id = :zone_id AND source = :source "
+    "AND decision_date = :decision_date "
+    "ORDER BY decided_at DESC, id DESC LIMIT 1"
+)
+
+
+def _volume_key(value: Any) -> float:
+    """Volumes compared to 0.1 m³: a drift in the last digit is not a new
+    decision."""
+    return round(_float(value) or 0.0, 1)
+
+
+def repeats_latest_decision(session: Any, row: dict[str, Any]) -> bool:
+    """True when ``row`` says the same thing as the latest row already recorded
+    for its user, zone and source on the same day — same outcome, same reason,
+    same volume. A new day always records, so every day keeps at least one
+    row."""
+    latest = session.execute(
+        _LATEST_SAME_DAY_DECISION,
+        {
+            "user_id": row["user_id"],
+            "zone_id": row["zone_id"],
+            "source": row["source"],
+            "decision_date": row["decision_date"],
+        },
+    ).first()
+    if latest is None:
+        return False
+    return (
+        bool(latest.irrigate) == bool(row["irrigate"])
+        and (latest.reason or "") == (row["reason"] or "")
+        and _volume_key(latest.volume_m3) == _volume_key(row["volume_m3"])
+    )
+
+
 def record_irrigation_decision_standalone(row: dict[str, Any]) -> None:
     """Append one decision row in its OWN committed transaction.
 
@@ -487,9 +530,17 @@ def record_irrigation_decision_standalone(row: dict[str, Any]) -> None:
     advice inside ``session_scope()`` without commit): opening a short write
     scope here keeps the recommendation path untouched. Never raises — the
     session bring-up is inside the wrapper too.
+
+    A row from a :data:`REPEATING_SOURCES` caller that repeats the latest
+    same-day decision is skipped.
     """
     with best_effort("irrigation decision"):
         with session_scope(commit=True) as session:
+            if row.get("source") in REPEATING_SOURCES:
+                if not irrigation_decisions_available(session):
+                    return
+                if repeats_latest_decision(session, row):
+                    return
             record_irrigation_decision(session, row)
 
 
@@ -497,6 +548,7 @@ __all__ = [
     "ALERT_EVENT_COLUMNS",
     "IRRIGATE_REASONS",
     "IRRIGATION_DECISION_COLUMNS",
+    "REPEATING_SOURCES",
     "best_effort",
     "build_alert_event_row",
     "build_decision_row_from_advice",
@@ -506,4 +558,5 @@ __all__ = [
     "record_notification_decision",
     "record_irrigation_decision",
     "record_irrigation_decision_standalone",
+    "repeats_latest_decision",
 ]

@@ -533,6 +533,60 @@ def test_record_irrigation_decision_never_raises_when_the_insert_fails(
     assert "failed to record irrigation decision" in caplog.text
 
 
+class _LatestSession:
+    """Answers the same-day lookup with ``latest`` (None = no row yet)."""
+
+    def __init__(self, latest):
+        self.latest = latest
+
+    def execute(self, statement, params=None):
+        return SimpleNamespace(first=lambda: self.latest)
+
+
+def _proactive_row(**advice):
+    return history.build_decision_row_from_advice(
+        user_id=1, zone_id=2, source="proactive", advice={**_ADVICE, **advice}
+    )
+
+
+def test_a_first_decision_of_the_day_is_never_a_repeat():
+    assert (
+        history.repeats_latest_decision(_LatestSession(None), _proactive_row()) is False
+    )
+
+
+def test_the_same_outcome_reason_and_volume_is_a_repeat():
+    row = _proactive_row()
+    latest = SimpleNamespace(
+        irrigate=row["irrigate"],
+        reason=row["reason"],
+        volume_m3=row["volume_m3"] + 0.01,
+    )
+    assert history.repeats_latest_decision(_LatestSession(latest), row) is True
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"irrigate": "flip"},
+        {"reason": "other_reason"},
+        {"volume_m3": 5.0},
+    ],
+)
+def test_a_changed_outcome_reason_or_volume_is_recorded(change):
+    row = _proactive_row()
+    latest = SimpleNamespace(
+        irrigate=row["irrigate"], reason=row["reason"], volume_m3=row["volume_m3"]
+    )
+    if "irrigate" in change:
+        latest.irrigate = not row["irrigate"]
+    if "reason" in change:
+        latest.reason = change["reason"]
+    if "volume_m3" in change:
+        latest.volume_m3 = row["volume_m3"] + change["volume_m3"]
+    assert history.repeats_latest_decision(_LatestSession(latest), row) is False
+
+
 def test_record_advice_decision_never_raises_when_the_session_is_dead(
     monkeypatch, caplog
 ):
@@ -1018,6 +1072,43 @@ def test_the_proactive_scan_labels_its_own_decisions(history_api):
     if has_tables:
         (decision,) = _decisions(engine)
         assert decision.source == "proactive"
+
+
+@_requires_pg
+def test_the_proactive_scan_records_only_a_change_of_decision(history_api):
+    """#546 — the scan asks every 10 minutes; an unchanged answer adds no row."""
+    _client, has_tables, engine, _ = history_api
+    _seed_soil_moisture(engine, 12.0)
+
+    for _ in range(3):
+        assert _advise("proactive")["recommendation"] == "irrigate"
+
+    if not has_tables:
+        return
+    assert [d.irrigate for d in _decisions(engine)] == [True]
+
+    _seed_soil_moisture(engine, 35.0)  # rain: the zone is now wet enough
+    assert _advise("proactive")["recommendation"] == "hold"
+    _advise("proactive")
+
+    assert [d.irrigate for d in _decisions(engine)] == [True, False]
+
+
+@_requires_pg
+def test_a_farmers_own_question_is_always_recorded(history_api):
+    _client, has_tables, engine, _ = history_api
+    _seed_soil_moisture(engine, 12.0)
+
+    _advise("proactive")
+    _advise()
+    _advise()
+
+    if has_tables:
+        assert [d.source for d in _decisions(engine)] == [
+            "proactive",
+            "assistant",
+            "assistant",
+        ]
 
 
 @_requires_pg
