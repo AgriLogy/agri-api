@@ -1,6 +1,50 @@
 # CHANGELOG
 
 
+## v1.151.0 (2026-11-25)
+
+### Features
+
+- **assistant**: Voice questions with Whisper on Groq
+  ([#533](https://github.com/AgriLogy/agri-api/pull/533),
+  [`814b39c`](https://github.com/AgriLogy/agri-api/commit/814b39c78eed6ca4f63286dc45de72b5eccbffff))
+
+Closes #532. **Stacked on #529** (per-provider keys): merge #529 first.
+
+**What it does:** the chat's microphone records the question, the server transcribes it with
+  **Whisper on Groq**, and the text goes into the chat like a typed message.
+
+**Endpoints:** - `POST /assistant/transcribe` (any logged-in user): multipart `file`, plus optional
+  `language` (the chat language). - Accepts webm, ogg, mp4/m4a, mpeg, wav and flac; at most 10 MB
+  and 120 s. - Sends the farm-vocabulary prompt to Whisper and returns `{text, language, duration_s,
+  model}`. **Nothing is stored.** - Errors: 503 when voice isn't set up, 400 for an empty file, 413
+  when too large or too long, 415 for an unsupported type, 429 when rate-limited, 502 when the
+  provider fails (`error_kind` says which). - `GET /assistant/voice` returns `{active,
+  max_seconds}`. The web app uses the browser's own recognition when voice isn't active. - `PUT
+  /admin/assistant/voice` (admin) sets `{enabled, model: whisper-large-v3 | whisper-large-v3-turbo,
+  language: auto | ar | fr | en}`. - With `auto`, it follows the farmer's chat language: Darija and
+  Arabic → `ar`, otherwise Whisper detects. - Uses the **Groq key saved for provider Groq** on the
+  same page, whichever provider runs the chat. It can't be enabled without that key. - `GET
+  /admin/assistant/config` gains `voice`. Saving the LLM settings keeps the voice block. -
+  **nginx:** a new `location = /assistant/transcribe` with `client_max_body_size 12m` (prod +
+  staging).
+
+**Tests:** `test_assistant_voice.py` (8, through an httpx MockTransport): - the saved key, model,
+  prompt and file are sent, and the key is never returned; - the language rules; - not configured /
+  disabled → 503; - bad uploads are rejected before calling Groq; - provider errors (401, 429, too
+  long); - admin validation and access; login required.
+
+Together with `test_assistant_llm.py`: 47 passed. ruff clean.
+
+**Live check with the real Groq API** (synthetic voices from macOS `say`, ~0.5 s per call): -
+  French: "Est-ce que je dois ouvrir la vanne du secteur nord aujourd'hui ?" was transcribed exactly
+  by both models. - Darija (read by an MSA voice): "شحال خاصني نسقي الزيتون هاد السيمانة" came back
+  as "شحالة خاصني نسق الزيتون هاد السيمانة". The meaning is kept. Real farmer recordings are still
+  to be tried.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+
 ## v1.150.0 (2026-11-25)
 
 ### Features
