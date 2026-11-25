@@ -1,6 +1,32 @@
 # CHANGELOG
 
 
+## v1.148.0 (2026-11-25)
+
+### Features
+
+- **rbac**: Editors can delete their own sectors
+  ([#527](https://github.com/AgriLogy/agri-api/pull/527),
+  [`9b45709`](https://github.com/AgriLogy/agri-api/commit/9b45709e717ada475f1c80985dd967d1ef6f52ee))
+
+Closes #526.
+
+Deleting a sector only unassigns its zones (zones and their data stay), so it moves from the
+  **admin** tier to the **editor** tier, next to the other sector writes.
+
+- `DELETE /sectors/{pk}`: `require_level("editor")`. Still owner-scoped (404 on someone else's
+  sector) and still blocked for technicians and monitors (403). - Tests: editors now get 200 on
+  their own sector; monitors still 403; the sector CRUD fixtures run as editors. - Also fixes the
+  farm map: its delete tool was already editor-gated in the web app, so editors hit a 403.
+
+Web side: AgriLogy/agri-web (FarmMain delete button gated on canEdit).
+
+Local: `test_access_level_rbac`, `test_sectors`, `test_sector_geometry` → 35 passed; ruff
+  check/format clean.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+
 ## v1.147.1 (2026-11-25)
 
 ### Bug Fixes
