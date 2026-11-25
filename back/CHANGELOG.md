@@ -1,6 +1,34 @@
 # CHANGELOG
 
 
+## v1.151.2 (2026-11-25)
+
+### Bug Fixes
+
+- **history**: Record a proactive irrigation decision only when it changes
+  ([#553](https://github.com/AgriLogy/agri-api/pull/553),
+  [`894b8be`](https://github.com/AgriLogy/agri-api/commit/894b8be42b8c7524ee135f4efc1a55eae085b19e))
+
+Closes #546
+
+The proactive scan asks for irrigation advice every 10 minutes and saved a decision row every time:
+  about 720 rows per farmer per day, almost all identical.
+
+**Change** - For timer-driven sources (`proactive`), a row is skipped when it repeats the latest row
+  for the same user, zone and day: same outcome, same reason, same volume (to 0.1 m³). - A new day
+  always gets a row, so the daily report keeps at least one decision per zone. - A farmer's own
+  question in the chat (`assistant`) is always recorded. - Still best-effort: the lookup runs inside
+  the existing wrapper and never blocks the advice.
+
+**Tests** - Unit: first decision of the day, a repeat, and a change of outcome / reason / volume. -
+  Postgres, with and without the history table: three identical scans give one row; a change gives a
+  second; chat questions are all kept.
+
+Existing duplicate rows in production are not touched.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+
 ## v1.151.1 (2026-11-25)
 
 ### Bug Fixes
