@@ -176,14 +176,14 @@ def test_monitor_is_read_only(fast, monitor_user):
     assert fast.get("/sectors", headers=h).status_code == 200
     # create (editor tier) is refused
     assert fast.post("/sectors", json={"name": "Nord"}, headers=h).status_code == 403
-    # delete (admin tier) is refused — the tier gate precedes ownership, so a
+    # delete (editor tier) is refused — the tier gate precedes ownership, so a
     # non-existent id still 403s rather than 404s
     assert fast.delete("/sectors/1", headers=h).status_code == 403
 
 
-# --- editor: write yes, delete no, user-mgmt no ----------------------------
+# --- editor: write + delete own sectors yes, user-mgmt no ------------------
 @_requires_pg
-def test_editor_can_write_but_not_delete_or_manage_users(
+def test_editor_can_write_and_delete_sectors_but_not_manage_users(
     fast, editor_user, monitor_user
 ):
     h = _auth(editor_user)
@@ -191,8 +191,8 @@ def test_editor_can_write_but_not_delete_or_manage_users(
     assert created.status_code == 201, created.text
     sid = created.json()["id"]
 
-    # delete (admin tier) refused, even on the editor's own record
-    assert fast.delete(f"/sectors/{sid}", headers=h).status_code == 403
+    # deleting their own sector is allowed (#526): it only unassigns its zones
+    assert fast.delete(f"/sectors/{sid}", headers=h).status_code == 200
 
     # a user-management call (admin tier) refused
     resp = fast.post(

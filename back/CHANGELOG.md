@@ -1,6 +1,106 @@
 # CHANGELOG
 
 
+## v1.148.0 (2026-11-25)
+
+### Features
+
+- **rbac**: Editors can delete their own sectors
+  ([#527](https://github.com/AgriLogy/agri-api/pull/527),
+  [`9b45709`](https://github.com/AgriLogy/agri-api/commit/9b45709e717ada475f1c80985dd967d1ef6f52ee))
+
+Closes #526.
+
+Deleting a sector only unassigns its zones (zones and their data stay), so it moves from the
+  **admin** tier to the **editor** tier, next to the other sector writes.
+
+- `DELETE /sectors/{pk}`: `require_level("editor")`. Still owner-scoped (404 on someone else's
+  sector) and still blocked for technicians and monitors (403). - Tests: editors now get 200 on
+  their own sector; monitors still 403; the sector CRUD fixtures run as editors. - Also fixes the
+  farm map: its delete tool was already editor-gated in the web app, so editors hit a 403.
+
+Web side: AgriLogy/agri-web (FarmMain delete button gated on canEdit).
+
+Local: `test_access_level_rbac`, `test_sectors`, `test_sector_geometry` → 35 passed; ruff
+  check/format clean.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+
+## v1.147.1 (2026-11-25)
+
+### Bug Fixes
+
+- **assistant**: No invented figures, Darija answered in the farmer's script, ask when the crop is
+  missing ([#548](https://github.com/AgriLogy/agri-api/pull/548),
+  [`dba63b9`](https://github.com/AgriLogy/agri-api/commit/dba63b9aafecfd83131341606ecc08a458a4ce30))
+
+Closes #539. **Stacked on #521** (eval data): merge #521 first. **Draft** until the eval re-run
+  confirms the fix.
+
+**Eval before (Groq gpt-oss-120b, pseudo-real farm data): 16/35.** - 13 answers added figures that
+  are in no tool result (e.g. "4–6 mm/day"), and one cited a knowledge article that was never
+  returned. Prod's knowledge base was empty. - 6 answers to Darija written in Latin letters came
+  back in Arabic script. - 3 answers for a zone without a crop didn't ask a follow-up question.
+
+**Prompt changes** (`assistant/prompt.py`): - Every number must come from a tool result, the
+  farmer's message or a returned knowledge article. No "typical" figures. - Never name an article
+  that wasn't returned. Without articles: guidance in words only, say so, and refer to an
+  agronomist. - Darija in Latin letters gets an answer in Latin letters (with examples). Mixed
+  Arabic-script Darija and French stays in Arabic-script Darija. - Missing inputs: end with one or
+  two targeted questions; always when the zone has no crop.
+
+**Grader** (`eval/harness.py`): "144 638" (space, no-break or narrow no-break space) is one number,
+  not two. A unit test was added.
+
+Tests: `test_assistant_eval.py` and `test_assistant_llm.py`: 50 passed.
+
+ruff clean. Eval re-run: results will be added here.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+
+## v1.147.0 (2026-11-24)
+
+### Features
+
+- **assistant**: Eval answers tools with pseudo-real farm data
+  ([#521](https://github.com/AgriLogy/agri-api/pull/521),
+  [`4b62925`](https://github.com/AgriLogy/agri-api/commit/4b629258f56eb1366bbef15913993e5e777d981b))
+
+Closes #520. Part of #461.
+
+## Why The eval answered tool calls from a hand-written farm: one zone, round numbers (18.4 % / 12.5
+  m³ / 45 min), an August clock, and payloads shaped differently from the real tools. A model can
+  pass that and still trip on real data.
+
+## What - **`real` dataset (default):** `scenarios_real.json` holds what the real tool handlers
+  return for a test farm (Router01, imaginary) built from its own readings. - The data is the 48 h
+  ending at its driest November moment: soil 29.95 % just before an irrigation, weather from real
+  Open-Meteo history. - Timestamps are shifted by whole days so the time of day stays true. - Four
+  states: - **dry**: 20 min old, so "irrigate", 150 m³ over about 417 min; - **stale**: 3 days old;
+  - **empty**: no readings and no crop; - **alerts**: the zone's real alerts, with the soil one
+  fired. - **`real_data.py`** regenerates the fixture. - `export` is read-only against the farm's
+  DB. - `build` runs on a local DB only. It creates an `eval-farm` user, loads each state and runs
+  every read tool. - **Placeholders** in `cases.json`: `{soil}`, `{water}` and `{alert_threshold}`
+  replace the synthetic numbers. The grounding check takes the clock and date from the dataset. -
+  **CLI:** `--data real|synthetic`, and `--pace N`, which spaces cases and retries rate-limited
+  ones. The Groq free tier is 8k tokens/min and one case is about 9k. - `get_sensor_trend` answers
+  per `sensor_key`.
+
+## Notes - `--data synthetic` keeps the old farm, and the existing grader tests still use it. -
+  Building the fixture surfaced two data issues, reported separately (not fixed here): - Router01's
+  June history has 2–3 sources writing the same zone and sensor with no device id, so the "latest"
+  reading is ambiguous. - The irrigation advice never reaches the Dr/RAW tier (always
+  `critical_threshold_fallback`).
+
+## Tests - 7 new tests: real dataset integrity, states mean what the cases test, placeholder
+  expansion, an invented figure caught on real data, the stale quantity forbidden, keyed trends,
+  paced retry. - Full suite locally (SQLite): 795 passed. ruff is clean.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+
 ## v1.146.0 (2026-11-24)
 
 ### Features
