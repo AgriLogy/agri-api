@@ -1,6 +1,42 @@
 # CHANGELOG
 
 
+## v1.151.3 (2026-11-25)
+
+### Bug Fixes
+
+- **weather**: Try Open-Meteo's other addresses when one node fails
+  ([#552](https://github.com/AgriLogy/agri-api/pull/552),
+  [`d026b7b`](https://github.com/AgriLogy/agri-api/commit/d026b7bc51ae539202f528cff1470e878c8b8231))
+
+Closes #550
+
+From the production server, DNS sometimes gives `api.open-meteo.com` a node that stops completing
+  TLS handshakes while another node still answers. Until now the only fix was a manual pin on the
+  server.
+
+**Change** - After the normal call and its one retry fail on the network, the client tries each
+  **other** address of the host: the ones DNS returns (minus the first, which most likely just
+  failed), then the addresses in `OPENMETEO_FALLBACK_ADDRESSES` (comma-separated). - TLS is still
+  verified against `api.open-meteo.com` (SNI, Host header and certificate). A wrong server is
+  rejected, so a fallback address cannot serve a forged answer. - An HTTP error (the node is up and
+  answered) is raised at once, not retried elsewhere. - The ET₀ reference-curve fetch now uses the
+  same path (it had no retry at all). - A warning is logged when a fallback address answers, so the
+  logs show when it happens.
+
+**Deploy note:** with this in place, the server-only pin (`extra_hosts`) can be swapped for
+  `OPENMETEO_FALLBACK_ADDRESSES`: DNS is used first, and the known-good node only when DNS gives a
+  dead one.
+
+**Tests** - New `test_openmeteo_fallback_address.py`: alternate order, fallback after failure, each
+  fallback in turn, last error raised, no alternates, HTTP error not retried, host name kept for
+  TLS. - An autouse fixture keeps every test away from real DNS. - Checked live from a dev machine:
+  the address-pinned request gets real data from a known node, and a non-Open-Meteo address fails
+  the certificate check.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+
 ## v1.151.2 (2026-11-25)
 
 ### Bug Fixes
