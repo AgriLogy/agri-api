@@ -1,6 +1,48 @@
 # CHANGELOG
 
 
+## v1.150.0 (2026-11-25)
+
+### Features
+
+- **stations**: Declare stations indoor/outdoor and check them on demand
+  ([#531](https://github.com/AgriLogy/agri-api/pull/531),
+  [`a0db0b3`](https://github.com/AgriLogy/agri-api/commit/a0db0b3fd3bff9b4680409f7d15cf9686a6052dc))
+
+Closes #530.
+
+Builds on the daily exposure check (#525).
+
+**Declaration per device** (`fastapp/station_placement.py`, stored in `analytics_systemsetting` key
+  `station_placement`, no schema change): - `auto` (default): the detection decides;
+  sheltered/suspect → ops email (as today). - `outdoor`: same alerting; a sheltered reading is a
+  **mismatch**, and the email says it was declared outdoors. - `indoor`: indoors on purpose
+  (greenhouse, shed, test bench). Still checked and shown, **never emailed**.
+
+**Reports** gain `placement`, `detected` (outdoor / indoor / uncertain / unknown), `mismatch`,
+  `checked`, and `sensors` = verdict per sensor (solar / wind / temperature → ok / sheltered /
+  not_checked) from agri-core 0.34.0 (pin bumped).
+
+**Endpoints** (staff): - `GET /admin/monitoring/stations`: every station seen in the last 7 days or
+  declared, with owner, last reading, declaration and latest report. The response shape is extended;
+  `stations` is still a list. - `PUT /admin/monitoring/stations/{device_id}/placement`
+  `{placement}`: 400 on unknown values, 404 on unknown devices, audited (`station.placement`). -
+  `POST /admin/monitoring/stations/{device_id}/check`: runs the 24 h comparison now, stores the
+  report, never emails. `no_readings` when the device sent nothing in the window.
+
+The daily task is refactored into `_assess_station` / `_email_exposure` (same behaviour for `auto`),
+  plus `check_station_now` and `list_stations`.
+
+Tests (`test_station_exposure_task.py`, Postgres): indoor is checked but silent; outdoor + sheltered
+  is a mismatch and emailed; indoor + reads outdoor is a mismatch; check-now with no readings or an
+  unknown device; list re-derives a mismatch after the declaration changes; routes (declare, check,
+  list, 400/404, non-staff 403). Full fastapp suite: 902 passed, 15 skipped. ruff clean.
+
+Back-office page: AgriLogy/agri-admin (Stations).
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+
 ## v1.149.0 (2026-11-25)
 
 ### Features
