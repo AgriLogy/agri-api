@@ -33,10 +33,11 @@ from fastapp.settings import get_settings
 # ---------------------------------------------------------------------------
 # RBAC access-level tiers (#444)
 # ---------------------------------------------------------------------------
-# One ordered scale: monitor (read-only) < editor (create/edit) < admin (user
-# management + delete). The column is ``CustomUser_customuser.access_level``
-# VARCHAR(16) NOT NULL DEFAULT 'editor'. ``level_rank`` resolves any unknown /
-# missing value to the safest floor (monitor) so a typo or a NULL never
+# One ordered scale: monitor (read-only) < editor (create/edit, and sector
+# deletes, #526) < admin (user management + the other deletes). The column is
+# ``CustomUser_customuser.access_level`` VARCHAR(16) NOT NULL DEFAULT 'editor'.
+# ``level_rank`` resolves any unknown / missing value to the safest floor
+# (monitor) so a typo or a NULL never
 # accidentally *grants* a tier — it only ever denies.
 LEVEL_MONITOR = "monitor"
 LEVEL_EDITOR = "editor"
