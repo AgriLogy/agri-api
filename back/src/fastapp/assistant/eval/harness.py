@@ -54,13 +54,14 @@ ZONE = {"id": 6, "name": "Zone 1"}
 # Small integers are everywhere in good answers ("1 or 2 questions", "step 3")
 # and in times; only numbers above this must be grounded.
 SMALL_INT_MAX = 10
-# Numbers the system prompt itself puts in the model's mouth (6 h / 2 days
-# staleness rules, 24 h) and the date in the request context.
-PROMPT_NUMBERS = {6.0, 2.0, 24.0, 48.0, 2026.0, 8.0, 15.0}
 
 _ARABIC = re.compile(r"[؀-ۿݐ-ݿﭐ-﷿ﹰ-﻿]")
 _LATIN = re.compile(r"[A-Za-zÀ-ÖØ-öø-ÿ]")
-_NUMBER = re.compile(r"(?<![\w.])-?\d+(?:[.,]\d+)?")
+# A number, with thousands written "144 638" (space, no-break or narrow
+# no-break space) read as one number.
+_NUMBER = re.compile(
+    r"(?<![\w.])-?\d{1,3}(?:[ \u00a0\u202f]\d{3})+(?:[.,]\d+)?(?!\d)|(?<![\w.])-?\d+(?:[.,]\d+)?"
+)
 # Arabizi spells letters with digits (3=ع, 7=ح, 9=ق, 2=ء, 5=خ): "nsa9i" is a word.
 _ARABIZI_WORD = re.compile(r"\b[a-z]*[23579][a-z]+\b|\b[a-z]+[23579][a-z]*\b", re.I)
 _EASTERN_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
@@ -203,19 +204,116 @@ SCENARIOS: dict[str, Any] = {
 }
 
 
-class ScenarioTools:
-    """``run_tool`` for the orchestrator: canned answers, every call recorded."""
+# ---------------------------------------------------------------------------
+# Datasets: which farm data the scenarios are answered from
+# ---------------------------------------------------------------------------
+REAL_DATA_PATH = Path(__file__).with_name("scenarios_real.json")
+# The system prompt's own numbers (6 h / 2 days staleness rules, 24 h, 48 h);
+# the request-context date and hour are added per dataset.
+BASE_PROMPT_NUMBERS = {6.0, 2.0, 24.0, 48.0}
 
-    def __init__(self, scenario: str):
-        self.outputs = SCENARIOS[scenario]()
+
+@dataclass(frozen=True)
+class Dataset:
+    """The eval clock, the farmer's zone, the four scenario states, and the
+    *facts* that cases refer to by placeholder (``{soil}`` in ``mentions_any``,
+    ``{water}`` in ``forbid_numbers``…), so one case file grades any dataset."""
+
+    name: str
+    now: datetime.datetime
+    zone: dict[str, Any]
+    scenarios: dict[str, Any]  # state -> () -> {tool name: output}
+    facts: dict[str, list]
+
+    def prompt_numbers(self) -> set[float]:
+        """Numbers the system prompt and request context hand the model."""
+        n = self.now
+        return BASE_PROMPT_NUMBERS | {
+            float(n.year),
+            float(n.month),
+            float(n.day),
+            float(n.hour),
+        }
+
+
+SYNTHETIC = Dataset(
+    name="synthetic",
+    now=NOW,
+    zone=ZONE,
+    scenarios=SCENARIOS,
+    facts={
+        "soil": ["18.4", "18,4"],
+        "alert_threshold": ["20"],
+        "water": [12.5, 45],
+    },
+)
+
+
+def _decimal_spellings(value: float) -> list[str]:
+    """How a model may write a reading: 29.95 → 29.95, 29,95, 29.9, 29,9, 30."""
+    out = []
+    for text in (f"{value:g}", f"{value:.1f}", f"{round(value)}"):
+        out += [text, text.replace(".", ",")]
+    return list(dict.fromkeys(out))
+
+
+def load_real_dataset(path: Path = REAL_DATA_PATH) -> Dataset:
+    """Pseudo-real farm data: tool outputs captured from the real assistant
+    tools against a test farm's real readings (see the file's ``meta``)."""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    meta, states = data["meta"], data["scenarios"]
+    advice = states["dry"]["get_irrigation_advice"]
+    duration = advice.get("estimated_duration_min")
+    water = [advice.get("estimated_water_m3")]
+    if duration is not None:
+        water += [round(duration, 2), round(duration)]
+    fired = [
+        a
+        for a in states["alerts"]["get_active_alerts"]["alerts"]
+        if a.get("last_triggered_at")
+    ]
+    return Dataset(
+        name="real",
+        now=datetime.datetime.fromisoformat(meta["eval_now"]),
+        zone=dict(meta["zone"]),
+        scenarios={
+            state: (lambda outputs=outputs: copy.deepcopy(outputs))
+            for state, outputs in states.items()
+        },
+        facts={
+            "soil": _decimal_spellings(advice["soil_moisture_pct"]),
+            "alert_threshold": [f"{a['threshold']:g}" for a in fired],
+            "water": [w for w in water if w is not None],
+        },
+    )
+
+
+DATASETS = {"synthetic": lambda: SYNTHETIC, "real": load_real_dataset}
+DEFAULT_DATASET = "real"
+
+
+def get_dataset(name: str | None = None) -> Dataset:
+    return DATASETS[name or DEFAULT_DATASET]()
+
+
+class ScenarioTools:
+    """``run_tool`` for the orchestrator: canned answers, every call recorded.
+
+    A dataset may key a tool output by one parameter (``get_sensor_trend|et0``);
+    that wins over the tool's plain entry."""
+
+    def __init__(self, scenario: str, dataset: Dataset = SYNTHETIC):
+        self.outputs = dataset.scenarios[scenario]()
         self.calls: list[dict[str, Any]] = []
 
     def __call__(self, name: str, params: dict[str, Any]) -> dict[str, Any]:
-        out = copy.deepcopy(
-            self.outputs.get(name, {"error": f"No data for '{name}' in this farm."})
+        params = dict(params or {})
+        keyed = f"{name}|{params.get('sensor_key')}"
+        out = self.outputs.get(keyed) or self.outputs.get(
+            name, {"error": f"No data for '{name}' in this farm."}
         )
-        self.calls.append({"name": name, "input": dict(params or {})})
-        return out
+        self.calls.append({"name": name, "input": params})
+        return copy.deepcopy(out)
 
 
 class RecordingProvider:
@@ -266,10 +364,29 @@ class CaseResult:
         return all(c.ok for c in self.checks if c.hard)
 
 
-def load_cases(path: Path = CASES_PATH) -> list[dict[str, Any]]:
+_PLACEHOLDER = re.compile(r"^\{(\w+)\}$")
+
+
+def _expand(values: list, facts: dict[str, list]) -> list:
+    """``["{soil}", "sec"]`` → ``["29.95", "29,95", …, "sec"]`` for a dataset."""
+    out: list = []
+    for v in values:
+        m = _PLACEHOLDER.match(v) if isinstance(v, str) else None
+        out += facts.get(m.group(1), []) if m else [v]
+    return out
+
+
+def load_cases(
+    path: Path = CASES_PATH, dataset: Dataset = SYNTHETIC
+) -> list[dict[str, Any]]:
     data = json.loads(path.read_text(encoding="utf-8"))
     cases = []
     for group in data["groups"]:
+        expect = dict(group["expect"])
+        if "forbid_numbers" in expect:
+            expect["forbid_numbers"] = [
+                float(n) for n in _expand(expect["forbid_numbers"], dataset.facts)
+            ]
         for lang, question in group["questions"].items():
             cases.append(
                 {
@@ -278,8 +395,10 @@ def load_cases(path: Path = CASES_PATH) -> list[dict[str, Any]]:
                     "scenario": group["scenario"],
                     "lang": lang,
                     "question": question,
-                    "expect": group["expect"],
-                    "mentions_any": group.get("mentions_any", []),
+                    "expect": expect,
+                    "mentions_any": _expand(
+                        group.get("mentions_any", []), dataset.facts
+                    ),
                 }
             )
     return cases
@@ -289,7 +408,7 @@ def _numbers(text: str) -> list[float]:
     out = []
     for raw in _NUMBER.findall(text.translate(_EASTERN_DIGITS)):
         try:
-            out.append(float(raw.replace(",", ".")))
+            out.append(float(re.sub(r"[ \u00a0\u202f]", "", raw).replace(",", ".")))
         except ValueError:
             continue
     return out
@@ -304,7 +423,7 @@ _ISO = re.compile(
 )
 
 
-def _ages(blob: str) -> set[float]:
+def _ages(blob: str, now: datetime.datetime = NOW) -> set[float]:
     """Reading ages a good answer quotes ("20 minutes ago", "3 days old"),
     derived from every ``as_of``-style timestamp, plus its clock time."""
     out: set[float] = set()
@@ -313,7 +432,7 @@ def _ages(blob: str) -> set[float]:
             at = datetime.datetime.fromisoformat(raw.replace("Z", "+00:00"))
         except ValueError:
             continue
-        secs = (NOW - at).total_seconds()
+        secs = (now - at).total_seconds()
         out.update(
             {
                 round(secs / 60),
@@ -328,10 +447,12 @@ def _ages(blob: str) -> set[float]:
     return out
 
 
-def _grounded_pool(outputs: dict[str, Any], question: str) -> set[float]:
-    pool = set(PROMPT_NUMBERS)
+def _grounded_pool(
+    outputs: dict[str, Any], question: str, dataset: Dataset = SYNTHETIC
+) -> set[float]:
+    pool = dataset.prompt_numbers()
     blob = json.dumps(outputs, ensure_ascii=False)
-    pool |= _ages(blob)
+    pool |= _ages(blob, dataset.now)
     blob = _ISO.sub(" ", blob)
     for n in _numbers(blob) + _numbers(_strip_arabizi(question)):
         pool.update({n, round(n), round(n, 1), abs(n)})
@@ -346,7 +467,12 @@ def script_of(text: str) -> tuple[int, int]:
     return len(_ARABIC.findall(text)), len(_LATIN.findall(text))
 
 
-def grade(case: dict[str, Any], result: CaseResult, outputs: dict) -> list[Check]:
+def grade(
+    case: dict[str, Any],
+    result: CaseResult,
+    outputs: dict,
+    dataset: Dataset = SYNTHETIC,
+) -> list[Check]:
     exp = case["expect"]
     reply = result.reply or ""
     called = set(result.tools_called)
@@ -390,7 +516,7 @@ def grade(case: dict[str, Any], result: CaseResult, outputs: dict) -> list[Check
         ok = letters > 0 and la / letters >= 0.8
     checks.append(Check("script", ok, True, f"{want_script}: arabic={ar} latin={la}"))
 
-    pool = _grounded_pool(outputs, case["question"])
+    pool = _grounded_pool(outputs, case["question"], dataset)
     reply_numbers = _numbers(_strip_arabizi(reply))
     invented = sorted(
         {
@@ -446,16 +572,18 @@ def grade(case: dict[str, Any], result: CaseResult, outputs: dict) -> list[Check
     return checks
 
 
-def run_case(case: dict[str, Any], provider: LLMProvider) -> CaseResult:
-    tools = ScenarioTools(case["scenario"])
+def run_case(
+    case: dict[str, Any], provider: LLMProvider, dataset: Dataset = SYNTHETIC
+) -> CaseResult:
+    tools = ScenarioTools(case["scenario"], dataset)
     recorder = RecordingProvider(provider)
     orchestrator = LLMOrchestrator(recorder, RuleBasedOrchestrator())
     response = orchestrator.respond(
         case["question"],
         run_tool=tools,
-        zone=ZONE,
+        zone=dataset.zone,
         language=None,  # auto: answer in the language of the question
-        now=NOW,
+        now=dataset.now,
     )
     llm = recorder.last
     called = [c.name for c in llm.tool_calls] if llm else []
@@ -477,7 +605,7 @@ def run_case(case: dict[str, Any], provider: LLMProvider) -> CaseResult:
             Check("provider", False, True, f"provider failed: {result.fallback_reason}")
         ]
     else:
-        result.checks = grade(case, result, tools.outputs)
+        result.checks = grade(case, result, tools.outputs, dataset)
     return result
 
 
