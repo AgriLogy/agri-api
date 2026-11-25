@@ -351,58 +351,117 @@ def stored_exposure_reports() -> list[dict]:
         return []
 
 
-def check_station_exposure() -> dict:
-    """Beat job: flag weather stations that look sheltered (see section doc)."""
-    from agri.core.station_exposure import (
-        STATUS_SHELTERED,
-        STATUS_SUSPECT,
-        assess_station_exposure,
-    )
+def _exposure_window() -> tuple[datetime.datetime, datetime.datetime]:
+    end = _utcnow().replace(minute=0, second=0, microsecond=0)
+    return end - datetime.timedelta(hours=EXPOSURE_WINDOW_HOURS), end
+
+
+def _assess_station(session, dev, start, end, placement: str) -> dict:
+    """Compare one station with the outdoor reference over ``[start, end)``
+    and store the report. Returns it (``status`` is ``no_location`` /
+    ``no_reference`` when it can't be judged)."""
+    from agri.core.station_exposure import assess_station_exposure
     from apps.sensors.forecast_provider import fetch_openmeteo_hourly_reference
 
     from fastapp.sector_insights import zone_point
+    from fastapp.station_placement import detected_placement, is_mismatch
+
+    base = {
+        "device_id": dev.device_id,
+        "device": dev.name or dev.serial or f"device {dev.device_id}",
+        "serial": dev.serial,
+        "zone_id": dev.zone_id,
+        "user_id": dev.user_id,
+        "checked_at": end.isoformat(),
+        "window_hours": EXPOSURE_WINDOW_HOURS,
+        "placement": placement,
+    }
+    point = zone_point(session, dev.zone_id, dev.user_id)
+    reference = None
+    if point is not None:
+        reference = fetch_openmeteo_hourly_reference(
+            start=start.date(), end=end.date(), latitude=point[0], longitude=point[1]
+        )
+    if not reference:
+        report = {
+            **base,
+            "status": "no_location" if point is None else "no_reference",
+            "hours_compared": 0,
+            "signals": [],
+            "checked": [],
+            "sensors": {},
+            "detected": detected_placement(""),
+            "mismatch": False,
+        }
+    else:
+        station = {
+            field: _hourly_means(session, table, dev.device_id, start, end)
+            for field, table in _EXPOSURE_TABLES.items()
+        }
+        result = assess_station_exposure(_exposure_hours(station, reference))
+        detected = detected_placement(result.status)
+        report = {
+            **base,
+            **result.as_dict(),
+            "detected": detected,
+            "mismatch": is_mismatch(placement, detected),
+        }
+    _store_exposure_report(dev.device_id, report)
+    return report
+
+
+def _email_exposure(report: dict, recipients: list[str]) -> int:
+    lines = [
+        "- " + _SIGNAL_TEXT[sig["code"]].format(**sig["detail"])
+        for sig in report["signals"]
+        if sig["code"] in _SIGNAL_TEXT
+    ]
+    label = report["device"]
+    subject = f"[Agrogo ops] Weather station {label} looks {report['status']}"
+    declared = (
+        " It was declared outdoors in the back-office."
+        if report.get("placement") == "outdoor"
+        else ""
+    )
+    body = (
+        f"Station {label} (zone {report['zone_id']}) does not seem to measure the "
+        f"field.{declared} Compared with outdoor weather at the farm over the last "
+        f"{EXPOSURE_WINDOW_HOURS} h ({report['hours_compared']} hours):\n"
+        + "\n".join(lines)
+        + "\n\nA station in a closed, dark or sheltered spot sends readings "
+        "that are not the field's: ET0, VPD and temperature alerts built on "
+        "them are off. Move it outdoors, in the open, about 2 m high. If it is "
+        "indoors on purpose, set it to 'indoor' in the back-office (Stations) "
+        "to stop these emails.\n\n"
+        f"You will be reminded every {EXPOSURE_RENOTIFY_DAYS} days while "
+        "it stays like this."
+    )
+    return sum(_send_email(to=r, subject=subject, body=body) for r in recipients)
+
+
+def check_station_exposure() -> dict:
+    """Beat job: flag weather stations that look sheltered (see section doc).
+    Stations declared ``indoor`` in the back-office are checked but never
+    emailed about."""
+    from agri.core.station_exposure import STATUS_SHELTERED, STATUS_SUSPECT
+
+    from fastapp.station_placement import alerts_enabled, placement_of, read_placements
 
     s = get_settings()
-    end = _utcnow().replace(minute=0, second=0, microsecond=0)
-    start = end - datetime.timedelta(hours=EXPOSURE_WINDOW_HOURS)
+    start, end = _exposure_window()
     results: dict[str, str] = {}
     alerted: list[str] = []
 
     with session_scope() as session:
+        placements = read_placements(session)
         for dev in _station_devices(session, start, end):
-            label = dev.name or dev.serial or f"device {dev.device_id}"
-            point = zone_point(session, dev.zone_id, dev.user_id)
-            if point is None:
-                results[label] = "no_location"
+            placement = placement_of(placements, dev.device_id)
+            report = _assess_station(session, dev, start, end, placement)
+            label = report["device"]
+            results[label] = report["status"]
+            if report["status"] not in (STATUS_SHELTERED, STATUS_SUSPECT):
                 continue
-            station = {
-                field: _hourly_means(session, table, dev.device_id, start, end)
-                for field, table in _EXPOSURE_TABLES.items()
-            }
-            reference = fetch_openmeteo_hourly_reference(
-                start=start.date(),
-                end=end.date(),
-                latitude=point[0],
-                longitude=point[1],
-            )
-            if not reference:
-                results[label] = "no_reference"
-                continue
-            report = assess_station_exposure(_exposure_hours(station, reference))
-            results[label] = report.status
-            _store_exposure_report(
-                dev.device_id,
-                {
-                    "device_id": dev.device_id,
-                    "device": label,
-                    "zone_id": dev.zone_id,
-                    "user_id": dev.user_id,
-                    "checked_at": end.isoformat(),
-                    "window_hours": EXPOSURE_WINDOW_HOURS,
-                    **report.as_dict(),
-                },
-            )
-            if report.status not in (STATUS_SHELTERED, STATUS_SUSPECT):
+            if not alerts_enabled(placement):
                 continue
             recipients = s.ops_alert_emails_list
             ttl = EXPOSURE_RENOTIFY_DAYS * 86400
@@ -417,33 +476,125 @@ def check_station_exposure() -> dict:
                 claimed = False
             if not recipients or not claimed:
                 continue
-            lines = [
-                "- " + _SIGNAL_TEXT[sig.code].format(**sig.detail)
-                for sig in report.signals
-                if sig.code in _SIGNAL_TEXT
-            ]
-            subject = f"[Agrogo ops] Weather station {label} looks {report.status}"
-            body = (
-                f"Station {label} (zone {dev.zone_id}) does not seem to measure the "
-                f"field. Compared with outdoor weather at the farm over the last "
-                f"{EXPOSURE_WINDOW_HOURS} h ({report.hours_compared} hours):\n"
-                + "\n".join(lines)
-                + "\n\nA station in a closed, dark or sheltered spot sends readings "
-                "that are not the field's: ET0, VPD and temperature alerts built on "
-                "them are off. Move it outdoors, in the open, about 2 m high.\n\n"
-                f"You will be reminded every {EXPOSURE_RENOTIFY_DAYS} days while "
-                "it stays like this."
-            )
-            sent = sum(
-                _send_email(to=r, subject=subject, body=body) for r in recipients
-            )
+            sent = _email_exposure(report, recipients)
             logger.warning(
                 "station_exposure: %s %s (%s), emailed %d",
                 label,
-                report.status,
-                ", ".join(report.codes),
+                report["status"],
+                ", ".join(sig["code"] for sig in report["signals"]),
                 sent,
             )
             alerted.append(label)
 
     return {"checked_at": end.isoformat(), "stations": results, "alerted": alerted}
+
+
+def check_station_now(device_id: int) -> dict | None:
+    """Back-office "check now" for one device: same comparison as the daily
+    job, report stored, no email. None when the device doesn't exist;
+    ``status: no_readings`` when it sent no weather reading in the window."""
+    from fastapp.station_placement import placement_of, read_placements
+
+    start, end = _exposure_window()
+    with session_scope() as session:
+        dev = next(
+            (
+                d
+                for d in _station_devices(session, start, end)
+                if d.device_id == device_id
+            ),
+            None,
+        )
+        placement = placement_of(read_placements(session), device_id)
+        if dev is not None:
+            return _assess_station(session, dev, start, end, placement)
+        row = session.execute(
+            text(
+                "SELECT id, serial, name, zone_id, user_id FROM analytics_device WHERE id = :d"
+            ),
+            {"d": device_id},
+        ).first()
+    if row is None:
+        return None
+    return {
+        "device_id": row.id,
+        "device": row.name or row.serial or f"device {row.id}",
+        "serial": row.serial,
+        "zone_id": row.zone_id,
+        "user_id": row.user_id,
+        "checked_at": end.isoformat(),
+        "window_hours": EXPOSURE_WINDOW_HOURS,
+        "placement": placement,
+        "status": "no_readings",
+        "hours_compared": 0,
+        "signals": [],
+        "checked": [],
+        "sensors": {},
+        "detected": "unknown",
+        "mismatch": False,
+    }
+
+
+STATION_LIST_DAYS = 7
+
+
+def list_stations() -> list[dict]:
+    """Every weather station seen in the last ``STATION_LIST_DAYS`` days or with
+    a declared placement, with its declaration and its latest report."""
+    from fastapp.station_placement import is_mismatch, placement_of, read_placements
+
+    end = _utcnow()
+    reports = {r.get("device_id"): r for r in stored_exposure_reports()}
+    with session_scope() as session:
+        placements = read_placements(session)
+        recent = session.execute(
+            text(
+                "SELECT t.device_id, max(t.timestamp) AS last_reading "
+                "FROM analytics_temperatureweather t "
+                "WHERE t.device_id IS NOT NULL AND t.timestamp >= :a "
+                "GROUP BY t.device_id"
+            ),
+            {"a": end - datetime.timedelta(days=STATION_LIST_DAYS)},
+        ).all()
+        last = {r.device_id: r.last_reading for r in recent}
+        ids = sorted(set(last) | set(placements) | {i for i in reports if i})
+        devices = (
+            session.execute(
+                text(
+                    "SELECT d.id, d.serial, d.name, d.zone_id, d.user_id, "
+                    'u.username FROM analytics_device d LEFT JOIN "CustomUser_customuser" u '
+                    "ON u.id = d.user_id WHERE d.id = ANY(:ids)"
+                ),
+                {"ids": ids},
+            ).all()
+            if ids
+            else []
+        )
+    out = []
+    for d in devices:
+        placement = placement_of(placements, d.id)
+        report = reports.get(d.id)
+        if report is not None:
+            # The declaration may have changed since the report was made.
+            report = {
+                **report,
+                "placement": placement,
+                "mismatch": is_mismatch(placement, report.get("detected", "unknown")),
+            }
+        ts = last.get(d.id)
+        out.append(
+            {
+                "device_id": d.id,
+                "device": d.name or d.serial or f"device {d.id}",
+                "serial": d.serial,
+                "zone_id": d.zone_id,
+                "user_id": d.user_id,
+                "username": d.username,
+                "placement": placement,
+                "placement_updated_at": (placements.get(d.id) or {}).get("updated_at"),
+                "placement_updated_by": (placements.get(d.id) or {}).get("updated_by"),
+                "last_reading": ts.isoformat() if ts else None,
+                "report": report,
+            }
+        )
+    return out

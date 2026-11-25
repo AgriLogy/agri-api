@@ -18,6 +18,7 @@ from typing import Any
 
 from celery.schedules import crontab
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 from sqlalchemy import func, select, text
 
 from agri.core.database import session_scope
@@ -28,6 +29,7 @@ from agri.db.audit import (
 )
 from fastapp.adminutil import username_for
 from fastapp.auth import AuthedUser, get_current_staff_user
+from fastapp.json import DjangoStyleJSONResponse
 
 router = APIRouter(tags=["admin-monitoring"])
 
@@ -437,11 +439,80 @@ def ingest_status(user: AuthedUser = Depends(get_current_staff_user)):
 
 @router.get("/admin/monitoring/stations", summary="Admin: weather-station exposure")
 def stations_exposure(user: AuthedUser = Depends(get_current_staff_user)):
-    """Latest daily check per weather station: is it measuring the field or
-    sitting sheltered / indoors (agri-core station_exposure). fastapp-only."""
-    from fastapp.tasks_ops import stored_exposure_reports
+    """Every weather station: where it is declared to be (auto / outdoor /
+    indoor) and its latest check — is it measuring the field or sitting
+    sheltered / indoors, per sensor (agri-core station_exposure)."""
+    from fastapp.station_placement import PLACEMENTS
+    from fastapp.tasks_ops import EXPOSURE_WINDOW_HOURS, list_stations
 
-    return {"stations": stored_exposure_reports()}
+    return {
+        "stations": list_stations(),
+        "placements": list(PLACEMENTS),
+        "window_hours": EXPOSURE_WINDOW_HOURS,
+    }
+
+
+class StationPlacementIn(BaseModel):
+    placement: str
+
+
+@router.put(
+    "/admin/monitoring/stations/{device_id}/placement",
+    summary="Admin: declare a station outdoor / indoor / auto",
+)
+def set_station_placement(
+    device_id: int,
+    payload: StationPlacementIn,
+    user: AuthedUser = Depends(get_current_staff_user),
+):
+    """``indoor`` = installed indoors on purpose: still checked, never emailed.
+    ``outdoor`` = should measure the field: a sheltered reading is a mismatch.
+    ``auto`` clears the declaration."""
+    from fastapp.adminutil import record_audit
+    from fastapp.station_placement import PLACEMENTS, read_placements, set_placement
+
+    if payload.placement not in PLACEMENTS:
+        return DjangoStyleJSONResponse(
+            {"detail": f"placement must be one of {list(PLACEMENTS)}."}, status_code=400
+        )
+    with session_scope(commit=True) as session:
+        exists = session.execute(
+            text("SELECT 1 FROM analytics_device WHERE id = :d"), {"d": device_id}
+        ).first()
+        if exists is None:
+            return DjangoStyleJSONResponse(
+                {"detail": "Device not found."}, status_code=404
+            )
+        before = (read_placements(session).get(device_id) or {}).get(
+            "placement", "auto"
+        )
+        entry = set_placement(
+            session, device_id, payload.placement, username=user.username
+        )
+        record_audit(
+            session,
+            user.id,
+            "station.placement",
+            "device",
+            device_id,
+            {"placement": [before, payload.placement]},
+        )
+    return {"device_id": device_id, **entry}
+
+
+@router.post(
+    "/admin/monitoring/stations/{device_id}/check",
+    summary="Admin: check now whether a station is outdoors or sheltered",
+)
+def check_station(device_id: int, user: AuthedUser = Depends(get_current_staff_user)):
+    """Run the exposure check for one device over the last 24 h, store the
+    report and return it. Never emails."""
+    from fastapp.tasks_ops import check_station_now
+
+    report = check_station_now(device_id)
+    if report is None:
+        return DjangoStyleJSONResponse({"detail": "Device not found."}, status_code=404)
+    return report
 
 
 @router.get("/admin/monitoring/tasks", summary="Admin: task-run history + schedule")
