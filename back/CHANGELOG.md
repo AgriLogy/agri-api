@@ -1,6 +1,42 @@
 # CHANGELOG
 
 
+## v1.149.0 (2026-11-25)
+
+### Features
+
+- **assistant**: One API key per LLM provider, more presets, live model list
+  ([#529](https://github.com/AgriLogy/agri-api/pull/529),
+  [`b71e02c`](https://github.com/AgriLogy/agri-api/commit/b71e02ced91932d4c1e655dff9791702637e43fb))
+
+Closes #528.
+
+The admin picks the assistant's LLM (Claude, OpenAI GPT, Groq, Mistral, Gemini, OpenRouter,
+  DeepSeek, Ollama, or any OpenAI-compatible server) and its API key from the back-office.
+
+**Changes** - **Catalog**: new presets `mistral`, `gemini`, `openrouter`, `deepseek`, `custom`
+  ("Other (OpenAI-compatible)", base URL required); `openai` relabelled "OpenAI (GPT)". A new
+  `openai_compatible` flag routes them all to the OpenAI-compat client. Suggested models only where
+  the alias is long-lived; the rest come from the live list. - **One key per provider**: stored as
+  `keys: {provider: {enc, last4}}` (Fernet, as before). Switching provider keeps the other keys. Old
+  rows with a single `api_key_enc` are read as the stored provider's key and migrated on the next
+  save. GET adds `keys: {provider: {has_key, hint}}`; `has_api_key` / `api_key_hint` still describe
+  the active provider. `/test` uses the chosen provider's key. The audit log still only records
+  kept/replaced/removed. - **`POST /admin/assistant/models`** (admin): `{provider, base_url?,
+  api_key?}` → `{ok, models}` or `{ok: false, error}`. Calls `GET {base}/models` (Bearer) or
+  Anthropic `GET /v1/models` (`x-api-key`, `anthropic-version`), 10 s timeout.
+
+**Checks** - `test_assistant_llm.py` + `test_assistant_knowledge.py`: 58 passed. New tests:
+  per-provider keys, legacy migration, `/test` key choice, `/models` (MockTransport: OpenAI-style,
+  Anthropic headers, rejected key, no key, custom without URL, admin-only), presets → OpenAI-compat
+  client. - ruff check/format clean. - Live smoke test of `/models` against Groq: 11 models listed;
+  a bad key gives "The API key was rejected."
+
+Back-office page: AgriLogy/agri-admin (Assistant IA).
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+
 ## v1.148.0 (2026-11-25)
 
 ### Features
