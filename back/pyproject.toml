@@ -1,6 +1,6 @@
 [project]
 name = "agri-api"
-version = "1.146.0"
+version = "1.150.0"
 description = "Agrilogy Django backend"
 requires-python = ">=3.12"
 dependencies = [
@@ -87,8 +87,8 @@ dependencies = [
     # interpret_vegetation() — the insights endpoint passes it (agri-core#94).
     # 0.32.2: ET₀ survives a dead pyranometer / anemometer or a wrong pressure
     # unit (FAO-56 substitutions), deterministic latest reading (agri-core#98).
-    # 0.33.0: station_exposure — is a weather station sheltered / indoors?
-    "agri-core @ git+https://github.com/AgriLogy/agri-core.git@0.33.0",
+    # 0.34.0: station_exposure verdict per sensor (solar / wind / temperature)
+    "agri-core @ git+https://github.com/AgriLogy/agri-core.git@0.34.0",
     # FastAPI sidecar (back/src/fastapp) — the strangler target the Django
     # surface migrates into, served by uvicorn on :8001 (entrypoint `fast`
     # role). Same image/venv as Django so both stay in lockstep.

@@ -537,7 +537,8 @@ def update_sector(
 def delete_sector(
     pk: int,
     user: AuthedUser = Depends(get_current_user),
-    _: AuthedUser = Depends(require_level("admin")),
+    # Editor tier (#526): a delete only unassigns the zones, which keep their data.
+    _: AuthedUser = Depends(require_level("editor")),
 ):
     with session_scope(commit=True) as session:
         guard = _block_if_technician(session, user.id)

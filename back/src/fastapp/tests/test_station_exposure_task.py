@@ -12,6 +12,8 @@ import json
 
 import pytest
 from django.conf import settings as dj_settings
+from fastapi.testclient import TestClient
+from rest_framework_simplejwt.tokens import AccessToken
 
 from fastapp import tasks_ops
 from fastapp.settings import get_settings
@@ -88,8 +90,32 @@ def env(monkeypatch):
     )
     monkeypatch.setenv("OPS_ALERT_EMAILS", "ops@x.com")
     get_settings.cache_clear()
+    _clear_placements()
     yield {"redis": redis, "sent": sent, "calls": calls}
+    _clear_placements()
     get_settings.cache_clear()
+
+
+def _clear_placements():
+    from agri.core.database import session_scope
+    from sqlalchemy import text
+
+    from fastapp.station_placement import SETTING_KEY
+
+    with session_scope(commit=True) as s:
+        s.execute(
+            text("DELETE FROM analytics_systemsetting WHERE key = :k"),
+            {"k": SETTING_KEY},
+        )
+
+
+def _declare(device_id: int, placement: str) -> None:
+    from agri.core.database import session_scope
+
+    from fastapp.station_placement import set_placement
+
+    with session_scope(commit=True) as s:
+        set_placement(s, device_id, placement, username="ops")
 
 
 def _station(django_user_model, *, serial, sheltered, lat=32.93, lon=-6.90):
@@ -110,6 +136,7 @@ def _station(django_user_model, *, serial, sheltered, lat=32.93, lon=-6.90):
         pomp_flow_rate=1.0,
         elevation_m=790.0,
     )
+    Device.objects.filter(serial=serial).delete()  # analytics_device isn't flushed
     d = Device.objects.create(
         user=u, zone=z, device_type="bivocom", serial=serial, name=serial
     )
@@ -143,6 +170,13 @@ class TestCheckStationExposure:
 
         report = json.loads(env["redis"].data[f"station-exposure:report:{dev.id}"])
         assert report["status"] == "sheltered" and report["hours_compared"] == 24
+        assert report["sensors"] == {
+            "solar": "sheltered",
+            "wind": "sheltered",
+            "temperature": "sheltered",
+        }
+        assert report["detected"] == "indoor" and report["placement"] == "auto"
+        assert report["mismatch"] is False  # nothing declared
         assert {s["code"] for s in report["signals"]} == {
             "no_sun",
             "no_wind",
@@ -167,3 +201,119 @@ class TestCheckStationExposure:
         out = tasks_ops.check_station_exposure()
         assert out["stations"] == {"nowhere": "no_location"}
         assert env["sent"] == [] and env["calls"] == []
+
+    def test_declared_indoor_is_checked_but_never_emailed(self, env, django_user_model):
+        dev = _station(django_user_model, serial="router02", sheltered=True)
+        _declare(dev.id, "indoor")
+        out = tasks_ops.check_station_exposure()
+        assert out["stations"] == {"router02": "sheltered"} and out["alerted"] == []
+        assert env["sent"] == []
+        report = json.loads(env["redis"].data[f"station-exposure:report:{dev.id}"])
+        assert report["placement"] == "indoor" and report["mismatch"] is False
+
+    def test_declared_outdoor_but_sheltered_is_a_mismatch(self, env, django_user_model):
+        dev = _station(django_user_model, serial="router02", sheltered=True)
+        _declare(dev.id, "outdoor")
+        out = tasks_ops.check_station_exposure()
+        assert out["alerted"] == ["router02"]
+        ((_, _, body),) = env["sent"]
+        assert "declared outdoors" in body and "'indoor'" in body
+        (row,) = tasks_ops.list_stations()
+        assert row["placement"] == "outdoor" and row["report"]["mismatch"] is True
+
+    def test_declared_indoor_but_reads_outdoor_is_a_mismatch(
+        self, env, django_user_model
+    ):
+        dev = _station(django_user_model, serial="field-1", sheltered=False)
+        _declare(dev.id, "indoor")
+        report = tasks_ops.check_station_now(dev.id)
+        assert report["status"] == "ok" and report["detected"] == "outdoor"
+        assert report["mismatch"] is True and env["sent"] == []
+
+    def test_check_now_without_recent_readings(self, env, django_user_model):
+        from apps.irrigation.models import Device
+
+        dev = _station(django_user_model, serial="router02", sheltered=True)
+        Device.objects.filter(serial="quiet").delete()
+        quiet = Device.objects.create(
+            user=dev.user, zone=dev.zone, device_type="bivocom", serial="quiet"
+        )
+        assert tasks_ops.check_station_now(quiet.id)["status"] == "no_readings"
+        assert tasks_ops.check_station_now(10**9) is None
+
+    def test_list_shows_declaration_and_latest_report(self, env, django_user_model):
+        dev = _station(django_user_model, serial="router02", sheltered=True)
+        (row,) = tasks_ops.list_stations()
+        assert row["device_id"] == dev.id and row["report"] is None
+        assert row["placement"] == "auto" and row["username"] == "router02"
+        tasks_ops.check_station_exposure()
+        _declare(dev.id, "indoor")  # declared after the check: list re-derives
+        (row,) = tasks_ops.list_stations()
+        assert row["placement"] == "indoor" and row["placement_updated_by"] == "ops"
+        assert row["report"]["status"] == "sheltered"
+        assert row["report"]["placement"] == "indoor"
+        assert row["report"]["mismatch"] is False
+
+
+@pytest.fixture
+def fast(monkeypatch):
+    monkeypatch.setattr(get_settings(), "secret_key", dj_settings.SECRET_KEY)
+    from fastapp.main import app
+
+    return TestClient(app)
+
+
+def _auth(user) -> dict[str, str]:
+    return {"Authorization": f"Bearer {AccessToken.for_user(user)}"}
+
+
+@_requires_pg
+@pytest.mark.django_db(transaction=True)
+class TestStationRoutes:
+    def test_staff_declares_checks_and_lists(self, env, fast, django_user_model):
+        dev = _station(django_user_model, serial="router02", sheltered=True)
+        staff = django_user_model.objects.create_user(
+            username="ops-staff", email="ops@x.com", password="x", is_staff=True
+        )
+        h = _auth(staff)
+        r = fast.put(
+            f"/admin/monitoring/stations/{dev.id}/placement",
+            json={"placement": "indoor"},
+            headers=h,
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["placement"] == "indoor"
+        r = fast.post(f"/admin/monitoring/stations/{dev.id}/check", headers=h)
+        assert r.status_code == 200, r.text
+        assert r.json()["status"] == "sheltered" and env["sent"] == []
+        body = fast.get("/admin/monitoring/stations", headers=h).json()
+        assert body["placements"] == ["auto", "outdoor", "indoor"]
+        (row,) = body["stations"]
+        assert row["placement"] == "indoor"
+        assert row["report"]["sensors"]["solar"] == "sheltered"
+
+    def test_validation_and_access(self, env, fast, django_user_model):
+        dev = _station(django_user_model, serial="router02", sheltered=True)
+        staff = django_user_model.objects.create_user(
+            username="ops-staff", email="ops@x.com", password="x", is_staff=True
+        )
+        h = _auth(staff)
+        url = f"/admin/monitoring/stations/{dev.id}/placement"
+        assert fast.put(url, json={"placement": "roof"}, headers=h).status_code == 400
+        missing = "/admin/monitoring/stations/999999999/placement"
+        assert (
+            fast.put(missing, json={"placement": "indoor"}, headers=h).status_code
+            == 404
+        )
+        assert (
+            fast.post(
+                "/admin/monitoring/stations/999999999/check", headers=h
+            ).status_code
+            == 404
+        )
+        owner = _auth(dev.user)  # a farmer, not staff
+        assert (
+            fast.put(url, json={"placement": "indoor"}, headers=owner).status_code
+            == 403
+        )
+        assert fast.get("/admin/monitoring/stations", headers=owner).status_code == 403
