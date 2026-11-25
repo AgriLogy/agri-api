@@ -25,13 +25,15 @@ from __future__ import annotations
 import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import select
 
 from agri.core.database import session_scope
 from agri.db.assistant import AssistantConversation
+from fastapp.assistant import voice
 from fastapp.auth import AuthedUser, get_current_user
+from fastapp.json import DjangoStyleJSONResponse
 
 from agri.db.analytics import AnalyticsZone
 from fastapp.assistant.llm import LLMOrchestrator
@@ -97,6 +99,40 @@ def invoke_tool(
         raise HTTPException(status_code=404, detail=f"Unknown tool: {name}")
     data = tool.handler(user, payload.params or {})
     return {"tool": name, "data": data}
+
+
+@router.get("/assistant/voice", summary="Is server-side voice input available")
+def voice_status(user: AuthedUser = Depends(get_current_user)):
+    """What the chat's microphone should use: server transcription (Whisper
+    on Groq) when ``active``, otherwise the browser's own recognition."""
+    with session_scope() as session:
+        s = voice.read_settings(session)
+    return {"active": s.usable, "max_seconds": voice.MAX_SECONDS}
+
+
+@router.post("/assistant/transcribe", summary="Speech to text for the chat")
+async def transcribe(
+    file: UploadFile = File(...),
+    language: str | None = Form(None),
+    user: AuthedUser = Depends(get_current_user),
+):
+    """Transcribe a recorded question (Darija, Arabic, French, English). The
+    text is returned for the chat; nothing is stored."""
+    audio = await file.read(voice.MAX_AUDIO_BYTES + 1)
+    with session_scope() as session:
+        settings = voice.read_settings(session)
+    try:
+        return voice.transcribe(
+            settings,
+            audio,
+            filename=file.filename or "voice.webm",
+            content_type=file.content_type or "",
+            chat_language=language,
+        )
+    except voice.VoiceError as exc:
+        return DjangoStyleJSONResponse(
+            {"detail": exc.message, "error_kind": exc.kind}, status_code=exc.status
+        )
 
 
 @router.post(

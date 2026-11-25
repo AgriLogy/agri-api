@@ -29,6 +29,7 @@ from pydantic import BaseModel
 from agri.core.database import session_scope
 from fastapp.adminutil import record_audit
 from fastapp.assistant import config as llm_config
+from fastapp.assistant import voice
 from fastapp.assistant.providers import (
     EFFORT_LEVELS,
     PROVIDER_CATALOG,
@@ -112,7 +113,10 @@ def _bad(detail: str):
 def get_config(user: AuthedUser = Depends(get_current_user)):
     _require_admin(user)
     with session_scope() as session:
-        return _public(llm_config.resolve(session), llm_config.read_stored(session))
+        return {
+            **_public(llm_config.resolve(session), llm_config.read_stored(session)),
+            "voice": voice.read_settings(session).public(),
+        }
 
 
 @router.put("/admin/assistant/config", summary="Admin: save assistant LLM settings")
@@ -171,7 +175,10 @@ def put_config(
                 else ("removed" if api_key == "" else "kept"),
             },
         )
-        return _public(llm_config.resolve(session), llm_config.read_stored(session))
+        return {
+            **_public(llm_config.resolve(session), llm_config.read_stored(session)),
+            "voice": voice.read_settings(session).public(),
+        }
 
 
 def _stored_key(stored: dict[str, Any], provider: str) -> str:
@@ -292,3 +299,39 @@ def list_models(
 def _models_client() -> httpx.Client:
     """Separate for tests (they swap in an ``httpx.MockTransport``)."""
     return httpx.Client(timeout=MODELS_TIMEOUT_S)
+
+
+class VoiceConfigIn(BaseModel):
+    enabled: bool = False
+    model: str = voice.DEFAULT_MODEL
+    language: str = voice.DEFAULT_LANGUAGE
+
+
+@router.put("/admin/assistant/voice", summary="Admin: voice input settings")
+def put_voice(payload: VoiceConfigIn, user: AuthedUser = Depends(get_current_user)):
+    """Whisper on Groq for the chat's microphone. Uses the Groq API key saved
+    on this page (provider Groq), whichever provider runs the chat."""
+    _require_admin(user)
+    if payload.model not in voice.VOICE_MODELS:
+        return _bad(f"model must be one of {list(voice.VOICE_MODELS)}.")
+    if payload.language not in voice.VOICE_LANGUAGES:
+        return _bad(f"language must be one of {list(voice.VOICE_LANGUAGES)}.")
+    with session_scope(commit=True) as session:
+        if payload.enabled and not voice.read_settings(session).key:
+            return _bad("save a Groq API key first (provider Groq on this page).")
+        voice.save_settings(
+            session,
+            enabled=payload.enabled,
+            model=payload.model,
+            language=payload.language,
+            username=user.username,
+        )
+        record_audit(
+            session,
+            user.id,
+            "assistant_voice.update",
+            "settings",
+            llm_config.SETTING_KEY,
+            payload.model_dump(),
+        )
+        return voice.read_settings(session).public()
