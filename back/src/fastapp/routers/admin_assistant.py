@@ -1,16 +1,20 @@
 """fastapp /admin/assistant — the assistant's LLM provider settings (#461).
 
-Admin tier only. An admin chooses the provider (Claude, OpenAI-compatible,
-Ollama), model, base URL, effort, and API key from the back-office instead of
-env files. The API key is write-only: it is stored encrypted and responses
-only ever show whether one is set plus its last 4 characters.
+Admin tier only. An admin chooses the provider (Claude, OpenAI/GPT, Groq,
+Mistral, Gemini, OpenRouter, DeepSeek, Ollama or any OpenAI-compatible server),
+model, base URL, effort, and API key from the back-office instead of env files.
+Each provider keeps its own key, so switching back and forth needs no re-paste.
+Keys are write-only: stored encrypted, responses only ever show whether one is
+set plus its last 4 characters.
 
-* ``GET  /admin/assistant/config``  — current settings + provider catalog
-* ``PUT  /admin/assistant/config``  — save (``api_key`` omitted = keep it,
-                                     ``""`` = remove it)
+* ``GET  /admin/assistant/config``  — current settings, per-provider key status
+                                     and the provider catalog
+* ``PUT  /admin/assistant/config``  — save (``api_key`` is the chosen provider's:
+                                     omitted = keep it, ``""`` = remove it)
 * ``POST /admin/assistant/test``    — one small round-trip to the provider with
                                      the saved settings, or with unsaved ones
                                      from the form, to check key/model/URL
+* ``POST /admin/assistant/models``  — the model ids the provider offers this key
 """
 
 from __future__ import annotations
@@ -18,6 +22,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -60,12 +65,26 @@ class AssistantTestIn(BaseModel):
     api_key: str | None = None
 
 
+class AssistantModelsIn(BaseModel):
+    """Which provider to ask. Omitted key/URL use the stored / default ones."""
+
+    provider: str
+    base_url: str | None = None
+    api_key: str | None = None
+
+
+ANTHROPIC_MODELS_URL = "https://api.anthropic.com/v1/models"
+MODELS_TIMEOUT_S = 10.0
+
+
 def _require_admin(user: AuthedUser) -> None:
     if level_rank(user.access_level) < level_rank(LEVEL_ADMIN):
         raise HTTPException(status_code=403, detail="Admin access required")
 
 
-def _public(resolved: llm_config.ResolvedConfig) -> dict[str, Any]:
+def _public(
+    resolved: llm_config.ResolvedConfig, stored: dict[str, Any] | None
+) -> dict[str, Any]:
     return {
         "source": resolved.source,
         "enabled": resolved.enabled,
@@ -79,6 +98,7 @@ def _public(resolved: llm_config.ResolvedConfig) -> dict[str, Any]:
         "api_key_unreadable": resolved.key_unreadable,
         "updated_at": resolved.updated_at,
         "updated_by": resolved.updated_by,
+        "keys": llm_config.public_keys(stored),
         "providers": PROVIDER_CATALOG,
         "effort_levels": list(EFFORT_LEVELS),
     }
@@ -92,7 +112,7 @@ def _bad(detail: str):
 def get_config(user: AuthedUser = Depends(get_current_user)):
     _require_admin(user)
     with session_scope() as session:
-        return _public(llm_config.resolve(session))
+        return _public(llm_config.resolve(session), llm_config.read_stored(session))
 
 
 @router.put("/admin/assistant/config", summary="Admin: save assistant LLM settings")
@@ -116,7 +136,9 @@ def put_config(
     api_key = payload.api_key.strip() if payload.api_key is not None else None
     with session_scope(commit=True) as session:
         stored = llm_config.read_stored(session) or {}
-        will_have_key = bool(api_key) or (api_key is None and stored.get("api_key_enc"))
+        will_have_key = bool(api_key) or (
+            api_key is None and payload.provider in llm_config.stored_keys(stored)
+        )
         if payload.enabled and meta["requires_api_key"] and not will_have_key:
             return _bad("an API key is required for this provider.")
         llm_config.save(
@@ -149,7 +171,11 @@ def put_config(
                 else ("removed" if api_key == "" else "kept"),
             },
         )
-        return _public(llm_config.resolve(session))
+        return _public(llm_config.resolve(session), llm_config.read_stored(session))
+
+
+def _stored_key(stored: dict[str, Any], provider: str) -> str:
+    return llm_config.key_for(stored, provider) or ""
 
 
 @router.post("/admin/assistant/test", summary="Admin: test the assistant LLM settings")
@@ -164,12 +190,10 @@ def test_config(payload: AssistantTestIn, user: AuthedUser = Depends(get_current
         return _bad("Choose a provider first.")
     api_key = payload.api_key
     if api_key is None:
-        # Reuse the saved key only for the provider it was saved for.
-        api_key = ""
-        if provider == stored.get("provider") and stored.get("api_key_enc"):
-            api_key = llm_config.decrypt_secret(stored["api_key_enc"]) or ""
-        elif provider == saved.provider and saved.provider_config:
-            api_key = saved.provider_config.api_key
+        # The key saved for this provider (each provider has its own).
+        api_key = _stored_key(stored, provider)
+        if not api_key and provider == saved.provider and saved.provider_config:
+            api_key = saved.provider_config.api_key  # env-var fallback
     cfg = ProviderConfig(
         provider=provider,
         model=(
@@ -212,3 +236,59 @@ def test_config(payload: AssistantTestIn, user: AuthedUser = Depends(get_current
         "reply": result.text[:200],
         "latency_ms": int((time.monotonic() - started) * 1000),
     }
+
+
+@router.post("/admin/assistant/models", summary="Admin: list the provider's models")
+def list_models(
+    payload: AssistantModelsIn, user: AuthedUser = Depends(get_current_user)
+):
+    """Ask the provider which models this key can use, so the back-office does
+    not depend on a hard-coded list that goes stale."""
+    _require_admin(user)
+    meta = PROVIDER_CATALOG.get(payload.provider)
+    if meta is None:
+        return _bad(f"provider must be one of {sorted(PROVIDER_CATALOG)}.")
+    api_key = payload.api_key
+    if api_key is None:
+        with session_scope() as session:
+            api_key = _stored_key(
+                llm_config.read_stored(session) or {}, payload.provider
+            )
+    api_key = api_key.strip()
+    if meta["openai_compatible"]:
+        base_url = (payload.base_url or meta["default_base_url"]).strip().rstrip("/")
+        if not base_url.startswith(("http://", "https://")):
+            return _bad("base_url must start with http:// or https://.")
+        url = f"{base_url}/models"
+        headers = {"User-Agent": "agri-api-assistant/2.0"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        params: dict[str, Any] = {}
+    else:
+        url = ANTHROPIC_MODELS_URL
+        headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01"}
+        params = {"limit": 1000}
+        if payload.base_url:
+            url = payload.base_url.strip().rstrip("/") + "/v1/models"
+    if meta["requires_api_key"] and not api_key:
+        return {"ok": False, "error": "No API key saved or given for this provider."}
+    try:
+        with _models_client() as client:
+            res = client.get(url, headers=headers, params=params)
+    except httpx.HTTPError as exc:
+        return {"ok": False, "error": f"Could not reach the provider: {exc}"}
+    if res.status_code in (401, 403):
+        return {"ok": False, "error": "The API key was rejected."}
+    if res.status_code >= 400:
+        return {"ok": False, "error": f"The provider answered HTTP {res.status_code}."}
+    try:
+        data = res.json().get("data") or []
+    except (ValueError, AttributeError):
+        return {"ok": False, "error": "The provider did not answer with a model list."}
+    models = sorted({str(m["id"]) for m in data if isinstance(m, dict) and m.get("id")})
+    return {"ok": True, "models": models}
+
+
+def _models_client() -> httpx.Client:
+    """Separate for tests (they swap in an ``httpx.MockTransport``)."""
+    return httpx.Client(timeout=MODELS_TIMEOUT_S)

@@ -165,7 +165,18 @@ def test_config_round_trip_never_returns_the_key(fast, admin):
     assert body["has_api_key"] is True
     assert body["api_key_hint"] == "ABCD"
     assert "sk-ant-secret" not in res.text
-    assert set(body["providers"]) == {"anthropic", "openai", "groq", "ollama"}
+    assert set(body["providers"]) == {
+        "anthropic",
+        "openai",
+        "groq",
+        "mistral",
+        "gemini",
+        "openrouter",
+        "deepseek",
+        "ollama",
+        "custom",
+    }
+    assert body["keys"] == {"anthropic": {"has_key": True, "hint": "ABCD"}}
 
     got = fast.get(CONFIG, headers=_auth(admin))
     assert got.status_code == 200
@@ -180,7 +191,9 @@ def test_config_round_trip_never_returns_the_key(fast, admin):
         raw = cursor.fetchone()[0]
     assert "sk-ant-secret" not in raw
     stored = json.loads(raw)
-    assert llm_config.decrypt_secret(stored["api_key_enc"]) == "sk-ant-secret-ABCD"
+    enc = stored["keys"]["anthropic"]["enc"]
+    assert llm_config.decrypt_secret(enc) == "sk-ant-secret-ABCD"
+    assert "api_key_enc" not in stored  # no legacy single key any more
 
 
 def test_omitted_key_is_kept_and_empty_key_removes_it(fast, admin):
@@ -229,6 +242,157 @@ def test_config_validation(fast, admin):
     assert ollama.status_code == 200, ollama.text
     assert ollama.json()["active"] is True
     assert ollama.json()["base_url"].endswith(":11434/v1")
+
+
+def test_each_provider_keeps_its_own_key(fast, admin):
+    _save(fast, admin, api_key="sk-ant-claude-AAAA")
+    groq = fast.put(
+        CONFIG,
+        json={"enabled": True, "provider": "groq", "api_key": "gsk-groq-BBBB"},
+        headers=_auth(admin),
+    )
+    assert groq.status_code == 200, groq.text
+    body = groq.json()
+    assert body["provider"] == "groq" and body["active"] is True
+    assert body["api_key_hint"] == "BBBB"
+    assert body["keys"] == {
+        "anthropic": {"has_key": True, "hint": "AAAA"},
+        "groq": {"has_key": True, "hint": "BBBB"},
+    }
+    # Back to Claude without re-pasting: its key is still there.
+    back = _save(fast, admin)
+    assert back.status_code == 200, back.text
+    assert back.json()["active"] is True and back.json()["api_key_hint"] == "AAAA"
+    # Removing Claude's key leaves Groq's alone.
+    gone = fast.put(
+        CONFIG,
+        json={"enabled": False, "provider": "anthropic", "api_key": ""},
+        headers=_auth(admin),
+    )
+    assert gone.json()["keys"] == {"groq": {"has_key": True, "hint": "BBBB"}}
+    assert "sk-ant-claude" not in gone.text and "gsk-groq" not in gone.text
+
+
+def test_legacy_single_key_is_read_and_migrated(fast, admin):
+    legacy = {
+        "enabled": True,
+        "provider": "groq",
+        "model": "openai/gpt-oss-120b",
+        "api_key_enc": llm_config.encrypt_secret("gsk-legacy-9999"),
+        "api_key_last4": "9999",
+    }
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "INSERT INTO analytics_systemsetting (key, value, category, updated_at) "
+            "VALUES (%s, %s::jsonb, %s, now())",
+            [llm_config.SETTING_KEY, json.dumps(legacy), llm_config.SETTING_CATEGORY],
+        )
+    got = fast.get(CONFIG, headers=_auth(admin)).json()
+    assert got["active"] is True and got["api_key_hint"] == "9999"
+    assert got["keys"] == {"groq": {"has_key": True, "hint": "9999"}}
+    # Saving Claude moves the legacy key under ``keys`` and keeps it for Groq.
+    _save(fast, admin, api_key="sk-ant-new-1234")
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT value::text FROM analytics_systemsetting WHERE key = %s",
+            [llm_config.SETTING_KEY],
+        )
+        stored = json.loads(cursor.fetchone()[0])
+    assert "api_key_enc" not in stored
+    assert llm_config.decrypt_secret(stored["keys"]["groq"]["enc"]) == "gsk-legacy-9999"
+
+
+def test_admin_test_endpoint_uses_the_chosen_providers_key(fast, admin, monkeypatch):
+    _save(fast, admin, api_key="sk-ant-claude-AAAA")
+    fast.put(
+        CONFIG,
+        json={"enabled": False, "provider": "groq", "api_key": "gsk-groq-BBBB"},
+        headers=_auth(admin),
+    )
+    seen = []
+
+    class Ok:
+        def complete(self, **kw):
+            return LLMResult(text="OK", tool_calls=[], model="m")
+
+    def build(cfg):
+        seen.append((cfg.provider, cfg.api_key))
+        return Ok()
+
+    monkeypatch.setattr("fastapp.routers.admin_assistant.build_provider", build)
+    for provider in ("anthropic", "groq"):
+        res = fast.post(
+            "/admin/assistant/test", json={"provider": provider}, headers=_auth(admin)
+        )
+        assert res.json()["ok"] is True, res.text
+    assert seen == [("anthropic", "sk-ant-claude-AAAA"), ("groq", "gsk-groq-BBBB")]
+
+
+MODELS = "/admin/assistant/models"
+
+
+@pytest.fixture
+def models_http(monkeypatch):
+    """Route /admin/assistant/models through a MockTransport; records requests."""
+    seen: list[httpx.Request] = []
+    holder = {
+        "response": httpx.Response(
+            200, json={"data": [{"id": "b-model"}, {"id": "a-model"}]}
+        )
+    }
+
+    def handler(request: httpx.Request):
+        seen.append(request)
+        return holder["response"]
+
+    monkeypatch.setattr(
+        "fastapp.routers.admin_assistant._models_client",
+        lambda: httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    return {"seen": seen, "holder": holder}
+
+
+def test_models_lists_an_openai_compatible_providers_models(fast, admin, models_http):
+    fast.put(
+        CONFIG,
+        json={"enabled": False, "provider": "mistral", "api_key": "mistral-key-CCCC"},
+        headers=_auth(admin),
+    )
+    res = fast.post(MODELS, json={"provider": "mistral"}, headers=_auth(admin))
+    assert res.json() == {"ok": True, "models": ["a-model", "b-model"]}
+    (req,) = models_http["seen"]
+    assert str(req.url) == "https://api.mistral.ai/v1/models"
+    assert req.headers["Authorization"] == "Bearer mistral-key-CCCC"  # stored key
+
+
+def test_models_for_claude_use_the_anthropic_headers(fast, admin, models_http):
+    res = fast.post(
+        MODELS,
+        json={"provider": "anthropic", "api_key": "sk-ant-x"},
+        headers=_auth(admin),
+    )
+    assert res.json()["ok"] is True
+    (req,) = models_http["seen"]
+    assert req.url.host == "api.anthropic.com" and req.url.path == "/v1/models"
+    assert req.headers["x-api-key"] == "sk-ant-x"
+    assert req.headers["anthropic-version"] == "2023-06-01"
+
+
+def test_models_errors_are_reported_not_raised(fast, admin, models_http):
+    h = _auth(admin)
+    no_key = fast.post(MODELS, json={"provider": "openai"}, headers=h).json()
+    assert no_key["ok"] is False and models_http["seen"] == []
+    models_http["holder"]["response"] = httpx.Response(401, json={"error": "bad"})
+    rejected = fast.post(MODELS, json={"provider": "groq", "api_key": "x"}, headers=h)
+    assert rejected.json() == {"ok": False, "error": "The API key was rejected."}
+    custom = fast.post(MODELS, json={"provider": "custom"}, headers=h)
+    assert custom.status_code == 400  # no base URL for "other"
+    assert fast.post(MODELS, json={"provider": "nope"}, headers=h).status_code == 400
+
+
+def test_models_is_admin_only(fast, owner):
+    res = fast.post(MODELS, json={"provider": "groq"}, headers=_auth(owner))
+    assert res.status_code == 403
 
 
 def test_config_is_admin_only(fast, owner):
@@ -636,6 +800,26 @@ def test_ollama_sends_no_auth_header():
         system="S", context="C", history=[], message="?", tools=[], execute=dict
     )
     assert seen["auth"] is None
+
+
+@pytest.mark.parametrize(
+    "provider", ["openai", "groq", "mistral", "gemini", "openrouter", "deepseek"]
+)
+def test_openai_compatible_presets_build_the_openai_compat_client(provider):
+    meta = providers_mod.PROVIDER_CATALOG[provider]
+    assert meta["openai_compatible"] and meta["requires_api_key"]
+    assert meta["default_base_url"].startswith("https://")
+    cfg = ProviderConfig(
+        provider=provider, model="m", api_key="k", base_url=meta["default_base_url"]
+    )
+    assert isinstance(providers_mod.build_provider(cfg), OpenAICompatProvider)
+
+
+def test_custom_provider_needs_a_base_url():
+    with pytest.raises(ProviderError):
+        providers_mod.build_provider(
+            ProviderConfig(provider="custom", model="m", api_key="", base_url="")
+        )
 
 
 def test_groq_preset_uses_the_openai_compat_client():
