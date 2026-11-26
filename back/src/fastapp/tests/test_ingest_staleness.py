@@ -57,6 +57,18 @@ def test_ops_recipients_fall_back_to_internal_list(monkeypatch):
         get_settings.cache_clear()
 
 
+def test_ignored_feeds_setting_is_parsed(monkeypatch):
+    monkeypatch.setenv("INGEST_STALE_IGNORED_FEEDS", " LoRa, ,bivocom ")
+    get_settings.cache_clear()
+    try:
+        assert get_settings().ingest_stale_ignored_feeds_set == {"lora", "bivocom"}
+        monkeypatch.setenv("INGEST_STALE_IGNORED_FEEDS", "")
+        get_settings.cache_clear()
+        assert get_settings().ingest_stale_ignored_feeds_set == frozenset()
+    finally:
+        get_settings.cache_clear()
+
+
 # --- task against Postgres -----------------------------------------------------
 
 _requires_pg = pytest.mark.skipif(
@@ -169,6 +181,18 @@ class TestCheckIngestStaleness:
         assert tasks_ops.check_ingest_staleness()["recovered"] == []
         assert len(ops["sent"]) == n
 
+    def test_ignored_feed_never_alerts(self, ops, monkeypatch):
+        monkeypatch.setattr(get_settings(), "ingest_stale_ignored_feeds", "lora")
+        ops["slots"].add("lora")  # alerted on before it was ignored
+        _uplink(_h(9))
+
+        result = tasks_ops.check_ingest_staleness()
+        assert result["stale"] == {}
+        assert result["ignored"] == ["lora"]
+        assert result["recovered"] == []
+        assert ops["sent"] == []
+        assert "lora" not in ops["slots"]
+
     def test_empty_feeds_never_alert(self, ops):
         result = tasks_ops.check_ingest_staleness()
         assert result["stale"] == {}
@@ -218,6 +242,20 @@ class TestAdminIngestStatus:
         assert feeds["bivocom"]["last_hour_count"] == 1
         assert feeds["bivocom"]["alert_active"] is False
         assert body["threshold_hours"] == get_settings().ingest_stale_hours
+
+    def test_ignored_feed_is_reported_as_ignored(
+        self, client, django_user_model, monkeypatch
+    ):
+        monkeypatch.setattr(get_settings(), "ingest_stale_ignored_feeds", "lora")
+        staff = django_user_model.objects.create_user(
+            username="ops", email="ops@x.com", password="x", is_staff=True
+        )
+        _uplink(_h(9))
+        body = client.get(self.URL, headers=self._auth(staff)).json()
+        feeds = {f["key"]: f for f in body["feeds"]}
+        assert feeds["lora"]["status"] == "ignored"
+        assert feeds["lora"]["hours_silent"] == 9.0
+        assert feeds["bivocom"]["status"] == "no_data"
 
     def test_empty_feeds_are_no_data(self, client, django_user_model):
         staff = django_user_model.objects.create_user(
