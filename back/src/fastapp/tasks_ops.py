@@ -11,6 +11,8 @@ when a feed has been silent for longer than ``INGEST_STALE_HOURS``.
   and a one-off "recovered" email goes out, so the next outage alerts at once.
 - A feed whose table is missing or has never held a row is skipped: there is
   nothing to be stale *from*, and an empty dev database must not page anyone.
+- Feeds listed in ``INGEST_STALE_IGNORED_FEEDS`` (switched off on purpose)
+  never alert; the monitoring page shows them as ``ignored``.
 
 Transport-agnostic on purpose: a dead gateway produces no logs, so only the
 data itself can tell.
@@ -151,12 +153,14 @@ def alert_active(feed_key: str) -> bool | None:
 def feed_status(session, *, now: datetime.datetime | None = None) -> dict:
     """Per-feed freshness for the admin monitoring page, using the same rule
     as the beat job: ``ok`` / ``stale`` (silent past ``INGEST_STALE_HOURS``) /
-    ``no_data`` (table missing or empty), plus the rows received in the last
+    ``no_data`` (table missing or empty) / ``ignored`` (listed in
+    ``INGEST_STALE_IGNORED_FEEDS``), plus the rows received in the last
     hour so a feed coming back is visible at once."""
     s = get_settings()
     now = now or _utcnow()
     latest = _latest_timestamps(session)
     stale = find_stale_feeds(latest, now=now, threshold_hours=s.ingest_stale_hours)
+    ignored = s.ingest_stale_ignored_feeds_set
     hour_ago = now - datetime.timedelta(hours=1)
     feeds = []
     for feed in INGEST_FEEDS:
@@ -167,6 +171,8 @@ def feed_status(session, *, now: datetime.datetime | None = None) -> dict:
             hours = round((now - _aware(ts)).total_seconds() / 3600, 1)
             status = "stale" if feed.key in stale else "ok"
             last_hour = _recent_count(session, feed, hour_ago)
+        if feed.key in ignored:
+            status = "ignored"
         feeds.append(
             {
                 "key": feed.key,
@@ -194,6 +200,12 @@ def check_ingest_staleness() -> dict:
     now = _utcnow()
     with session_scope() as session:
         latest = _latest_timestamps(session)
+    ignored = sorted(k for k in latest if k in s.ingest_stale_ignored_feeds_set)
+    for key in ignored:
+        # No alert and no "resumed" email; drop a slot left from before the
+        # feed was ignored, so un-ignoring it alerts at once.
+        latest.pop(key)
+        release_alert_slot(key)
     stale = find_stale_feeds(latest, now=now, threshold_hours=s.ingest_stale_hours)
     recipients = s.ops_alert_emails_list
     ttl = int(s.ingest_stale_renotify_hours * 3600)
@@ -237,6 +249,7 @@ def check_ingest_staleness() -> dict:
         "alerted": alerted,
         "recovered": recovered,
         "checked": sorted(k for k, v in latest.items() if v is not None),
+        "ignored": ignored,
     }
 
 

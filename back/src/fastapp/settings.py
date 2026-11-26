@@ -121,6 +121,11 @@ class AppSettings(BaseSettings):
     ingest_stale_renotify_hours: int = Field(
         default=24, alias="INGEST_STALE_RENOTIFY_HOURS"
     )
+    # Feed keys (``lora``, ``bivocom``) to leave out of the alert, e.g. a feed
+    # that is switched off on purpose. Comma-separated; empty = watch them all.
+    ingest_stale_ignored_feeds: str = Field(
+        default="", alias="INGEST_STALE_IGNORED_FEEDS"
+    )
 
     # -- Ingest webhook auth --------------------------------------------------
     # Shared secret for the /ingest/* device webhooks (agri-bridge, ChirpStack
@@ -229,6 +234,15 @@ class AppSettings(BaseSettings):
         the internal feedback recipients when unset."""
         own = [e.strip() for e in self.ops_alert_emails.split(",") if e.strip()]
         return own or self.internal_feedback_emails_list
+
+    @property
+    def ingest_stale_ignored_feeds_set(self) -> frozenset[str]:
+        """INGEST_STALE_IGNORED_FEEDS as a set of lower-cased feed keys."""
+        return frozenset(
+            k.strip().lower()
+            for k in self.ingest_stale_ignored_feeds.split(",")
+            if k.strip()
+        )
 
     @property
     def database_url(self) -> str:
