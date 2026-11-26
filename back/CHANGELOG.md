@@ -1,6 +1,29 @@
 # CHANGELOG
 
 
+## v1.152.0 (2026-11-26)
+
+### Features
+
+- **ops**: Let the ingest staleness alert ignore feeds that are off on purpose
+  ([#556](https://github.com/AgriLogy/agri-api/pull/556),
+  [`0c55c1f`](https://github.com/AgriLogy/agri-api/commit/0c55c1f18c7627f04c0cc8e2ab03c0bbfd6a0889))
+
+Closes #554.
+
+- New setting `INGEST_STALE_IGNORED_FEEDS` (comma-separated: `lora`, `bivocom`; default empty). -
+  `check_ingest_staleness` skips ignored feeds: no alert, no "resumed" email; a slot left from
+  before is released so un-ignoring alerts at once. Result gains `ignored`. - `GET
+  /admin/monitoring/ingest` reports them with status `ignored` (age still shown). - Documented in
+  `back/env-example`.
+
+Tests: new cases in `test_ingest_staleness.py`; full suite 1555 passed locally (Postgres 16).
+
+Rollout: set `INGEST_STALE_IGNORED_FEEDS=lora` on the server after deploy.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+
 ## v1.151.3 (2026-11-25)
 
 ### Bug Fixes
