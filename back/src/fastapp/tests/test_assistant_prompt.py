@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -94,3 +95,42 @@ def test_no_hint_for_french_or_arabic_script():
     assert HINT not in _context("Est-ce que je dois irriguer la zone 1 ?")
     assert HINT not in _context("واش خاصني نسقي اليوم فالزون 1؟")
     assert HINT not in _context(None)
+
+
+# --- stricter rules (no unsourced figures, ask for missing inputs) -----------
+
+
+def _system_prompt():
+    from fastapp.assistant.prompt import SYSTEM_PROMPT
+
+    return SYSTEM_PROMPT
+
+
+@pytest.mark.parametrize(
+    "kind", ["doses", "volumes", "prices", "yields", "dates", "percentages"]
+)
+def test_prompt_forbids_unsourced_figures_of_every_kind(kind):
+    prompt = _system_prompt()
+    assert "No figures without a source" in prompt
+    assert kind in prompt
+
+
+def test_prompt_forbids_own_conversions():
+    # The 120b eval turned "3.5-6 mm/day" into "35-60 L/m²" (10x too much).
+    assert "no unit conversions" in _system_prompt()
+
+
+def test_prompt_asks_instead_of_guessing_missing_inputs():
+    prompt = _system_prompt()
+    assert "Missing inputs: ask, do not guess" in prompt
+    for needed in ("crop", "growth stage", "soil", "area"):
+        assert needed in prompt
+    assert "ending with a question mark" in prompt
+
+
+def test_prompt_examples_carry_no_figures_of_their_own():
+    """The follow-up example must not hand the model a number to repeat."""
+    prompt = _system_prompt()
+    start = prompt.index("# Missing inputs")
+    section = prompt[start : prompt.index("# Knowledge base")]
+    assert not re.search(r"\d", section)
