@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v1.153.0 (2026-11-27)
+
+### Features
+
+- **assistant**: No figures without a source, ask when inputs are missing
+  ([#557](https://github.com/AgriLogy/agri-api/pull/557),
+  [`99bc414`](https://github.com/AgriLogy/agri-api/commit/99bc414c2af197da3f7d3a268f6921047854a3c4))
+
+Closes #555 (part of #461).
+
+System prompt only: - **No figures without a source (strict):** every number must come from a tool
+  result, the farmer's message or a returned knowledge-base article. Covers doses, volumes, depths,
+  durations, percentages, thresholds, prices, yields, dates, ranges and example values. No
+  conversions of the model's own (the 120b eval turned a mm/day figure into L/m² 10× too high). The
+  model checks each number before answering. - **Missing inputs: ask, do not guess:** crop, stage,
+  zone/sector, soil and area are looked up with tools first. If one is still missing, the answer
+  gives at most two sentences of principle and ends with one short question. - Tests on the prompt
+  text (`test_assistant_prompt.py`). Full suite 1561 passed locally.
+
+Eval: full Groq gpt-oss-120b rerun in progress; score posted on #555 when done.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+
 ## v1.152.0 (2026-11-26)
 
 ### Features
