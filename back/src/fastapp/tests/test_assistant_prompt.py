@@ -134,3 +134,11 @@ def test_prompt_examples_carry_no_figures_of_their_own():
     start = prompt.index("# Missing inputs")
     section = prompt[start : prompt.index("# Knowledge base")]
     assert not re.search(r"\d", section)
+
+
+def test_prompt_looks_up_farm_data_before_asking():
+    """The first strict prompt made the 120b model ask for the crop instead of
+    calling the irrigation tools (irrigate_now 1/5)."""
+    prompt = _system_prompt()
+    assert "Tools first, always" in prompt
+    assert "selected zone" in prompt and "do not ask which zone" in prompt
